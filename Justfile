@@ -116,6 +116,23 @@ validate:
 	echo "✓ $deed"
 	echo "validation passed"
 
+# Check that every workflow `uses:` is locked/pinned (requires yq + gh)
+lock-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Checking action pinning..."
+    node scripts/check-action-pinning.js
+    if command -v gawk >/dev/null 2>&1; then \
+      bash scripts/check-lock-sync.sh; \
+    else \
+      echo "note: gawk not installed, skipping check-lock-sync (install with apt-get install gawk)"; \
+    fi
+    echo "Running invisible-character scan..."
+    tmp="$(mktemp -d)"; \
+    bash scripts/check-invisible-characters.sh "." "$tmp/results" "$tmp/blocking" || true; \
+    if [ -s "$tmp/results" ]; then echo "invisible-char findings:"; cat "$tmp/results"; else echo "no invisible-char findings"; fi; \
+    rm -rf "$tmp"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # INSTALL
 # ═══════════════════════════════════════════════════════════════════════════════

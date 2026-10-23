@@ -34,17 +34,25 @@ We welcome contributions! This document outlines how to contribute to kyq.
 
 ```bash
 # Clone the repository
-cd /home/hyperpolymath/developer/meta-repos/kyq
+git clone https://github.com/metadatastician/kyq
+cd kyq
 
-# Build the AffineScript core
-make build
+# Validate the deed and layout (always works)
+just validate
 
-# Run tests
-make test
+# Build — currently blocked by AffineScript 0.1.1 (see docs/status/ROADMAP.adoc)
+# This fails with "not implemented" rather than emitting a placeholder (estate rule).
+just build
 
-# Build WASM version
-make wasm
+# Run tests / benchmarks (same blocker, same fail-closed behaviour)
+just test
+just bench
+just wasm
 ```
+
+Current status: see `docs/ULTRAPLAN.adoc` §0 and `docs/status/ROADMAP.adoc`
+Blockers. No binary exists yet; contributions that touch `src/` should discuss
+the AffineScript grammar gap first.
 
 ### Project Structure
 
@@ -134,12 +142,12 @@ parseTokens = -- implementation
 ### Running Tests
 
 ```bash
-make test
+just test
 ```
 
 ### Adding Tests
 
-Add test YAML files to `test/fixtures/` and corresponding test cases to `test/Test.affine`:
+Add test YAML files to `tests/fixtures/` and corresponding test cases to `tests/*.affine`:
 
 ```affine
 module Test where
@@ -147,7 +155,7 @@ module Test where
 import Kyaml.Parser
 import Kyaml.Lint
 
--- Test: parse a simple deployment
+// Test: parse a simple deployment
 testParseDeployment :: IO ()
 testParseDeployment = do
   content <- readFile "test/fixtures/deployment.yaml"
@@ -180,9 +188,9 @@ testLintLatestTag = do
    ```bash
    make test
    ```
-7. **Commit your changes**
+7. **Commit your changes** with a Conventional Commits subject (`feat:`, `fix:`, `docs:` …)
    ```bash
-   git commit -m "Add your feature description"
+   git commit -m "feat: add your feature description"
    ```
 8. **Push to the branch**
    ```bash
@@ -245,4 +253,4 @@ When reporting issues, please include:
 
 ## License
 
-By contributing to kyq, you agree that your contributions will be licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for details.
+By contributing to kyq, you agree that your contributions will be licensed under the **MPL-2.0** (code) and **CC-BY-SA-4.0** (docs), as per `LICENSE` and `LICENSES/`. See [LICENSE](LICENSE) for details.

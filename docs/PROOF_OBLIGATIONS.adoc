@@ -1,0 +1,378 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq Proof Obligations — Theorems the Finished Product Must Satisfy
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-23
+
+Abstract: the finished `kyq` is not "done" when it passes tests. It is done
+when the statements below hold. This file lists them, groups them, and names
+the evidence each requires. It states no proof.
+
+toc::[]
+
+== How to use this catalogue
+
+* Each *Thm* is a statement to be proven. A status of `conjectured` means the
+  statement is believed true but unproven; `property-tested` means a test suite
+  exercises it; `proven` means a mechanised artifact exists.
+* `Scope` names the component: `KYAML` (YAML 1.2 subset for Kubernetes),
+  `K8s` (Kubernetes schemas/rules), `Q` (query/mutation), `JCS` (canonical
+  JSON per RFC 8785 / RFC 7493 via `ijson-jcs`), `X` (cross-cutting).
+* Proofs are deferred to Phase 3. Phase 1 and Phase 2 may only add
+  property tests and fixtures, never axioms that make a later proof trivially true.
+
+== 0. Global invariants (hold in every phase)
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Scope
+
+| GI-1
+| No build or release artefact is produced unless the corresponding source was
+  successfully type-checked/compiled. A failing build fails the recipe; it does
+  not emit a placeholder.
+| X
+
+| GI-2
+| Every source file carries an SPDX license identifier that matches `LICENSES/`; no
+  file is dual-licensed by accident.
+| X
+
+| GI-3
+| `coordination.k9` and `kyq_chora.deed` are the sole carriers of
+  coordination/deed metadata; no `.a2ml` exists.
+| X
+|===
+
+== 1. KYAML language (YAML 1.2 for Kubernetes)
+
+=== 1.1 Lexing
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm KYAML-1 — Lex totality + determinism
+| For every input byte string `s`, `lex(s)` terminates and yields exactly one
+  token stream `t` (possibly containing `Token::Error` tokens, never crashing).
+| conjectured
+
+| Thm KYAML-2 — Lex bijection modulo insignificant whitespace/comments
+| For every token stream `t` produced by `lex`, `unlex(t)` (pretty-print) yields
+  a string `s'` with `lex(s') = t` up to documented comment/whitespace
+  normalisation. In particular, two inputs differing only in insignificant
+  whitespace/comments map to equal token streams.
+| conjectured
+
+| Thm KYAML-3 — Position fidelity
+| Every token in `t` carries a `TokenPosition {line, column, index}` that is
+  the exact source location of the lexeme in `s`; diagnostics pointing at a
+  position point at the byte that caused the diagnostic.
+| conjectured
+|===
+
+=== 1.2 Parsing and AST
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm KYAML-4 — Parse totality + unique result
+| For every token stream `t`, `parse(t)` terminates and yields exactly one of
+  `Success(doc)` or `Error(e)`. No input causes a panic, loop, or second interpretation.
+| conjectured
+
+| Thm KYAML-5 — AST well-formedness
+| Every `Success(doc)` satisfies: `doc.root` is a well-typed `YamlValue`,
+  `doc.resources` is the projection of `doc.root`'s multi-document split, and
+  `doc.version`/`doc.tags` reflect the directives in `s` if present.
+| conjectured
+
+| Thm KYAML-6 — Round-trip on the KYAML subset
+| For every `doc` that `parse` accepts, `parse(unparse(doc)) = Success(doc')`
+  where `doc'` is semantically equal to `doc` (same values, same resource
+  split, same directive meaning). Concrete formatting may differ; semantics do not.
+| conjectured
+
+| Thm KYAML-7 — Multi-document equivalence
+| Splitting `s` on `---`/`...` and parsing each document separately yields the
+  same `resources` as parsing `s` as a whole, up to document-order preservation.
+| conjectured
+
+| Thm KYAML-8 — Anchor/alias termination + transparency
+| Anchor/alias resolution terminates for every accepted document; aliases are
+  referentially transparent (replacing an alias by its anchor's value does not
+  change the parsed `Value`); cycles are rejected as `Error`, not looped.
+| conjectured
+|===
+
+=== 1.3 YAML 1.2 faithfulness for the KYAML subset
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm KYAML-9 — Core Schema compliance on the subset
+| On the KYAML subset, scalar resolution (null/bool/int/float/string) matches
+  YAML 1.2 Core Schema. Scalars outside the subset are either rejected or
+  normalised as the KYAML spec states — never silently mis-typed.
+| conjectured
+
+| Thm KYAML-10 — Directive/tag handling
+| `YAML` directives and `TAG` directives, when present, are honoured per YAML 1.2;
+  unknown tags are either preserved (`Tag(handle,suffix)`) or rejected as the
+  spec states, never dropped.
+| conjectured
+|===
+
+== 2. Kubernetes schema and lint rules (K8s)
+
+Each `kind` in the supported table (`Deployment`, `Service`, `ConfigMap`,
+etc. per `README.md`) has a schema derived from the K8s OpenAPI for `v1.25 →
+v1.30`. The theorems below are with respect to those schemas.
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm K8s-1 — Required-fields soundness
+| If `lint_required_fields(doc)` reports `required-field` at path `p`, then the
+  resource at `p` violates the schema's required set. No false positives.
+| conjectured
+
+| Thm K8s-2 — Required-fields completeness (bounded)
+| If a resource violates the required set for its `kind`, `lint_required_fields`
+  reports at least one `required-field` issue on that resource. (Completeness
+  is bounded by the kinds listed — a CustomResourceDefinition with an unknown
+  schema is out of scope except for the generic `apiVersion`/`kind`/`metadata.name`
+  check.)
+| conjectured
+
+| Thm K8s-3 — Type-check soundness
+| Every `type-mismatch` at path `p` corresponds to a field whose value type
+  disagrees with the schema. In particular, `spec.replicas` as `String` `"3"`
+  is `type-mismatch` (the negative case in `tests/fixtures/invalid-deployment.yaml`).
+| conjectured
+
+| Thm K8s-4 — Deprecated-API correct tracking
+| `deprecated-api` fires iff `apiVersion` is deprecated/removed for the target
+  K8s version range. `apps/v1beta2` → `apps/v1` is the canonical example.
+| conjectured
+
+| Thm K8s-5 — Selector-mismatch soundness
+| `selector-mismatch` fires iff `spec.selector.matchLabels` does not equal
+  `spec.template.metadata.labels` on the domain where Kubernetes requires equality
+  (Deployments, etc.). No false positives on kinds where mismatch is legal.
+| conjectured
+
+| Thm K8s-6 — Resource-name/label-key validity
+| `invalid-name` / `invalid-label` fire exactly on DNS-1123 violations, per K8s
+  naming rules, not on a looser or stricter predicate.
+| conjectured
+
+| Thm K8s-7 — Diagnostic locations
+| Every lint issue's `location: {line, column, path}` points at the token(s)
+  that support the issue; fixes applied at that path resolve the issue and no
+  unrelated file content is mis-blamed.
+| conjectured
+|===
+
+== 3. Query and mutation language (Q)
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm Q-1 — Path query determinism + totality
+| For every `doc` and path `p` in the documented grammar (dot, `[n]`, `[]`,
+  quoted keys), `query(doc, p)` terminates with either `Some(value)` or `None`
+  (missing), deterministically.
+| conjectured
+
+| Thm Q-2 — Get correctness
+| `get(doc, p) = Some(v)` iff `v` is the value at `p` in `doc` per the same
+  grammar; `del`/`set` read paths use the same interpretation.
+| conjectured
+
+| Thm Q-3 — Set preserves well-formedness
+| If `set(doc, p, v) = Some(doc')` then `doc'` is a well-formed document and
+  `get(doc', p) = Some(v)`. Intermediate mappings are created where the spec
+  says they are; otherwise `set` returns `None` and `doc` is unchanged.
+| conjectured
+
+| Thm Q-4 — Del preserves well-formedness
+| `del(doc, p)` either returns a well-formed document with `get(doc', p) = None`
+  or `None` if `p` is not deletable; no other value is introduced or lost.
+| conjectured
+
+| Thm Q-5 — Fmt idempotence
+| `fmt(fmt(doc)) = fmt(doc)` as text (exact byte equality). Formatting never
+  changes semantics; only whitespace/comment placement/comments-preserved flags
+  as documented.
+| conjectured
+|===
+
+== 4. KYAML ↔ JSON bridge (X)
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm X-1 — Lossless Value mapping on the intersection
+| There exists a lossless mapping `φ: YamlValue → serde_json::Value` on the
+  shared type domain (null/bool/int/float/string/sequence/mapping) such that
+  for every `doc` in the KYAML subset, `to_json(doc)` encodes `φ(doc)` and
+  `from_json(to_json(doc))` decodes to a `doc'` semantically equal to `doc`.
+| conjectured
+
+| Thm X-2 — Lossy cases are characterised and rejected
+| Inputs where the mapping would be lossy (e.g. non-string mapping keys that
+  JSON cannot represent, values outside the I-JSON integer range that would be
+  mis-rounded by a naive conversion) are rejected with a typed error; no silent
+  loss occurs.
+| conjectured
+
+| Thm X-3 — YAML→Value→JSON→Value round-trip
+| For every valid KYAML doc where `to_json` succeeds, `from_json(to_json(doc))`
+  is semantically equal to `doc` modulo JSON-normalised number formatting.
+  JSON-origin docs have the dual round-trip.
+| conjectured
+|===
+
+== 5. JCS canonical JSON (I-JSON + JCS via ijson-jcs)
+
+These theorems are about `kyq`'s canonical path *after* the KYAML bridge.
+Where `ijson-jcs` already proves the property for pure JSON, `kyq`'s theorem is
+that its pipeline inherits that property without regression (no bypasses).
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm JCS-1 — Duplicate-key rejection at the text boundary
+| Any input text (YAML or JSON) containing a duplicate object key is rejected
+  before a `Value` is constructed that has collapsed the keys. This holds even
+  when the YAML→Value→JSON pipeline would otherwise hide the duplicate.
+| conjectured
+
+| Thm JCS-2 — Safe-integer + float enforcement
+| Integers outside `±(2^53−1)` and floats outside IEEE-754 binary64 exact
+  representation (including `NaN`, `Infinity`) are rejected when parsed in
+  `Strict`/`Canonical` mode, with path and reason. Numbers that are accepted
+  serialise per ES `JSON.stringify` rules exactly as `ijson-jcs` does.
+| conjectured
+
+| Thm JCS-3 — Surrogate/noncharacter safety
+| No input accepted in `Strict`/`Canonical` mode contains an unpaired surrogate
+  (`U+D800..U+DFFF`), a noncharacter, or an unpaired UTF-16 surrogate in a key.
+  Strings that would violate RFC 8259 §7 are rejected.
+| conjectured
+
+| Thm JCS-4 — UTF-16 code-unit sort is total and correct
+| Object keys are sorted by UTF-16 code units per RFC 8785, not by byte or
+  lexicographic order. The sort is total, stable, and byte-equal to
+  `ijson-jcs::to_jcs` for the same logical Value.
+| conjectured
+
+| Thm JCS-5 — Canonical bytes determinism + injectivity
+| For every accepted Value `v`, `to_jcs(v)` yields exactly one byte sequence `b`
+  with: (a) determinism — `to_jcs(v) = to_jcs(v')` whenever `v` and `v'` are the
+  same logical JSON value modulo key order/whitespace; (b) injectivity — distinct
+  logical values yield distinct `b`; (c) minimal separators, UTF-8, compact form.
+| conjectured
+
+| Thm JCS-6 — Idempotence
+| `to_jcs(parse_jcs(to_jcs(v))) = to_jcs(v)`. Canon is a normal form: applying
+  it twice is the same as applying it once.
+| conjectured
+
+| Thm JCS-7 — Trailing-newline rule exact
+| `check` accepts `b` or `b ++ "\\n"` and nothing else (no `\\r\\n`, no double
+  newline, no trailing space, no leading whitespace). `fix` always writes
+  `b ++ "\\n"`. `canon` writes `b` with no trailing newline. Exit codes are
+  0/1/2 exactly as `ijson-jcs` (see `docs/IJSON_JCS_INTEGRATION.adoc`).
+| conjectured
+
+| Thm JCS-8 — Byte equality with ijson-jcs
+| For every input in the shared corpus, `kyq canon` (YAML or JSON) and
+  `ijson-jcs canon` (JSON) produce byte-equal output when given logically equal
+  values. In particular, `kyq check`/`fix` and `ijson-jcs check`/`fix` agree on
+  OK/NOT CANONICAL/INVALID for JSON inputs.
+| conjectured
+
+| Thm JCS-9 — Error taxonomy completeness + location
+| Every invalid or non-canonical input maps to exactly one diagnostic in the
+  estate error taxonomy (parse error, validation error, canonicalisation error)
+  with kind, message, and source location (line/column/path where defined).
+  No invalid input is classified valid; no other error kinds are invented.
+| conjectured
+|===
+
+== 6. Resource + security bounds
+
+[cols="1,3,1",options="header"]
+|===
+| Id | Statement | Status
+
+| Thm SEC-1 — Resource bounds
+| Parsing and canonicalisation terminate within stated limits (time/memory) on
+  every input up to max-document size; excessive inputs fail with a limits
+  error, not an OOM or hang.
+| conjectured
+
+| Thm SEC-2 — No information leak via error messages
+| Error messages contain only the input's structure/locations and the reason;
+  they do not leak secrets, file system layout, or internal state beyond the
+  stated contract.
+| conjectured
+
+| Thm SEC-3 — CI/CD non-bypass
+| No input can cause the CI checks (gitleaks, CodeQL, Hypatia, deed/K9
+  validation, lock-sync) to be skipped or reported green by avoidance.
+  Workflows use minimal `permissions:` and SHA-pinned actions.
+| conjectured
+|===
+
+== 7. Evidence required per theorem (not per proof)
+
+[cols="1,2,2",options="header"]
+|===
+| Evidence | What it looks like | Covers
+
+| Executable spec
+| `docs/KYAML_SPEC.adoc`, `docs/IJSON_JCS_INTEGRATION.adoc`, `docs/status/ROADMAP.adoc`
+| Statements of what is proven (theorems), not how.
+
+| Property tests
+| `cargo test --property` + corpus (`tests/fixtures/`, `examples/`) + generated
+  arbitraries (proptest/quickcheck)
+| Totality, determinism, idempotence, injectivity, error completeness — at scale.
+
+| Fixtures
+| Golden corpora shared with `ijson-jcs` (valid/duplicate-key/unsafe-integer/
+  surrogate/noncharacter/canonical-bytes pairs)
+| Boundary cases spec writers miss.
+
+| Mechanised proof
+| `proofs/*.lean` / `proofs/*.v` / `proofs/*.tla` checking the same statements
+  against the executable spec.
+| The step from "tested" to "proven"; built in Phase 3.
+
+| Affirmation
+| `docs/AFFIRMATION.adoc` per milestone (as in `docs/affirmations/` for `ijson-jcs`)
+| What was true and checkable at a stamped commit.
+|===
+
+== 8. Non-theorems (what we explicitly do not claim)
+
+* That YAML 1.2 outside the KYAML subset is handled — it is excluded or rejected
+  per `docs/KYAML_SPEC.adoc`.
+* That custom CRD schemas are validated — only the listed K8s kinds and their
+  target versions (`v1.25 → v1.30`) are in scope for completeness.
+* That performance targets (`gradings/performance.toml`) are already met — they
+  are gates for Phase 4, after correctness.
+* Any claim about AffineScript proving termination/memory safety on its own —
+  that belongs in the AffineScript toolchain's proofs, not kyq's.
+

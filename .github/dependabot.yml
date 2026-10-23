@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
-# Dependabot configuration for RSR-compliant repositories
-# Covers common ecosystems - remove unused ones for your project
+# Dependabot configuration for kyq — only ecosystems with manifests.
+# See docs/ULTRAPLAN.adoc §3.1 and hyperpolymath/standards cargo guidance.
+# GitHub Actions: always. Cargo: security-only (open-pull-requests-limit: 0).
+# mix / npm / pip removed — no manifests exist, and they produced 3× failure runs.
 
 version: 2
 updates:
@@ -41,36 +43,10 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 0
 
-  # Elixir/Mix
-  - package-ecosystem: "mix"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    groups:
-      dependency-updates:
-        patterns: ["*"]
-
-  # Node.js/npm
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    groups:
-      dependency-updates:
-        patterns: ["*"]
-
-  # Python/pip
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    groups:
-      dependency-updates:
-        patterns: ["*"]
-
   # NOTE: Nix is banned estate-wide — Guix is the sole package manager.
   # Do not add a `nix` ecosystem here. Guix has no Dependabot ecosystem;
   # pin Guix channels/manifests via build/ tooling instead.
+  #
+  # NOTE: Elixir/Mix, Node/npm, Python/pip are omitted until this repo has
+  # mix.exs / package.json / requirements.txt (they produced Dependabot failures
+  # with no manifests — see docs/ULTRAPLAN.adoc).
