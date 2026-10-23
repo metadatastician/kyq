@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq — MetaManifold-WebUI Boundary Inventory (Phase 1, steps 3–4)
+:toc: macro
+:icons: font
+:revdate: 2026-10-23
+:status: PARTIAL — browser response boundaries reviewed; full Phase 1 inventory pending
+
+Abstract: inventory of ALL JSON/YAML boundaries in
+`hyperpolymath/MetaManifold-WebUI` per handover steps 3–4. This file is the
+authoritative list that `docs/COVERAGE_MATRIX.adoc` summarises. Do not assume
+boundaries; measure.
+
+toc::[]
+
+== Scope (handover step 3)
+
+Search `hyperpolymath/MetaManifold-WebUI` for:
+
+* Application code: Julia (`Oxygen.jl` handlers), TypeScript frontend (`fetch`, `JSON.parse`),
+  middleware.
+* Configuration: `*.json`, `*.yaml`, `*.yml`, `*.toml`.
+* Persistence: DB JSON columns, file IO, generated artifacts.
+* Generated artifacts: build outputs, benchmarks, scripts.
+* Tests, workflows (`.github/workflows/*.yml`), hooks, installers.
+
+Method (run from the MetaManifold-WebUI repository root):
+
+[source,shell]
+----
+rg -n 'JSON\.parse|JSON\.stringify|JSON3|YAML\.|oxygen.*json|serde_json|\.json\s*\(|\bfetch\s*\(|\.(text|arrayBuffer|bytes|blob)\s*\(|\b\w+\.body\b|HTTP\.payload'
+rg --files -g '*.{json,yaml,yml}'
+----
+
+Manually review matching files and follow response consumers: `.json()` is an
+implicit JSON parse even without `JSON.parse`. Record raw-body reads and whether
+they parse JSON, carry opaque data, or read local files. Search hits alone do
+not establish a JSON boundary.
+
+Record pinned `ijson-jcs` commit and estate KYAML profile commits here.
+
+== Classification (handover step 4)
+
+For each file found, assign:
+
+* *first-party* — MetaManifold owns format; must be centralised behind kyq adapters (Phase 5 step 24).
+* *legacy/versioned* — old persisted format; version bump required (step 32).
+* *third-party* — external API; validate inbound.
+* *generated* — CI/build output; emit KYAML/JCS.
+* *invalid test fixture* — intentionally broken; never rewrite (step 31).
+* *independent reference oracle* — ijson-jcs vectors; never counted as violation.
+
+== Inventory
+
+[cols="1,1,3",options="header"]
+|===
+| File | Classification | Notes
+
+| `frontend/src/api/client.ts` | first-party
+| `loadConfig`, `request`, `putText`, `report.add`, and `figures.raster` parse
+  success/error bodies with `res.json()`; `rawPost` parses error JSON and
+  returns successful raw responses to download consumers. `request` preserves
+  `204` as `undefined`. `getText` reads logs and alignments;
+  table/publication exports use `res.blob()` for opaque XLSX/CSV downloads.
+
+| `frontend/src/api/events.ts` | first-party
+| `EventSource` delivers decoded SSE text; `parseFrame` calls `JSON.parse`
+  for job/stage events. This boundary does not expose original response bytes.
+
+| `frontend/src/tree/model.ts` | third-party
+| `parseJplace` parses jplace JSON text via `JSON.parse`; it consumes text
+  from tree content returned by `api.trees.get` or local uploads. Preserve the
+  external format and validate inbound.
+
+| `frontend/src/views/run/DADA2Panel.tsx` | first-party
+| Fetches a log URL with `fetch` and reads `res.text()` for display; this is
+  a text response, not a JSON parse.
+
+| _remaining Phase 1 boundaries_ | — | Full inventory pending.
+|===
+
+Browser response review performed on 2026-10-23 at MetaManifold-WebUI commit
+`ccbf5977cacbb69cc09cdd9486f223e404ad88e8`. Matching
+`frontend/src/phylogeny/common.tsx` and `frontend/src/components/TreesPanel.tsx`
+read local `File.text()` uploads; `frontend/src/figure/export.ts` reads a locally
+generated PNG `Blob.arrayBuffer()`. These are not HTTP JSON response parsers.
+Existing `JSON.parse`/`JSON.stringify` matches in frontend state, chart, encoder,
+and test files remain part of the full inventory; the rows above record the
+response paths reviewed here.
+
+== Next action
+
+Run inventory, fill table, copy summary rows to `docs/COVERAGE_MATRIX.adoc`,
+get review from MetaManifold maintainers before any Phase 5 edits.

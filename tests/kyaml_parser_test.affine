@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
-// kyq KYAML Parser Tests — stub that type-checks; real cases in Phase 1
+// KYAML parser regressions; execution awaits the AffineScript grammar port.
 
 module Kyaml.Parser.Test;
 
 use Kyaml.Parser;
 use Kyaml.Ast;
+use Kyaml.Jcs;
 use prelude::{ Option, Some, None };
 
 pub type TestResult =
@@ -19,4 +20,114 @@ pub fn test_basic_yaml_parsing() -> TestResult {
     ParseSuccess(_doc) => TestPass,
     ParseError(err) => TestFail("Parse failed: " ++ err.message)
   }
+}
+
+// Compare complete scalar/collection trees using the existing JSON serializer.
+// The fixtures use ASCII keys and integers, independent of the pending JCS port.
+fn expect_root(yaml: String, expected_json: String) -> TestResult {
+  match Parser::parse_yaml(yaml) {
+    ParseSuccess(doc) => {
+      let actual = Jcs::to_jcs(doc.root);
+      if actual == expected_json { TestPass }
+      else { TestFail("Unexpected AST: " ++ actual) }
+    },
+    ParseError(err) => TestFail("Parse failed: " ++ err.message)
+  }
+}
+
+fn expect_error(yaml: String, line: Int, column: Int, context: String) -> TestResult {
+  match Parser::parse_yaml(yaml) {
+    ParseSuccess(_doc) => TestFail("Expected a parse error"),
+    ParseError(err) => {
+      match (err.line, err.column, err.context) {
+        (Some(actual_line), Some(actual_column), Some(actual_context)) => {
+          if actual_line == line && actual_column == column && actual_context == context && err.message != "" {
+            TestPass
+          } else {
+            TestFail("Incorrect error location or context")
+          }
+        },
+        _ => TestFail("Missing error location or context")
+      }
+    }
+  }
+}
+
+pub fn test_bare_dash_items() -> TestResult {
+  expect_root("-\n- \n- value\n- -1\n", "[null,null,\"value\",-1]")
+}
+
+pub fn test_bare_dash_nested_blocks() -> TestResult {
+  expect_root("-\n    name: first\n-\n  - nested\n- last\n",
+    "[{\"name\":\"first\"},[\"nested\"],\"last\"]")
+}
+
+pub fn test_detected_mapping_indent() -> TestResult {
+  expect_root("root:\n    child:\n       value: 1\n    sibling: 2\ntail: 3\n",
+    "{\"root\":{\"child\":{\"value\":1},\"sibling\":2},\"tail\":3}")
+}
+
+pub fn test_indentless_sequence_under_key() -> TestResult {
+  expect_root("spec:\n  containers:\n  # comment before the sequence\n  - name: nginx\n    image: nginx:1.25\n  - name: sidecar\n    image: busybox\n  replicas: 2\n",
+    "{\"spec\":{\"containers\":[{\"image\":\"nginx:1.25\",\"name\":\"nginx\"},{\"image\":\"busybox\",\"name\":\"sidecar\"}],\"replicas\":2}}")
+}
+
+pub fn test_inline_key_nested_mapping_and_siblings() -> TestResult {
+  expect_root("- metadata:\n      name: first\n  enabled: true\n- metadata:\n  enabled: false\n",
+    "[{\"enabled\":true,\"metadata\":{\"name\":\"first\"}},{\"enabled\":false,\"metadata\":null}]")
+}
+
+pub fn test_inline_key_indentless_sequence() -> TestResult {
+  expect_root("- ports:\n  - 80\n  - 443\n  name: web\n- ports:\n    - 8080\n  name: admin\n",
+    "[{\"name\":\"web\",\"ports\":[80,443]},{\"name\":\"admin\",\"ports\":[8080]}]")
+}
+
+pub fn test_deep_sequence_mapping_continuation() -> TestResult {
+  expect_root("items:\n    - name: first\n      settings:\n          enabled: true\n    - name: second\ntail: 2\n",
+    "{\"items\":[{\"name\":\"first\",\"settings\":{\"enabled\":true}},{\"name\":\"second\"}],\"tail\":2}")
+}
+
+pub fn test_mapping_without_colon() -> TestResult {
+  expect_error("name: ok\nmalformed\nnext: value\n", 2, 1, "malformed")
+}
+
+pub fn test_nested_mapping_without_colon() -> TestResult {
+  expect_error("root:\n  name: ok\n  malformed\ntail: 2\n", 3, 3, "  malformed")
+}
+
+pub fn test_sequence_mapping_without_colon() -> TestResult {
+  expect_error("- name: ok\n  malformed\n- next\n", 2, 3, "  malformed")
+}
+
+pub fn test_trailing_indented_content() -> TestResult {
+  expect_error("name: ok\n  unexpected: value\n", 2, 3, "  unexpected: value")
+}
+
+pub fn test_trailing_dedented_content() -> TestResult {
+  expect_error("  name: ok\nother: value\n", 2, 1, "other: value")
+}
+
+pub fn test_mixed_root_blocks() -> TestResult {
+  expect_error("name: ok\n- unexpected\n", 2, 1, "- unexpected")
+}
+
+pub fn test_document_start_separator() -> TestResult {
+  expect_error("---\nname: value\n", 1, 1, "---")
+}
+
+pub fn test_document_end_separator() -> TestResult {
+  expect_error("name: value\n... # end\n", 2, 1, "... # end")
+}
+
+pub fn test_second_document_separator() -> TestResult {
+  expect_error("name: first\n--- # next\nname: second\n", 2, 1, "--- # next")
+}
+
+pub fn test_trailing_comments_and_marker_strings() -> TestResult {
+  expect_root("name: ---\nvalue: '...'\n\n# ---\n  # trailing comment\n",
+    "{\"name\":\"---\",\"value\":\"...\"}")
+}
+
+pub fn test_empty_document() -> TestResult {
+  expect_root("\n# only a comment\n", "{}")
 }
