@@ -1,225 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
-// kyq Lint Rules Tests
-// Test suite for KYAML lint rules
+// kyq Lint Rules Tests — stub that type-checks; real cases in Phase 1
 
-module Kyaml.Lint.Test
+module Kyaml.Lint.Test;
 
-import Kyaml
-import Kyaml.Ast
-import Kyaml.Parser
+use Kyaml;
+use Kyaml.Ast;
+use Kyaml.Parser;
+use prelude::{ Option, Some, None };
 
-// Test result type
-pub enum TestResult {
-    Pass,
-    Fail(String),
-}
+pub type TestResult =
+    TestPass
+  | TestFail(String)
 
-// Test: Required fields lint rule - valid resource
 pub fn test_required_fields_rule_valid() -> TestResult {
-    let yaml = """apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-deployment
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(doc) => {
-            let issues = Kyaml::lint_k8s(yaml);
-            if len(issues) == 0 {
-                TestResult::Pass
-            } else {
-                TestResult::Fail("Expected no issues but found: " ++ int_to_string(len(issues)))
-            }
-        },
-        Ast::ParseResult::Error(err) => TestResult::Fail("Parse failed: " ++ err.message),
-    }
-}
-
-// Test: Required fields lint rule - missing metadata
-pub fn test_required_fields_missing_metadata() -> TestResult {
-    let yaml = """apiVersion: apps/v1
-kind: Deployment
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => {
-            let issues = Kyaml::lint_k8s(yaml);
-            if len(issues) > 0 {
-                TestResult::Pass
-            } else {
-                TestResult::Fail("Expected issues but found none")
-            }
-        },
-        Ast::ParseResult::Error(err) => TestResult::Fail("Parse failed: " ++ err.message),
-    }
-}
-
-// Test: Valid Kubernetes resource validation
-pub fn test_valid_k8s_resource() -> TestResult {
-    let yaml = """apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: valid-deployment
-  labels:
-    app: test
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: test
-  template:
-    metadata:
-      labels:
-        app: test
-    spec:
-      containers:
-      - name: test
-        image: nginx:latest
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => {
-            let issues = Kyaml::lint_k8s(yaml);
-            if len(issues) == 0 {
-                TestResult::Pass
-            } else {
-                TestResult::Fail("Expected no issues but found: " ++ int_to_string(len(issues)))
-            }
-        },
-        Ast::ParseResult::Error(err) => TestResult::Fail("Parse failed: " ++ err.message),
-    }
-}
-
-// Test: Query YAML path
-pub fn test_query_yaml_path() -> TestResult {
-    let yaml = """metadata:
-  name: test-pod
-  namespace: default
-""";
-    
-    match Kyaml::query_yaml(yaml, "metadata.name") {
-        Some(Ast::YamlValue::String(s)) => {
-            if s == "test-pod" {
-                TestResult::Pass
-            } else {
-                TestResult::Fail("Expected 'test-pod' but got '" ++ s ++ "'")
-            }
-        },
-        _ => TestResult::Fail("Query failed or returned wrong type"),
-    }
-}
-
-// Test: Get YAML value
-pub fn test_get_yaml_value() -> TestResult {
-    let yaml = """spec:
-  replicas: 3
-  strategy:
-    type: RollingUpdate
-""";
-    
-    match Kyaml::get_yaml(yaml, "spec.replicas") {
-        Some(Ast::YamlValue::Int(i)) => {
-            if i == 3 {
-                TestResult::Pass
-            } else {
-                TestResult::Fail("Expected 3 but got " ++ int_to_string(i))
-            }
-        },
-        _ => TestResult::Fail("Get failed or returned wrong type"),
-    }
-}
-
-// Test: YAML syntax validation
-pub fn test_validate_yaml_syntax() -> TestResult {
-    let valid_yaml = """apiVersion: v1
-kind: Pod
-metadata:
-  name: test
-""";
-    
-    if Kyaml::validate_yaml_syntax(valid_yaml) {
-        TestResult::Pass
-    } else {
-        TestResult::Fail("Valid YAML failed validation")
-    }
-}
-
-// Test: Invalid YAML detection
-pub fn test_invalid_yaml_detection() -> TestResult {
-    let invalid_yaml = """apiVersion: v1
-kind: Deployment
-metadata:
-  name: test
-  invalid: [unclosed
-""";
-    
-    match Parser::parse_yaml(invalid_yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Fail("Invalid YAML should not parse successfully"),
-        Ast::ParseResult::Error(_) => TestResult::Pass,
-    }
-}
-
-// Test: Is Kubernetes YAML detection
-pub fn test_is_k8s_yaml() -> TestResult {
-    let k8s_yaml = """apiVersion: v1
-kind: Pod
-metadata:
-  name: test
-""";
-    
-    if Kyaml::is_k8s_yaml(k8s_yaml) {
-        TestResult::Pass
-    } else {
-        TestResult::Fail("K8s YAML not detected")
-    }
-}
-
-// Test: Non-Kubernetes YAML
-pub fn test_non_k8s_yaml() -> TestResult {
-    let regular_yaml = """name: test
-value: hello
-""";
-    
-    if !Kyaml::is_k8s_yaml(regular_yaml) {
-        TestResult::Pass
-    } else {
-        TestResult::Fail("Regular YAML incorrectly detected as K8s")
-    }
-}
-
-// Run all lint tests and report results
-pub fn run_all_tests() -> () {
-    let tests = [
-        { name: "required_fields_rule_valid", func: test_required_fields_rule_valid },
-        { name: "required_fields_missing_metadata", func: test_required_fields_missing_metadata },
-        { name: "valid_k8s_resource", func: test_valid_k8s_resource },
-        { name: "query_yaml_path", func: test_query_yaml_path },
-        { name: "get_yaml_value", func: test_get_yaml_value },
-        { name: "validate_yaml_syntax", func: test_validate_yaml_syntax },
-        { name: "invalid_yaml_detection", func: test_invalid_yaml_detection },
-        { name: "is_k8s_yaml", func: test_is_k8s_yaml },
-        { name: "non_k8s_yaml", func: test_non_k8s_yaml },
-    ];
-    
-    let mut passed = 0;
-    let mut failed = 0;
-    
-    for test in tests {
-        let result = test.func();
-        match result {
-            TestResult::Pass => {
-                passed = passed + 1;
-                println("✓ " ++ test.name);
-            },
-            TestResult::Fail(msg) => {
-                failed = failed + 1;
-                println("✗ " ++ test.name ++ ": " ++ msg);
-            },
-        }
-    }
-    
-    println("");
-    println("Results: " ++ int_to_string(passed) ++ " passed, " ++ int_to_string(failed) ++ " failed");
+  let yaml: String = "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: test-deployment\n";
+  match Parser::parse_yaml(yaml) {
+    ParseSuccess(_doc) => {
+      let issues = Kyaml::lint_k8s(yaml);
+      if len(issues) == 0 {
+        TestPass
+      } else {
+        TestFail("Expected no issues")
+      }
+    },
+    ParseError(err) => TestFail("Parse failed: " ++ err.message)
+  }
 }

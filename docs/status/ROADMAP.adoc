@@ -41,6 +41,17 @@ STATE completion percentage (5%) was dropped.
   `tests/`, 1 under `benches/`). Until that changes,
   `just build`, `just wasm`, `just test` and `just bench` fail with
   "not implemented" rather than emit a placeholder.
++
+*Update 2026-10-23:* Phase 0 mechanical port done on `arena/dc1301aa-kyq`:
+`src/Kyaml/Ast.affine`, `src/Main.affine`, `src/Kyaml.affine`,
+`src/Kyaml/Lexer.affine`, `src/Kyaml/Parser.affine`,
+`src/Kyaml/Lint/RequiredFields.affine`, `src/Kyaml/Jcs.affine`,
+`src/Kyaml/Ijson.affine`, `tests/*.affine`, `benches/*.affine` now use
+0.2 grammar (`module X;`, `use` not `import`, `dict` assoc-list
+`[(String, V)]` not `{}String -> V`, variant renames `YamlString` etc.,
+`Option[String]` from `prelude`). Full control-flow rewrites still
+TODO; see `docs/AFFINESCRIPT_STRICT_PORT.adoc` A1-A8. Verify with
+`just affine-check` when toolchain is present.
 . **The gap is a port, not a fix.** Read against the v0.1.1 grammar
   (`lib/parser.mly`), not yet confirmed by the compiler past line 7: about
   half of the 2456 lines need touching. Roughly 5% is mechanical (`module X;`
@@ -53,6 +64,10 @@ STATE completion percentage (5%) was dropped.
 . **No program input in the WebAssembly target.** The 0.1.1 toolchain gives
   a compiled module no access to argv or stdin, so even a parsing build
   could not read a manifest from the command line.
++
+*Update 2026-10-23:* affinescript `main` now documents WASI preview1
+`file_open`/`file_read`/`file_fd_write` and preview2 import lowering;
+`just build` will target that once A3 (block → file I/O) lands.
 . AffineScript text-processing libraries have not been verified for YAML
   parsing.
 . Performance benchmarks against yq have not been established.

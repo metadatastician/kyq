@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+//
+// JCS (RFC 8785) + I-JSON (RFC 7493) canonicalisation — AffineScript port
+// of hyperpolymath/ijson-jcs. Phase 2 stub that type-checks; full port
+// implements UTF-16 sort, ES number rules, and I-JSON validation.
+
+module Kyaml.Jcs;
+
+use Kyaml.Ast;
+use prelude::{ Option, Some, None };
+use json::{ Json, JNull, JBool, JInt, JFloat, JString, JArray, JObject };
+use dict;
+
+// ---------------------------------------------------------------------------
+// I-JSON validation (RFC 7493) — stub; full checks in A6
+// ---------------------------------------------------------------------------
+
+pub type IJsonError =
+    IJsonOk
+  | IJsonDuplicateKey(String)
+  | IJsonUnsafeInteger(Int)
+  | IJsonNonFiniteNumber
+  | IJsonSurrogate
+  | IJsonNonCharacter(String)
+
+pub fn validate_i_json(value: YamlValue) -> IJsonError {
+  // stub: always ok until A6 lands the safe-integer/surrogate checks
+  IJsonOk
+}
+
+// ---------------------------------------------------------------------------
+// YamlValue -> Json bridge (lossless on the KYAML subset)
+// ---------------------------------------------------------------------------
+
+pub fn yaml_to_json(v: YamlValue) -> Json {
+  match v {
+    YamlNull => JNull,
+    YamlBool(b) => JBool(b),
+    YamlInt(i) => JInt(i),
+    YamlFloat(f) => JFloat(f),
+    YamlString(s) => JString(s),
+    YamlSequence(seq) => {
+      let mut out: [Json] = [];
+      for item in seq {
+        out = out ++ [yaml_to_json(item)];
+      }
+      JArray(out)
+    },
+    YamlMapping(pairs) => {
+      let mut fields: [(String, Json)] = [];
+      for (k, val) in pairs {
+        fields = fields ++ [(k, yaml_to_json(val))];
+      }
+      JObject(fields)
+    },
+    YamlAnchor(s) => JString(s),
+    YamlAlias(s) => JString(s),
+    YamlTag(h, suffix) => JString(h ++ suffix)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// JCS canonical serialisation (RFC 8785)
+// ---------------------------------------------------------------------------
+
+// UTF-16 code-unit sort is total order per RFC 8785 §3.2.3.
+// Phase 2 stub uses lexicographic byte order which matches UTF-16 for
+// ASCII keys (covers k8s manifest keys: apiVersion, kind, metadata…).
+// Full UTF-16 sort to be implemented in A6 with surrogate-pair awareness.
+fn sort_keys_utf16(keys: [(String, Json)]) -> [(String, Json)] {
+  // insertion sort — deterministic, no stdlib sort yet
+  let mut sorted: [(String, Json)] = [];
+  for (k, v) in keys {
+    let mut inserted: Bool = false;
+    let mut next: [(String, Json)] = [];
+    for (sk, sv) in sorted {
+      if !inserted && k < sk {
+        next = next ++ [(k, v)];
+        inserted = true;
+      }
+      next = next ++ [(sk, sv)];
+    }
+    if !inserted {
+      next = next ++ [(k, v)];
+    }
+    sorted = next;
+  }
+  sorted
+}
+
+fn escape_json_string(s: String) -> String {
+  // minimal escaping: backslash and quote. Full RFC 8259 escaping in A6.
+  let mut out: String = "\"";
+  for ch in s {
+    if ch == '"' {
+      out = out ++ "\\\"";
+    } else if ch == '\\' {
+      out = out ++ "\\\\";
+    } else {
+      out = out ++ ch;
+    }
+  }
+  out ++ "\""
+}
+
+fn canonical_json_string(j: Json) -> String {
+  match j {
+    JNull => "null",
+    JBool(b) => if b { "true" } else { "false" },
+    JInt(i) => Int::to_string(i),
+    JFloat(f) => Float::to_string(f),
+    JString(s) => escape_json_string(s),
+    JArray(xs) => {
+      let mut s: String = "[";
+      let mut first: Bool = true;
+      for x in xs {
+        if !first { s = s ++ ","; }
+        s = s ++ canonical_json_string(x);
+        first = false;
+      }
+      s ++ "]"
+    },
+    JObject(fields) => {
+      let sorted = sort_keys_utf16(fields);
+      let mut s: String = "{";
+      let mut first: Bool = true;
+      for (k, v) in sorted {
+        if !first { s = s ++ ","; }
+        s = s ++ escape_json_string(k) ++ ":" ++ canonical_json_string(v);
+        first = false;
+      }
+      s ++ "}"
+    }
+  }
+}
+
+// Public API — mirrors ijson-jcs crate: to_jcs returns canonical bytes (UTF-8)
+// In AffineScript String is UTF-8, so we return String (bytes-equivalent).
+pub fn to_jcs(value: YamlValue) -> String {
+  let j = yaml_to_json(value);
+  canonical_json_string(j)
+}
+
+pub fn to_jcs_bytes(value: YamlValue) -> String {
+  to_jcs(value)
+}
+
+// check/fix/canon semantics — thin wrappers around to_jcs
+pub fn is_canonical(yaml: String) -> Bool {
+  match Kyaml.Parser::parse_yaml(yaml) {
+    ParseSuccess(doc) => {
+      let canon = to_jcs(doc.root);
+      // trailing-newline rule: check accepts canon OR canon ++ "\n"
+      yaml == canon || yaml == canon ++ "\n"
+    },
+    ParseError(_e) => false
+  }
+}

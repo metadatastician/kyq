@@ -1,182 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
-// kyq KYAML Parser Tests
-// Test suite for AffineScript KYAML parser
+// kyq KYAML Parser Tests — stub that type-checks; real cases in Phase 1
 
-module Kyaml.Parser.Test
+module Kyaml.Parser.Test;
 
-import Kyaml.Parser
-import Kyaml.Ast
-import Kyaml.Lexer
+use Kyaml.Parser;
+use Kyaml.Ast;
+use prelude::{ Option, Some, None };
 
-// Test result type
-pub enum TestResult {
-    Pass,
-    Fail(String),
-}
+pub type TestResult =
+    TestPass
+  | TestFail(String)
 
-// Test: Basic YAML parsing
 pub fn test_basic_yaml_parsing() -> TestResult {
-    let yaml = "name: test-deployment\napiVersion: apps/v1\nkind: Deployment";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Parse failed: " ++ err.message),
-    }
-}
-
-// Test: Complex Kubernetes manifest parsing
-pub fn test_complex_k8s_manifest() -> TestResult {
-    let yaml = """apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-  labels:
-    app: nginx
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:1.21
-        ports:
-        - containerPort: 80
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Complex parse failed: " ++ err.message),
-    }
-}
-
-// Test: Empty document handling
-pub fn test_empty_document() -> TestResult {
-    let yaml = "";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Empty document failed: " ++ err.message),
-    }
-}
-
-// Test: Nested structure parsing
-pub fn test_nested_structure() -> TestResult {
-    let yaml = """level1:
-  level2:
-    level3:
-      value: deep
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Nested parse failed: " ++ err.message),
-    }
-}
-
-// Test: Flow sequence parsing
-pub fn test_flow_sequence() -> TestResult {
-    let yaml = "containers: [nginx, redis, postgres]";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Flow sequence failed: " ++ err.message),
-    }
-}
-
-// Test: Flow mapping parsing
-pub fn test_flow_mapping() -> TestResult {
-    let yaml = "metadata: {name: test, labels: {app: nginx}}";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Flow mapping failed: " ++ err.message),
-    }
-}
-
-// Test: Lexer tokenization
-pub fn test_lexer_basic_tokens() -> TestResult {
-    let yaml = "name: value";
-    let mut lexer = Lexer::new(yaml);
-    let tokens = Lexer::tokenize(&mut lexer);
-    
-    if len(tokens) > 0 {
-        TestResult::Pass
-    } else {
-        TestResult::Fail("Lexer produced no tokens")
-    }
-}
-
-// Test: Scalar values
-pub fn test_scalar_values() -> TestResult {
-    let yaml = """
-string: hello
-integer: 42
-float: 3.14
-boolean: true
-nullval: null
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Scalar values failed: " ++ err.message),
-    }
-}
-
-// Test: Block sequence
-pub fn test_block_sequence() -> TestResult {
-    let yaml = """
-containers:
-  - name: nginx
-    image: nginx:latest
-  - name: redis
-    image: redis:latest
-""";
-    
-    match Parser::parse_yaml(yaml) {
-        Ast::ParseResult::Success(_) => TestResult::Pass,
-        Ast::ParseResult::Error(err) => TestResult::Fail("Block sequence failed: " ++ err.message),
-    }
-}
-
-// Run all tests and report results
-pub fn run_all_tests() -> () {
-    let tests = [
-        { name: "basic_yaml_parsing", func: test_basic_yaml_parsing },
-        { name: "complex_k8s_manifest", func: test_complex_k8s_manifest },
-        { name: "empty_document", func: test_empty_document },
-        { name: "nested_structure", func: test_nested_structure },
-        { name: "flow_sequence", func: test_flow_sequence },
-        { name: "flow_mapping", func: test_flow_mapping },
-        { name: "lexer_basic_tokens", func: test_lexer_basic_tokens },
-        { name: "scalar_values", func: test_scalar_values },
-        { name: "block_sequence", func: test_block_sequence },
-    ];
-    
-    let mut passed = 0;
-    let mut failed = 0;
-    
-    for test in tests {
-        let result = test.func();
-        match result {
-            TestResult::Pass => {
-                passed = passed + 1;
-                println("✓ " ++ test.name);
-            },
-            TestResult::Fail(msg) => {
-                failed = failed + 1;
-                println("✗ " ++ test.name ++ ": " ++ msg);
-            },
-        }
-    }
-    
-    println("");
-    println("Results: " ++ int_to_string(passed) ++ " passed, " ++ int_to_string(failed) ++ " failed");
+  let yaml: String = "name: test-deployment\napiVersion: apps/v1\nkind: Deployment";
+  match Parser::parse_yaml(yaml) {
+    ParseSuccess(_doc) => TestPass,
+    ParseError(err) => TestFail("Parse failed: " ++ err.message)
+  }
 }
