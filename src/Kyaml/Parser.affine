@@ -1,43 +1,381 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
-// KYAML Parser — stub that type-checks; full parsing in Phase 1 (A3)
+// KYAML Parser — minimal block YAML parser for K8s manifests
+// Handles the 2-space indent style used in examples/deployment.yaml and
+// tests/fixtures/invalid-deployment.yaml. Full YAML 1.2 in Phase 3.
 
 module Kyaml.Parser;
 
-use Kyaml.Ast;
-use Kyaml.Lexer;
+use Kyaml.Ast::*;
 use prelude::{ Option, Some, None };
 
-pub struct ParserState {
-  tokens: [PositionedToken],
-  position: Int
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn get_indent(line: String) -> Int {
+  let mut i: Int = 0;
+  while i < len(line) {
+    let ch = string_get(line, i);
+    if ch == ' ' || ch == '\t' {
+      i = i + 1;
+    } else {
+      break;
+    }
+  }
+  i
 }
 
-pub fn new(input: String) -> ParserState {
-  let lex = Lexer::new(input);
-  let toks = Lexer::tokenize(lex);
-  #{ tokens: toks, position: 0 }
+fn trim(s: String) -> String {
+  let mut start: Int = 0;
+  let mut end: Int = len(s);
+  while start < end {
+    let ch = string_get(s, start);
+    if ch == ' ' || ch == '\t' || ch == '\r' {
+      start = start + 1;
+    } else {
+      break;
+    }
+  }
+  while end > start {
+    let ch = string_get(s, end - 1);
+    if ch == ' ' || ch == '\t' || ch == '\r' {
+      end = end - 1;
+    } else {
+      break;
+    }
+  }
+  string_sub(s, start, end - start)
 }
+
+fn is_empty_line(line: String) -> Bool {
+  trim(line) == "" || string_get(trim(line), 0) == '#'
+}
+
+fn is_list_item(line: String) -> Bool {
+  let t = trim(line);
+  len(t) >= 2 && string_get(t, 0) == '-' && string_get(t, 1) == ' '
+}
+
+fn strip_list_prefix(line: String) -> String {
+  let t = trim(line);
+  // "- " is 2 chars
+  string_sub(t, 2, len(t) - 2)
+}
+
+fn split_first_colon(s: String) -> Option[(String, String)] {
+  let mut i: Int = 0;
+  while i < len(s) {
+    let ch = string_get(s, i);
+    if ch == ':' {
+      let k = trim(string_sub(s, 0, i));
+      let v = trim(string_sub(s, i + 1, len(s) - (i + 1)));
+      return Some((k, v));
+    }
+    i = i + 1;
+  }
+  None
+}
+
+fn parse_scalar(s: String) -> YamlValue {
+  let t = trim(s);
+  if t == "" { return YamlNull; }
+  if t == "null" || t == "Null" || t == "~" { return YamlNull; }
+  if t == "true" || t == "True" { return YamlBool(true); }
+  if t == "false" || t == "False" { return YamlBool(false); }
+  // integers: optional leading '-' + digits
+  let mut is_int: Bool = true;
+  let mut i: Int = 0;
+  if len(t) > 0 && string_get(t, 0) == '-' {
+    if len(t) == 1 { is_int = false; } else { i = 1; }
+  }
+  while i < len(t) {
+    let ch = string_get(t, i);
+    if ch < '0' || ch > '9' {
+      is_int = false;
+      break;
+    }
+    i = i + 1;
+  }
+  if is_int {
+    match parse_int(t) {
+      Some(n) => return YamlInt(n),
+      None => ()
+    }
+  }
+  // strip quotes if present
+  if len(t) >= 2 && string_get(t, 0) == '"' && string_get(t, len(t)-1) == '"' {
+    return YamlString(string_sub(t, 1, len(t)-2));
+  }
+  if len(t) >= 2 && string_get(t, 0) == '\'' && string_get(t, len(t)-1) == '\'' {
+    return YamlString(string_sub(t, 1, len(t)-2));
+  }
+  YamlString(t)
+}
+
+fn parse_int(s: String) -> Option[Int] {
+  // reuse stdlib pattern: handle optional '-' then digits
+  if len(s) == 0 { return None; }
+  let mut sign: Int = 1;
+  let mut i: Int = 0;
+  if string_get(s, 0) == '-' {
+    sign = 0 - 1;
+    i = 1;
+    if len(s) == 1 { return None; }
+  }
+  let mut n: Int = 0;
+  while i < len(s) {
+    let ch = string_get(s, i);
+    if ch < '0' || ch > '9' { return None; }
+    n = n * 10 + (char_to_int(ch) - char_to_int('0'));
+    i = i + 1;
+  }
+  Some(sign * n)
+}
+
+fn split_lines(s: String) -> [String] {
+  let mut out: [String] = [];
+  let mut cur: String = "";
+  let mut i: Int = 0;
+  while i < len(s) {
+    let ch = string_get(s, i);
+    if ch == '\n' {
+      out = out ++ [cur];
+      cur = "";
+    } else {
+      cur = cur ++ string_sub(s, i, 1);
+    }
+    i = i + 1;
+  }
+  out = out ++ [cur];
+  out
+}
+
+// ---------------------------------------------------------------------------
+// Core block parser: parses a mapping or sequence at a given indent
+// ---------------------------------------------------------------------------
+
+fn parse_block(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int) {
+  // look ahead to decide if this block is a mapping or sequence
+  let mut j: Int = start;
+  while j < len(lines) {
+    if !is_empty_line(lines[j]) { break; }
+    j = j + 1;
+  }
+  if j >= len(lines) {
+    return (YamlMapping([]), j);
+  }
+  let indent = get_indent(lines[j]);
+  if indent < base_indent {
+    return (YamlMapping([]), j);
+  }
+  // check first non-empty line at this indent
+  if is_list_item(lines[j]) {
+    return parse_sequence(lines, start, base_indent);
+  } else {
+    return parse_mapping(lines, start, base_indent);
+  }
+}
+
+fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int) {
+  let mut pairs: [(String, YamlValue)] = [];
+  let mut i: Int = start;
+  while i < len(lines) {
+    if is_empty_line(lines[i]) {
+      i = i + 1;
+      continue;
+    }
+    let indent = get_indent(lines[i]);
+    if indent < base_indent {
+      break;
+    }
+    if indent > base_indent {
+      // this is a continuation of previous key's nested block — should have been consumed
+      break;
+    }
+    if is_list_item(lines[i]) {
+      break;
+    }
+    let line = trim(lines[i]);
+    match split_first_colon(line) {
+      Some((k, v)) => {
+        if v != "" {
+          let scalar = parse_scalar(v);
+          pairs = pairs ++ [(k, scalar)];
+          i = i + 1;
+        } else {
+          // value is nested block starting at next line with indent+2
+          let next_indent = base_indent + 2;
+          // peek next non-empty line to see if it has indent >= next_indent
+          let mut peek: Int = i + 1;
+          while peek < len(lines) && is_empty_line(lines[peek]) {
+            peek = peek + 1;
+          }
+          if peek < len(lines) && get_indent(lines[peek]) >= next_indent {
+            let (nested, next_i) = parse_block(lines, peek, next_indent);
+            pairs = pairs ++ [(k, nested)];
+            i = next_i;
+          } else {
+            pairs = pairs ++ [(k, YamlNull)];
+            i = i + 1;
+          }
+        }
+      },
+      None => {
+        i = i + 1;
+      }
+    }
+  }
+  (YamlMapping(pairs), i)
+}
+
+fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int) {
+  let mut items: [YamlValue] = [];
+  let mut i: Int = start;
+  while i < len(lines) {
+    if is_empty_line(lines[i]) {
+      i = i + 1;
+      continue;
+    }
+    let indent = get_indent(lines[i]);
+    if indent < base_indent {
+      break;
+    }
+    if indent > base_indent {
+      break;
+    }
+    if !is_list_item(lines[i]) {
+      break;
+    }
+    let after_dash = strip_list_prefix(lines[i]);
+    // after_dash may be "key: value" or just "value" or empty (nested)
+    if after_dash == "" {
+      // list item whose value is an indented block
+      let next_indent = base_indent + 2;
+      let mut peek: Int = i + 1;
+      while peek < len(lines) && is_empty_line(lines[peek]) {
+        peek = peek + 1;
+      }
+      if peek < len(lines) && get_indent(lines[peek]) >= next_indent {
+        let (nested, next_i) = parse_block(lines, peek, next_indent);
+        items = items ++ [nested];
+        i = next_i;
+      } else {
+        items = items ++ [YamlNull];
+        i = i + 1;
+      }
+    } else {
+      match split_first_colon(after_dash) {
+        Some((k, v)) => {
+          // list item is a mapping with first pair (k, v) plus continuation lines
+          if v != "" {
+            // simple pair plus possible extra keys in following indented lines at indent+2
+            let mut first_pairs: [(String, YamlValue)] = [(k, parse_scalar(v))];
+            let next_indent = base_indent + 2;
+            let mut peek: Int = i + 1;
+            while peek < len(lines) && is_empty_line(lines[peek]) {
+              peek = peek + 1;
+            }
+            if peek < len(lines) && get_indent(lines[peek]) >= next_indent && !is_list_item(lines[peek]) {
+              let (rest, next_i) = parse_mapping(lines, peek, next_indent);
+              match rest {
+                YamlMapping(rest_pairs) => {
+                  for (rk, rv) in rest_pairs {
+                    first_pairs = first_pairs ++ [(rk, rv)];
+                  }
+                  items = items ++ [YamlMapping(first_pairs)];
+                  i = next_i;
+                },
+                _ => {
+                  items = items ++ [YamlMapping(first_pairs)];
+                  i = i + 1;
+                }
+              }
+            } else {
+              items = items ++ [YamlMapping(first_pairs)];
+              i = i + 1;
+            }
+          } else {
+            // "k:" with nested
+            let mut first_pairs: [(String, YamlValue)] = [];
+            let mut peek: Int = i + 1;
+            while peek < len(lines) && is_empty_line(lines[peek]) {
+              peek = peek + 1;
+            }
+            if peek < len(lines) && get_indent(lines[peek]) >= base_indent + 2 {
+              let (nested, next_i) = parse_block(lines, peek, base_indent + 2);
+              first_pairs = [(k, nested)];
+              // consume any further keys at same nested level that belong to this list item
+              items = items ++ [YamlMapping(first_pairs)];
+              i = next_i;
+            } else {
+              items = items ++ [YamlMapping([(k, YamlNull)])];
+              i = i + 1;
+            }
+          }
+        },
+        None => {
+          let scalar = parse_scalar(after_dash);
+          items = items ++ [scalar];
+          i = i + 1;
+        }
+      }
+    }
+  }
+  (YamlSequence(items), i)
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 pub fn parse_yaml(input: String) -> ParseResult {
-  // stub: return a minimal document containing the input as a string scalar
-  // so that lint and query harnesses have a valid doc to walk
+  let lines = split_lines(input);
+  // skip leading empty
+  let mut start: Int = 0;
+  while start < len(lines) && is_empty_line(lines[start]) {
+    start = start + 1;
+  }
+  if start >= len(lines) {
+    let empty_doc: AstDocument = #{
+      version: None,
+      tags: None,
+      root: YamlMapping([]),
+      resources: []
+    };
+    return ParseSuccess(empty_doc);
+  }
+  let (root, _next) = parse_block(lines, start, get_indent(lines[start]));
+  // collect resources: if root is a mapping with apiVersion+kind, treat as one resource
+  let mut resources: [K8sResource] = [];
+  match root {
+    YamlMapping(pairs) => {
+      let mut has_api: Bool = false;
+      let mut has_kind: Bool = false;
+      for (k, _v) in pairs {
+        if k == "apiVersion" { has_api = true; }
+        if k == "kind" { has_kind = true; }
+      }
+      if has_api && has_kind {
+        // dispatch to generic resource for now; specialised kinds to follow in Lint
+        resources = [K8sGeneric(pairs)];
+      }
+    },
+    _ => ()
+  }
   let doc: AstDocument = #{
     version: None,
     tags: None,
-    root: YamlString(input),
-    resources: []
+    root: root,
+    resources: resources
   };
   ParseSuccess(doc)
 }
 
 pub fn parse_k8s_resources(input: String) -> [K8sResource] {
-  // stub: no resources extracted until full parser lands
-  []
-}
-
-// helper used by Kyaml.affine's query stub
-pub fn parse_int_stub(s: String) -> Option[Int] {
-  None
+  match parse_yaml(input) {
+    ParseSuccess(doc) => doc.resources,
+    ParseError(_e) => []
+  }
 }

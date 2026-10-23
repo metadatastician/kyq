@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq — Coverage Matrix (Phase 1, step 5)
+:toc: macro
+:icons: font
+:revdate: 2026-10-23
+:status: SKELETON — fill before any Phase 2–5 edits
+
+Abstract: every JSON/YAML boundary in `metadatastician/kyq` (and downstream
+`hyperpolymath/MetaManifold-WebUI`) classified per handover step 4. Do not
+edit source until this table is complete and reviewed. See `docs/ULTRAPLAN.adoc`
+§4.5 for gate.
+
+toc::[]
+
+== How to use
+
+* One row per boundary file (application code, frontend, middleware,
+  configuration, persistence, generated artifacts, benchmarks, scripts, tests,
+  workflows, hooks, installers).
+* Classification: first-party | legacy/versioned | third-party | generated | invalid test fixture | independent reference oracle.
+* Do not count every `JSON3`/`JSON.stringify`/`YAML` occurrence as a violation;
+  classify first (handover step 5).
+
+== kyq boundaries (this repo)
+
+[cols="1,1,1,2,1",options="header"]
+|===
+| File | Classification | Current method | Compliance | Planned PR
+
+| `src/Kyaml/Parser.affine` | first-party | draft lex/parse (AffineScript 0.1.1 gap) | non-compliant (does not parse) | Phase 3
+| `src/Kyaml/Jcs.affine` | first-party | port stub from ijson-jcs | non-compliant (needs UTF-16 sort etc.) | Phase 3
+| `src/Kyaml/Ijson.affine` | first-party | port stub | non-compliant | Phase 3
+| `src/Kyaml/Lexer.affine` | first-party | draft | non-compliant | Phase 3
+| `.github/workflows/*.yml` | first-party (owned YAML) | yamllint/actionlint not yet kyq | partial (pinned, but not kyq-checked) | Phase 5
+| `tests/fixtures/invalid-deployment.yaml` | invalid test fixture | — | must never be rewritten | —
+| `examples/deployment.yaml` | first-party | — | must be KYAML canonical | Phase 3
+| `ijson-jcs` test vectors | independent reference oracle | — | oracle, not violation | —
+|===
+
+Add rows for every boundary found by inventory scripts (ripgrep). Fill before Phase 2.
+
+== MetaManifold-WebUI boundaries (downstream)
+
+See `docs/METAMANIFOLD_BOUNDARIES.adoc` for the full inventory (handover steps 3–4).
+Summary rows will be copied here once that inventory is complete.
+
+== Gate
+
+Matrix is complete when every file matching `*.json`, `*.yaml`/`*.yml`,
+`JSON.parse`, `JSON.stringify`, `JSON3`, `YAML`, `Oxygen.jl` JSON handling in
+both repos has a row. No Phase 2–5 edits without a matrix row.

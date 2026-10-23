@@ -6,7 +6,7 @@
 
 module Kyaml;
 
-use Kyaml.Ast;
+use Kyaml.Ast::*;
 use Kyaml.Lexer;
 use Kyaml.Parser;
 use Kyaml.Lint.RequiredFields;
