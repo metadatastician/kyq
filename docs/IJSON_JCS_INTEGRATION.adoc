@@ -141,19 +141,17 @@ YAML (KYAML) ──parse (kyaml)──▶ YamlValue ──φ──▶ serde_json
 * Errors are typed (`ParseError`, `ValidationError`, `CanonicalizationError`)
   with kind, path, and source location; no invalid input is classified valid.
 
-== Implementation note (Path B)
+== Implementation note (Path A — Strict AffineScript)
 
-In the recommended pragmatic path (Rust bootstrap), `Cargo.toml` adds:
-
-[source,toml]
-----
-ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", tag = "v0.1.0" }
-serde_json = { version = "1", features = ["float_roundtrip"] }
-----
-
-`kyq`'s `crates/kyq-canonical` thinly wraps `ijson-jcs` — no reimplementation,
-only the YAML→Value bridge plus the trailing-newline handling for files vs
-`canon` streams. This keeps the canonical bytes single-sourced.
+`Cargo.toml` is *not* added (strict AffineScript-only). `ijson-jcs` logic is
+ported to AffineScript in `src/Kyaml/Jcs.affine` + `src/Kyaml/Ijson.affine`,
+spec-driven from `hyperpolymath/ijson-jcs` `src/*.rs` and its README contract.
+`kyq`'s canonical bytes remain single-sourced to that spec (byte-equal to
+`ijson_jcs::to_jcs`), but the implementation language stays AffineScript so the
+estate invariant `affinescript-only` is preserved. The `ijson-jcs` Rust crate
+remains the external oracle for cross-checking: a shared corpus is checked with
+both `ijson-jcs canon` (Rust binary) and `kyq canon` (AffineScript/WASM) and
+must be byte-equal (Thm JCS-8).
 
 == Deferred (Phase 3)
 

@@ -297,31 +297,27 @@ There are three honest ways to clear AffineScript blocker 1. Phase 1 needs one:
   depends on upstream.
 
 | B — Rust bootstrap with AffineScript shim (pragmatic)
-| Add a `Cargo.toml` and a `crates/kyq-cli` binary in Rust that implements the
-  KYAML spec on top of a YAML 1.2 crate (`yaml-rust2`/`serde_yaml` verified
-  against the KYAML fixtures); keep `src/*.affine` as the normative spec and
-  generate or hand-port it; Justfile dispatches `just build` → `cargo build`
-  when `affinescript` is absent.
-| Requires a one-paragraph dispensation in `coordination.k9`
-  (`invariants: {rule: affinescript-only, waived-until: <date>, reason: …}`);
-  fastest to working; aligns naturally with `ijson-jcs` (Rust) in Phase 2.
+| ~~B — Rust bootstrap with AffineScript shim (pragmatic)~~ — *REJECTED per owner ruling 2026-10-23: strict AffineScript-only.*
+| Would have added `Cargo.toml` + `crates/kyq-cli`; kept `src/*.affine` as spec.
+  Rejected — violates `coordination.k9` invariant `affinescript-only` (severity
+  critical). Not used.
 
-| C — Hosted AffineScript (hybrid)
+| C — Hosted AffineScript (hybrid) — *DEFERRED, not chosen*
 | Compile AffineScript to WASM via `affinescript compile` for the pure parser
-  and drive I/O from a tiny Rust host that supplies argv/stdin (fixing blocker 3
-  at the host layer, not the compiler).
-| Keeps most code in AffineScript; needs a working `affinescript compile`
-  today (not yet true) so still blocked on Path A for parsing.
+  and drive I/O from a tiny host shim that supplies argv/stdin (fixing blocker 3
+  at the host layer, not the compiler). Keeps most code in AffineScript; still
+  blocked on Path A for parsing until `affinescript compile` works. Not the
+  Phase 1 pick; may be revisited for WASM distribution in Phase 4.
 
 |===
 
-Recommendation: Path B, with Path A tracked as the convergence goal.
-Rationale: (i) `ijson-jcs` is already Rust, so Phase 2 integration is a Cargo
-dependency, not a cross-language FFI; (ii) property tests + fixtures can be
-written once and reused for Path A later; (iii) the dispensational language in
-`coordination.k9` keeps the estate rule visible rather than silently violated.
-If the owner prefers strictness, Path A is viable but the roadmap durations
-shift by +2–4 weeks.
+*Decision 2026-10-23: strict AffineScript-only (Path A). No Rust code, no
+Cargo.toml, no dispensation.* Rationale: estate invariant `affinescript-only`
+is load-bearing for the WASM/affine-type safety story; `ijson-jcs` integration
+will be achieved by porting the JCS/I-JSON logic to AffineScript (see §5.2
+Strict), not by adding a Rust dependency. Calendar cost is +2–4 weeks vs Path B,
+and depends on clearing the AffineScript compiler gaps (grammar parity,
+WASM argv/stdin).
 
 === 4.3 What ships in Phase 1
 
@@ -366,17 +362,30 @@ YAML (KYAML) ──parse──▶ Value (lossless) ──validate I-JSON──�
   Value→bytes boundary — otherwise `serde_yaml`/`serde_json` collapsing would
   hide them (the `validate_i_json` vs `parse_json` caveat in `ijson-jcs` docs).
 
-=== 5.2 Implementation (Path B)
+=== 5.2 Implementation (Path A — Strict AffineScript)
 
-* `Cargo.toml` adds `ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", … }`
-  (or a version once it publishes). The `kyq` crate exposes:
+* `ijson-jcs` logic is *ported* to AffineScript in `src/Kyaml/Jcs.affine` and
+  `src/Kyaml/Ijson.affine` (not linked as a Rust crate). The port is
+  specification-driven from `hyperpolymath/ijson-jcs` README + `src/*.rs`:
+  duplicate-key detection at parse time (before `Value` construction), safe
+  integer `±(2^53−1)`, IEEE-754 finite checks, surrogate/noncharacter safety,
+  UTF-16 code-unit key sort per RFC 8785, ES `JSON.stringify` number rules
+  (via ported `float_roundtrip` logic), and the trailing-newline rule.
 
-  * `kyq::kyaml::parse(&str) -> Result<Document>`
-  * `kyq::kyaml::to_value(&Document) -> serde_json::Value` (lossless, typed)
-  * `kyq::canon::canonical_bytes(&Value) -> Result<Vec<u8>>` (delegates to `ijson_jcs::to_jcs`)
+  The AffineScript module exposes:
+
+  * `Kyaml.parse(&str) -> ParseResult` (per docs/KYAML_SPEC.adoc)
+  * `Kyaml.toValue(&YamlValue) -> JsonValue` (lossless, typed; lossy cases
+    rejected before `JsonValue` construction — the `validate_i_json` caveat
+    in `ijson-jcs` docs applies: never validate a `Value` that collapsed keys)
+  * `Kyaml.Jcs.canonicalBytes(&JsonValue) -> Result<Vec<u8>, CanonicalError>`
+    (byte-equal to `ijson_jcs::to_jcs`; single-sourced spec)
   * CLI subcommands `kyq canon`, `kyq check`, `kyq fix` that mirror `ijson-jcs`
     exit codes (0/1/2) for JSON-file inputs, and extend them to YAML inputs via
     the pipeline above.
+
+  No `Cargo.toml` is added; `Justfile` continues to call `affinescript compile`
+  (failing loudly until the grammar gap clears, per `no-fabricated-artefacts`).
 
 * CLI help must state the trailing-newline rule verbatim, as `ijson-jcs` does.
 
@@ -422,31 +431,41 @@ Outline (not proofs):
 
 == 8. What we are doing *now* (Phase 0 execution)
 
-Already landed on `arena/dc1301aa-kyq` in this turn:
+Already landed on `arena/dc1301aa-kyq` (previous commit):
 
 * This ultraplan + `docs/PROOF_OBLIGATIONS.adoc` + `docs/KYAML_SPEC.adoc` (stub)
   + `docs/IJSON_JCS_INTEGRATION.adoc` (stub) as the spec surface.
-* Hygiene patch: trimmed `dependabot.yml` guidance, noted governance failure as
-  follow-up, added a `just lock-check` recipe, corrected `README.md` install
-  instructions to `just`.
+* Hygiene: trimmed `dependabot.yml` (now `github-actions` + `cargo` only),
+  noted Governance `Actions-lock verify` failure as follow-up, added
+  `just lock-check`, corrected `README.md`/`CONTRIBUTING.md`.
 
-Next commit (requires owner decision on §4.2):
+This commit (post D1=A):
 
-* Fix `dependabot.yml` (remove `mix`/`npm`/`pip` ecosystems, keep
-  `github-actions` + `cargo`).
-* Close #3 #4 #5 with evidence comment, or consolidate.
-* File one issue for the current `Governance: failure`.
-* Add `Cargo.toml` + `crates/kyq-cli` scaffolding *only if* Path B is chosen
-  (no code is added under Path A until the AffineScript grammar gap is closed).
+* Records the owner's strict AffineScript-only ruling (2026-10-23) in §4.2
+  and §5.2: no Cargo, no dispensation.
+* Details the Phase 1 AffineScript port tasks (§4.3 strict) and the Phase 2
+  JCS port (AffineScript `src/Kyaml/Jcs.affine`, not a Rust crate).
+* Fixes the stale `push-email-notify.yml` comment SHA (was `v0.3.0`,
+  now `v0.5.0`) that contributed to Governance lockfile verify flake.
 
-== 9. Decision requested
+Next steps (still Phase 0, no source build yet):
+
+* Close #3 #4 #5 with evidence (now stale) and file one issue for the
+  current `Governance: Actions lockfile verify: failure`.
+* Regenerate `actions.lock` with `gh actions-lock` v0.2.0 once the
+  extension is reachable (release-assets network); until then the governance
+  failure is tracked, not hidden.
+* File AffineScript upstream gaps: grammar parity (`module;`, `use` vs `import`,
+  `#{}` literals, 2-segment paths, no `&mut T`/`break`/`if let`/map type) and
+  WASM argv/stdin.
+
+== 9. Decisions (recorded)
 
 [horizontal]
-D1 — Implementation path :: A, B, or C per §4.2 (advisor recommends B)
-D2 — Dependabot scope :: approve removal of `mix`/`npm`/`pip` ecosystems
-D3 — Governance failure :: approve filing + closing #3 #4 #5 with evidence
-D4 — Spec stubs :: approve `docs/KYAML_SPEC.adoc` + `docs/IJSON_JCS_INTEGRATION.adoc`
-      as the normative homes for the two guarantees
+D1 — Implementation path :: **A — strict AffineScript-only** (owner ruling 2026-10-23; Path B rejected, Path C deferred)
+D2 — Dependabot scope :: **DONE** — `mix`/`npm`/`pip` removed (only `github-actions` + `cargo` remain)
+D3 — Governance failure :: track as new issue; close #3 #4 #5 as stale with evidence
+D4 — Spec stubs :: `docs/KYAML_SPEC.adoc` + `docs/IJSON_JCS_INTEGRATION.adoc` are the normative homes for the two guarantees
 
 No mathematical proof is claimed in this plan; every guarantee above is stated
 as a testable property with a named theorem that will be discharged in Phase 3.
