@@ -73,12 +73,28 @@ fn sort_keys_utf16(keys: [(String, Json)]) -> [(String, Json)] {
 fn escape_json_string(s: String) -> String {
   let mut out: String = "\"";
   let mut i: Int = 0;
+  let hex: String = "0123456789ABCDEF";
   while i < len(s) {
     let ch = string_get(s, i);
+    let code = ord(ch);
     if ch == '"' {
       out = out ++ "\\\"";
     } else if ch == '\\' {
       out = out ++ "\\\\";
+    } else if code == 8 {
+      out = out ++ "\\b";
+    } else if code == 12 {
+      out = out ++ "\\f";
+    } else if code == 10 {
+      out = out ++ "\\n";
+    } else if code == 13 {
+      out = out ++ "\\r";
+    } else if code == 9 {
+      out = out ++ "\\t";
+    } else if code >= 0 && code <= 31 {
+      let hi = code / 16;
+      let lo = code % 16;
+      out = out ++ "\\u00" ++ string_sub(hex, hi, 1) ++ string_sub(hex, lo, 1);
     } else {
       out = out ++ string_sub(s, i, 1);
     }
