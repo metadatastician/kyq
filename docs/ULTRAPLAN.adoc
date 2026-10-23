@@ -521,10 +521,16 @@ versioned.
 
 === 8.2 Validate original bytes before JSON.parse (25)
 
-* Browser/Julia helper must see raw `response.text()` bytes and run
-  `ijson-jcs` (via `kyq` WASM) validation *before* `JSON.parse`/`res.json`
-  erases duplicates and original numeric tokens. Store raw bytes for error
-  reporting.
+* Browser/Julia helper must read the response body as bytes: use
+  `new Uint8Array(await response.arrayBuffer())` in the browser and
+  `copy(response.body)` (`Vector{UInt8}` with HTTP.jl) or `read(stream)` for a
+  Julia response stream. Pass those original bytes to `ijson-jcs` (via `kyq`
+  WASM/FFI) validation and retain them for error reporting. Do not decode with
+  `response.text()`/`String(...)` before validation: decoding may replace
+  malformed UTF-8 or remove a BOM. Only after validation may the helper decode
+  and parse JSON, preserving duplicates and numeric tokens until validation
+  completes. Keep the retained byte buffer intact when decoding (in Julia,
+  decode a copy because `String(::Vector{UInt8})` can take ownership).
 
 === 8.3 Preserve endpoint schemas (26)
 

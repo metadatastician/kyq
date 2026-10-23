@@ -43,7 +43,20 @@ Add rows for every boundary found by inventory scripts (ripgrep). Fill before Ph
 == MetaManifold-WebUI boundaries (downstream)
 
 See `docs/METAMANIFOLD_BOUNDARIES.adoc` for the full inventory (handover steps 3–4).
-Summary rows will be copied here once that inventory is complete.
+Reviewed browser response paths are summarised below.
+
+[cols="1,1,1,2,1",options="header"]
+|===
+| File | Classification | Current method | Compliance | Planned PR
+
+| `frontend/src/api/client.ts` | first-party | `fetch`, `res.json()`, text/blob responses | JSON responses lack validation of original bytes; preserve `204` and opaque downloads | Phase 5
+| `frontend/src/api/events.ts` | first-party | `EventSource` + `JSON.parse` | decoded SSE text; original bytes unavailable | Phase 5
+| `frontend/src/tree/model.ts` | third-party | jplace `JSON.parse` | validate inbound external format | Phase 5
+| `frontend/src/views/run/DADA2Panel.tsx` | first-party | `fetch` + `res.text()` | text log response; no JSON parse | Phase 5
+|===
+
+These response-path rows are a partial summary of the pinned downstream review
+in `docs/METAMANIFOLD_BOUNDARIES.adoc`; the full inventory remains pending.
 
 == Gate
 

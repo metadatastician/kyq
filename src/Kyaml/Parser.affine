@@ -55,12 +55,13 @@ fn is_empty_line(line: String) -> Bool {
 
 fn is_list_item(line: String) -> Bool {
   let t = trim(line);
-  len(t) >= 2 && string_get(t, 0) == '-' && string_get(t, 1) == ' '
+  t == "-" || (len(t) >= 2 && string_get(t, 0) == '-' && string_get(t, 1) == ' ')
 }
 
 fn strip_list_prefix(line: String) -> String {
   let t = trim(line);
   // "- " is 2 chars
+  if len(t) < 2 { return ""; }
   string_sub(t, 2, len(t) - 2)
 }
 
@@ -156,7 +157,30 @@ fn split_lines(s: String) -> [String] {
 // Core block parser: parses a mapping or sequence at a given indent
 // ---------------------------------------------------------------------------
 
-fn parse_block(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int) {
+type BlockResult =
+    BlockSuccess(YamlValue, Int)
+  | BlockError(ParseErrorDetail)
+
+fn line_error(line: String, index: Int, message: String) -> ParseErrorDetail {
+  #{
+    message: message,
+    line: Some(index + 1),
+    column: Some(get_indent(line) + 1),
+    context: Some(line)
+  }
+}
+
+fn is_document_separator(line: String) -> Bool {
+  let t = trim(line);
+  if len(t) < 3 { return false; }
+  let marker = string_sub(t, 0, 3);
+  if marker != "---" && marker != "..." { return false; }
+  if len(t) == 3 { return true; }
+  let ch = string_get(t, 3);
+  (ch == ' ' || ch == '\t') && is_empty_line(string_sub(t, 3, len(t) - 3))
+}
+
+fn parse_block(lines: [String], start: Int, base_indent: Int) -> BlockResult {
   // look ahead to decide if this block is a mapping or sequence
   let mut j: Int = start;
   while j < len(lines) {
@@ -164,21 +188,21 @@ fn parse_block(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int
     j = j + 1;
   }
   if j >= len(lines) {
-    return (YamlMapping([]), j);
+    return BlockSuccess(YamlMapping([]), j);
   }
   let indent = get_indent(lines[j]);
   if indent < base_indent {
-    return (YamlMapping([]), j);
+    return BlockSuccess(YamlMapping([]), j);
   }
   // check first non-empty line at this indent
   if is_list_item(lines[j]) {
-    return parse_sequence(lines, start, base_indent);
+    return parse_sequence(lines, j, indent);
   } else {
-    return parse_mapping(lines, start, base_indent);
+    return parse_mapping(lines, j, indent);
   }
 }
 
-fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int) {
+fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> BlockResult {
   let mut pairs: [(String, YamlValue)] = [];
   let mut i: Int = start;
   while i < len(lines) {
@@ -205,17 +229,20 @@ fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> (YamlValue, I
           pairs = pairs ++ [(k, scalar)];
           i = i + 1;
         } else {
-          // value is nested block starting at next line with indent+2
-          let next_indent = base_indent + 2;
-          // peek next non-empty line to see if it has indent >= next_indent
+          // A child mapping must be deeper; a sequence may share the key's indent.
           let mut peek: Int = i + 1;
           while peek < len(lines) && is_empty_line(lines[peek]) {
             peek = peek + 1;
           }
-          if peek < len(lines) && get_indent(lines[peek]) >= next_indent {
-            let (nested, next_i) = parse_block(lines, peek, next_indent);
-            pairs = pairs ++ [(k, nested)];
-            i = next_i;
+          if peek < len(lines) && (get_indent(lines[peek]) > base_indent ||
+              (get_indent(lines[peek]) == base_indent && is_list_item(lines[peek]))) {
+            match parse_block(lines, peek, base_indent) {
+              BlockSuccess(nested, next_i) => {
+                pairs = pairs ++ [(k, nested)];
+                i = next_i;
+              },
+              BlockError(err) => return BlockError(err)
+            }
           } else {
             pairs = pairs ++ [(k, YamlNull)];
             i = i + 1;
@@ -223,14 +250,14 @@ fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> (YamlValue, I
         }
       },
       None => {
-        i = i + 1;
+        return BlockError(line_error(lines[i], i, "Expected a mapping entry with ':'"));
       }
     }
   }
-  (YamlMapping(pairs), i)
+  BlockSuccess(YamlMapping(pairs), i)
 }
 
-fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> (YamlValue, Int) {
+fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> BlockResult {
   let mut items: [YamlValue] = [];
   let mut i: Int = start;
   while i < len(lines) {
@@ -252,15 +279,18 @@ fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> (YamlValue, 
     // after_dash may be "key: value" or just "value" or empty (nested)
     if after_dash == "" {
       // list item whose value is an indented block
-      let next_indent = base_indent + 2;
       let mut peek: Int = i + 1;
       while peek < len(lines) && is_empty_line(lines[peek]) {
         peek = peek + 1;
       }
-      if peek < len(lines) && get_indent(lines[peek]) >= next_indent {
-        let (nested, next_i) = parse_block(lines, peek, next_indent);
-        items = items ++ [nested];
-        i = next_i;
+      if peek < len(lines) && get_indent(lines[peek]) > base_indent {
+        match parse_block(lines, peek, base_indent + 1) {
+          BlockSuccess(nested, next_i) => {
+            items = items ++ [nested];
+            i = next_i;
+          },
+          BlockError(err) => return BlockError(err)
+        }
       } else {
         items = items ++ [YamlNull];
         i = i + 1;
@@ -269,51 +299,45 @@ fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> (YamlValue, 
       match split_first_colon(after_dash) {
         Some((k, v)) => {
           // list item is a mapping with first pair (k, v) plus continuation lines
+          let key_indent = base_indent + 2;
+          let mut first_pairs: [(String, YamlValue)] = [(k, YamlNull)];
+          let mut next_i: Int = i + 1;
           if v != "" {
-            // simple pair plus possible extra keys in following indented lines at indent+2
-            let mut first_pairs: [(String, YamlValue)] = [(k, parse_scalar(v))];
-            let next_indent = base_indent + 2;
-            let mut peek: Int = i + 1;
-            while peek < len(lines) && is_empty_line(lines[peek]) {
-              peek = peek + 1;
-            }
-            if peek < len(lines) && get_indent(lines[peek]) >= next_indent && !is_list_item(lines[peek]) {
-              let (rest, next_i) = parse_mapping(lines, peek, next_indent);
-              match rest {
-                YamlMapping(rest_pairs) => {
-                  for (rk, rv) in rest_pairs {
-                    first_pairs = first_pairs ++ [(rk, rv)];
-                  }
-                  items = items ++ [YamlMapping(first_pairs)];
-                  i = next_i;
-                },
-                _ => {
-                  items = items ++ [YamlMapping(first_pairs)];
-                  i = i + 1;
-                }
-              }
-            } else {
-              items = items ++ [YamlMapping(first_pairs)];
-              i = i + 1;
-            }
+            first_pairs = [(k, parse_scalar(v))];
           } else {
-            // "k:" with nested
-            let mut first_pairs: [(String, YamlValue)] = [];
+            // "k:" may own a deeper block or a sequence at the key's indent.
             let mut peek: Int = i + 1;
             while peek < len(lines) && is_empty_line(lines[peek]) {
               peek = peek + 1;
             }
-            if peek < len(lines) && get_indent(lines[peek]) >= base_indent + 2 {
-              let (nested, next_i) = parse_block(lines, peek, base_indent + 2);
-              first_pairs = [(k, nested)];
-              // consume any further keys at same nested level that belong to this list item
-              items = items ++ [YamlMapping(first_pairs)];
-              i = next_i;
-            } else {
-              items = items ++ [YamlMapping([(k, YamlNull)])];
-              i = i + 1;
+            if peek < len(lines) && (get_indent(lines[peek]) > key_indent ||
+                (get_indent(lines[peek]) == key_indent && is_list_item(lines[peek]))) {
+              match parse_block(lines, peek, key_indent) {
+                BlockSuccess(nested, end_i) => {
+                  first_pairs = [(k, nested)];
+                  next_i = end_i;
+                },
+                BlockError(err) => return BlockError(err)
+              }
             }
           }
+          // Remaining indented keys belong to this item, not to its first key.
+          let mut peek: Int = next_i;
+          while peek < len(lines) && is_empty_line(lines[peek]) {
+            peek = peek + 1;
+          }
+          if peek < len(lines) && get_indent(lines[peek]) >= key_indent && !is_list_item(lines[peek]) {
+            match parse_mapping(lines, peek, get_indent(lines[peek])) {
+              BlockSuccess(YamlMapping(rest_pairs), end_i) => {
+                first_pairs = first_pairs ++ rest_pairs;
+                next_i = end_i;
+              },
+              BlockError(err) => return BlockError(err),
+              _ => ()
+            }
+          }
+          items = items ++ [YamlMapping(first_pairs)];
+          i = next_i;
         },
         None => {
           let scalar = parse_scalar(after_dash);
@@ -323,7 +347,7 @@ fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> (YamlValue, 
       }
     }
   }
-  (YamlSequence(items), i)
+  BlockSuccess(YamlSequence(items), i)
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +356,14 @@ fn parse_sequence(lines: [String], start: Int, base_indent: Int) -> (YamlValue, 
 
 pub fn parse_yaml(input: String) -> ParseResult {
   let lines = split_lines(input);
+  // Streams are not implemented; never silently accept one document from a stream.
+  let mut marker_i: Int = 0;
+  while marker_i < len(lines) {
+    if is_document_separator(lines[marker_i]) {
+      return ParseError(line_error(lines[marker_i], marker_i, "Document separators are not supported"));
+    }
+    marker_i = marker_i + 1;
+  }
   // skip leading empty
   let mut start: Int = 0;
   while start < len(lines) && is_empty_line(lines[start]) {
@@ -346,7 +378,17 @@ pub fn parse_yaml(input: String) -> ParseResult {
     };
     return ParseSuccess(empty_doc);
   }
-  let (root, _next) = parse_block(lines, start, get_indent(lines[start]));
+  let (root, next) = match parse_block(lines, start, get_indent(lines[start])) {
+    BlockSuccess(value, next_i) => (value, next_i),
+    BlockError(err) => return ParseError(err)
+  };
+  let mut remaining: Int = next;
+  while remaining < len(lines) && is_empty_line(lines[remaining]) {
+    remaining = remaining + 1;
+  }
+  if remaining < len(lines) {
+    return ParseError(line_error(lines[remaining], remaining, "Unexpected content after the parsed block"));
+  }
   // collect resources: if root is a mapping with apiVersion+kind, treat as one resource
   let mut resources: [K8sResource] = [];
   match root {
