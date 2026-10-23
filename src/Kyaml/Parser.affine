@@ -68,7 +68,7 @@ fn split_first_colon(s: String) -> Option[(String, String)] {
   let mut i: Int = 0;
   while i < len(s) {
     let ch = string_get(s, i);
-    if ch == ':' {
+    if ch == ':' && (i + 1 == len(s) || string_get(s, i + 1) == ' ') {
       let k = trim(string_sub(s, 0, i));
       let v = trim(string_sub(s, i + 1, len(s) - (i + 1)));
       return Some((k, v));
