@@ -27,6 +27,18 @@ fn get_indent(line: String) -> Int {
   i
 }
 
+fn mapping_has_key(pairs: [(String, YamlValue)], key: String) -> Bool {
+  let mut j: Int = 0;
+  while j < len(pairs) {
+    let (existing_key, _) = pairs[j];
+    if existing_key == key {
+      return true;
+    }
+    j = j + 1;
+  }
+  false
+}
+
 fn trim(s: String) -> String {
   let mut start: Int = 0;
   let mut end: Int = len(s);
@@ -224,6 +236,9 @@ fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> BlockResult {
     let line = trim(lines[i]);
     match split_first_colon(line) {
       Some((k, v)) => {
+        if mapping_has_key(pairs, k) {
+          panic("Duplicate mapping key '" ++ k ++ "' at line " ++ to_string(i));
+        }
         if v != "" {
           let scalar = parse_scalar(v);
           pairs = pairs ++ [(k, scalar)];
