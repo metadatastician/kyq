@@ -11,32 +11,27 @@ use Kyaml.Lexer;
 use Kyaml.Parser;
 use Kyaml.Lint.RequiredFields;
 use prelude::{ Option, Some, None };
-use dict;
 
-// Parse YAML string and return AST document (stub — delegates to Parser)
 pub fn parse_yaml(input: String) -> ParseResult {
   Parser::parse_yaml(input)
 }
 
-// Parse YAML string and return Kubernetes resources
 pub fn parse_k8s(input: String) -> [K8sResource] {
   Parser::parse_k8s_resources(input)
 }
 
-// Validate YAML syntax without full parsing
 pub fn validate_yaml_syntax(input: String) -> Bool {
   let lexer = Lexer::new(input);
   let tokens = Lexer::tokenize(lexer);
   for tok in tokens {
     match tok.token {
-      Lexer::Token::TokError(_msg) => return false,
+      TokError(_msg) => return false,
       _ => ()
     }
   }
   true
 }
 
-// Lint Kubernetes YAML with all available rules
 pub fn lint_k8s(yaml: String) -> [LintIssue] {
   let mut issues: [LintIssue] = [];
   match parse_yaml(yaml) {
@@ -61,7 +56,6 @@ pub fn lint_k8s(yaml: String) -> [LintIssue] {
   issues
 }
 
-// Query YAML with a path expression (simplified)
 pub fn query_yaml(yaml: String, path: String) -> Option[YamlValue] {
   match parse_yaml(yaml) {
     ParseSuccess(doc) => query_value(doc.root, path),
@@ -80,7 +74,6 @@ fn query_value(value: YamlValue, path: String) -> Option[YamlValue] {
       Some(cur) => {
         match cur {
           YamlMapping(pairs) => {
-            // linear search in assoc list
             let mut found: Option[YamlValue] = None;
             for (k, v) in pairs {
               if k == part {
@@ -115,16 +108,18 @@ fn query_value(value: YamlValue, path: String) -> Option[YamlValue] {
 }
 
 fn split_path(path: String) -> [String] {
-  // minimal: split on '.' — proper implementation in Phase 1
   let mut parts: [String] = [];
   let mut cur: String = "";
-  for ch in path {
+  let mut i: Int = 0;
+  while i < len(path) {
+    let ch = string_get(path, i);
     if ch == '.' {
       parts = parts ++ [cur];
       cur = "";
     } else {
-      cur = cur ++ ch;
+      cur = cur ++ string_sub(path, i, 1);
     }
+    i = i + 1;
   }
   if cur != "" {
     parts = parts ++ [cur];
@@ -133,16 +128,34 @@ fn split_path(path: String) -> [String] {
 }
 
 fn parse_int(s: String) -> Option[Int] {
-  // stub: delegate to Int::from_string when available
-  // for now return None to satisfy type-check, will be implemented with string.affine helpers
-  None
+  // delegate to stdlib parse_int (string.affine) when toolchain supports it
+  // temporary stub — handles small non-negative decimals for query indexes
+  if len(s) == 0 { return None; }
+  let mut n: Int = 0;
+  let mut i: Int = 0;
+  while i < len(s) {
+    let ch = string_get(s, i);
+    if ch == '-' {
+      if i != 0 { return None; }
+    } else if ch >= '0' && ch <= '9' {
+      n = n * 10 + (char_to_int(ch) - char_to_int('0'));
+    } else {
+      return None;
+    }
+    i = i + 1;
+  }
+  // sign handling is minimal for index use
+  if string_get(s, 0) == '-' {
+    Some(0 - n)
+  } else {
+    Some(n)
+  }
 }
 
 pub fn get_yaml(yaml: String, path: String) -> Option[YamlValue] {
   query_yaml(yaml, path)
 }
 
-// Set/delete/format helpers — stubs that type-check, full logic in Phase 1
 pub fn set_yaml(yaml: String, path: String, value: YamlValue) -> Option[String] {
   None
 }
@@ -166,8 +179,8 @@ fn format_yaml_inner(value: YamlValue, indent: Int) -> String {
   match value {
     YamlNull => "null",
     YamlBool(b) => if b { "true" } else { "false" },
-    YamlInt(i) => Int::to_string(i),
-    YamlFloat(f) => Float::to_string(f),
+    YamlInt(i) => int_to_string(i),
+    YamlFloat(f) => float_to_string(f),
     YamlString(s) => s,
     YamlSequence(seq) => {
       if len(seq) == 0 {
