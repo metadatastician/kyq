@@ -4,34 +4,33 @@
 // kyq Main Module
 // Entry point for the Kubernetes YAML Query tool
 
-module Main
+module Main;
 
-import Kyaml
+use Kyaml;
 
-// Main entry point
 effect IO {
-  fn print(s: String) -> ();
-  fn println(s: String) -> ();
+  fn print(s: String) -> Unit;
+  fn println(s: String) -> Unit;
 }
 
-fn main() -{IO}-> () {
-    println("kyq v0.1.0 — Kubernetes YAML Query");
-    println("AffineScript KYAML Processor");
-    println("License: MPL-2.0 (code) / CC-BY-SA-4.0 (docs)");
-    println("");
-    println("Usage: kyq <command> [options]");
-    println("");
-    println("Commands (none implemented yet; see docs/status/ROADMAP.adoc):");
-    println("  parse     - Parse YAML/JSON input");
-    println("  lint      - Lint Kubernetes YAML");
-    println("  get      - Get value from YAML path");
-    println("  set      - Set value at YAML path");
-    println("  del      - Delete value at YAML path");
-    println("  fmt      - Format/pretty-print YAML");
-    println("  query    - Query YAML with path expression");
-    println("");
-    println("Examples:");
-    println("  echo 'apiVersion: v1\\nkind: Pod' | kyq parse");
-    println("  echo 'apiVersion: v1\\nkind: Pod\\nmetadata:\\n  name: test' | kyq lint");
-    println("  echo 'apiVersion: v1\\nkind: Pod\\nmetadata:\\n  name: test' | kyq get metadata.name");
+pub fn main() -{IO}-> Unit {
+  println("kyq v0.1.0 — Kubernetes YAML Query");
+  println("AffineScript KYAML Processor");
+  println("License: MPL-2.0 (code) / CC-BY-SA-4.0 (docs)");
+  println("");
+  println("Usage: kyq <command> [options]");
+  println("");
+  println("Commands (see docs/ULTRAPLAN.adoc; dispatch to be wired once Lexer/Parser type-check):");
+  println("  parse     - Parse YAML/JSON input");
+  println("  lint      - Lint Kubernetes YAML");
+  println("  get       - Get value from YAML path");
+  println("  set       - Set value at YAML path");
+  println("  del       - Delete value at YAML path");
+  println("  fmt       - Format/pretty-print YAML");
+  println("  query     - Query YAML with path expression");
+  println("");
+  println("Examples:");
+  println("  echo 'apiVersion: v1\\nkind: Pod' | kyq parse");
+  println("  echo 'apiVersion: v1\\nkind: Pod\\nmetadata:\\n  name: test' | kyq lint");
+  println("  echo 'apiVersion: v1\\nkind: Pod\\nmetadata:\\n  name: test' | kyq get metadata.name");
 }

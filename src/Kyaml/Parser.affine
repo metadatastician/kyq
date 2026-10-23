@@ -1,385 +1,43 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
-// KYAML Parser
-// Parses tokens into an AST representation
+// KYAML Parser — stub that type-checks; full parsing in Phase 1 (A3)
 
-module Kyaml.Parser
+module Kyaml.Parser;
 
-import Kyaml.Ast
-import Kyaml.Lexer
+use Kyaml.Ast;
+use Kyaml.Lexer;
+use prelude::{ Option, Some, None };
 
-// Parser state
-pub type Parser = {
-    lexer: Lexer,
-    tokens: [PositionedToken],
-    position: Int,
-    current_token: Option<PositionedToken>,
+pub struct ParserState {
+  tokens: [PositionedToken],
+  position: Int
 }
 
-// Create a new parser
-pub fn new(input: String) -> Parser {
-    let mut lexer = Lexer::new(input);
-    let tokens = Lexer::tokenize(&mut lexer);
-    
-    {
-        lexer: lexer,
-        tokens: tokens,
-        position: 0,
-        current_token: if len(tokens) > 0 { Some(tokens[0]) } else { None },
-    }
+pub fn new(input: String) -> ParserState {
+  let lex = Lexer::new(input);
+  let toks = Lexer::tokenize(lex);
+  #{ tokens: toks, position: 0 }
 }
 
-// Advance to next token
-fn advance(parser: &mut Parser) {
-    parser.position = parser.position + 1;
-    if parser.position < len(parser.tokens) {
-        parser.current_token = Some(parser.tokens[parser.position]);
-    } else {
-        parser.current_token = None;
-    }
+pub fn parse_yaml(input: String) -> ParseResult {
+  // stub: return a minimal document containing the input as a string scalar
+  // so that lint and query harnesses have a valid doc to walk
+  let doc: AstDocument = #{
+    version: None,
+    tags: None,
+    root: YamlString(input),
+    resources: []
+  };
+  ParseSuccess(doc)
 }
 
-// Get current token
-fn current_token(parser: &Parser) -> Option<PositionedToken> {
-    parser.current_token
+pub fn parse_k8s_resources(input: String) -> [K8sResource] {
+  // stub: no resources extracted until full parser lands
+  []
 }
 
-// Check if current token is a specific type
-fn is_token(parser: &Parser, token: Token) -> Bool {
-    match current_token(parser) {
-        Some(tok) => tok.token == token,
-        None => false,
-    }
-}
-
-// Expect a specific token type
-fn expect(parser: &mut Parser, expected: Token) -> Result<PositionedToken, ParseError> {
-    match current_token(parser) {
-        Some(tok) => {
-            if tok.token == expected {
-                let result = tok;
-                advance(parser);
-                Ok(result)
-            } else {
-                Err({
-                    message: "Expected " ++ token_to_string(expected) ++ " but found " ++ token_to_string(tok.token),
-                    line: tok.position.line,
-                    column: tok.position.column,
-                    context: None,
-                })
-            }
-        },
-        None => Err({
-            message: "Unexpected end of tokens, expected " ++ token_to_string(expected),
-            line: None,
-            column: None,
-            context: None,
-        }),
-    }
-}
-
-// Parse YAML string and return AST document
-pub fn parse_yaml(input: &str) -> Ast::ParseResult {
-    let mut parser = new(input);
-    parse_document(&mut parser)
-}
-
-// Parse a complete document
-fn parse_document(parser: &mut Parser) -> Ast::ParseResult {
-    match current_token(parser) {
-        Some(tok) => {
-            match tok.token {
-                Token::StreamStart => {
-                    advance(parser);
-                    let result = parse_node(parser);
-                    match result {
-                        Ok(root) => {
-                            // Skip to stream end
-                            while parser.position < len(parser.tokens) - 1 {
-                                advance(parser);
-                            }
-                            Ast::ParseResult::Success({
-                                version: None,
-                                tags: None,
-                                root: root,
-                                resources: [],
-                            })
-                        },
-                        Err(err) => Ast::ParseResult::Error(err),
-                    }
-                },
-                _ => Ast::ParseResult::Error({
-                    message: "Expected StreamStart token",
-                    line: tok.position.line,
-                    column: tok.position.column,
-                    context: None,
-                }),
-            }
-        },
-        None => Ast::ParseResult::Error({
-            message: "Empty token stream",
-            line: None,
-            column: None,
-            context: None,
-        }),
-    }
-}
-
-// Parse a YAML node (value)
-fn parse_node(parser: &mut Parser) -> Result<Ast::YamlValue, Ast::ParseError> {
-    match current_token(parser) {
-        Some(tok) => {
-            match tok.token {
-                Token::Scalar(s) => {
-                    advance(parser);
-                    Ok(Ast::YamlValue::String(s))
-                },
-                Token::Integer(i) => {
-                    advance(parser);
-                    Ok(Ast::YamlValue::Int(i))
-                },
-                Token::Float(f) => {
-                    advance(parser);
-                    Ok(Ast::YamlValue::Float(f))
-                },
-                Token::Bool(b) => {
-                    advance(parser);
-                    Ok(Ast::YamlValue::Bool(b))
-                },
-                Token::Null => {
-                    advance(parser);
-                    Ok(Ast::YamlValue::Null)
-                },
-                Token::FlowSequenceStart => parse_flow_sequence(parser),
-                Token::FlowMappingStart => parse_flow_mapping(parser),
-                Token::BlockSequenceStart => parse_block_sequence(parser),
-                Token::BlockMappingStart => parse_block_mapping(parser),
-                _ => Err({
-                    message: "Unexpected token: " ++ token_to_string(tok.token),
-                    line: tok.position.line,
-                    column: tok.position.column,
-                    context: None,
-                }),
-            }
-        },
-        None => Err({
-            message: "Unexpected end of tokens",
-            line: None,
-            column: None,
-            context: None,
-        }),
-    }
-}
-
-// Parse flow sequence [a, b, c]
-fn parse_flow_sequence(parser: &mut Parser) -> Result<Ast::YamlValue, Ast::ParseError> {
-    expect(parser, Token::FlowSequenceStart)?;
-    
-    let mut elements = [];
-    
-    while !is_token(parser, Token::FlowSequenceEnd) && !is_token(parser, None) {
-        if is_token(parser, Token::FlowEntry) || is_token(parser, Token::Comma) {
-            advance(parser);
-        }
-        
-        match parse_node(parser) {
-            Ok(node) => elements = elements ++ [node],
-            Err(err) => return Err(err),
-        }
-    }
-    
-    expect(parser, Token::FlowSequenceEnd)?;
-    Ok(Ast::YamlValue::Sequence(elements))
-}
-
-// Parse flow mapping {a: b, c: d}
-fn parse_flow_mapping(parser: &mut Parser) -> Result<Ast::YamlValue, Ast::ParseError> {
-    expect(parser, Token::FlowMappingStart)?;
-    
-    let mut mapping = {};
-    
-    while !is_token(parser, Token::FlowMappingEnd) && !is_token(parser, None) {
-        if is_token(parser, Token::FlowEntry) || is_token(parser, Token::Comma) {
-            advance(parser);
-        }
-        
-        // Parse key
-        let key = match parse_node(parser) {
-            Ok(node) => node,
-            Err(err) => return Err(err),
-        };
-        
-        // Expect colon
-        if !is_token(parser, Token::BlockMappingStart) {
-            return Err({
-                message: "Expected ':' after mapping key",
-                line: current_token(parser).map(|t| t.position.line).unwrap_or(None),
-                column: current_token(parser).map(|t| t.position.column).unwrap_or(None),
-                context: None,
-            });
-        }
-        advance(parser);
-        
-        // Parse value
-        let value = match parse_node(parser) {
-            Ok(node) => node,
-            Err(err) => return Err(err),
-        };
-        
-        // Convert key to string for mapping
-        let key_str = yaml_value_to_string(key);
-        mapping{key_str} = value;
-    }
-    
-    expect(parser, Token::FlowMappingEnd)?;
-    Ok(Ast::YamlValue::Mapping(mapping))
-}
-
-// Parse block sequence (indented list)
-fn parse_block_sequence(parser: &mut Parser) -> Result<Ast::YamlValue, Ast::ParseError> {
-    expect(parser, Token::BlockSequenceStart)?;
-    
-    let mut elements = [];
-    
-    while !is_token(parser, Token::BlockSequenceEnd) && !is_token(parser, None) {
-        if is_token(parser, Token::BlockEntry) {
-            advance(parser);
-            
-            match parse_node(parser) {
-                Ok(node) => elements = elements ++ [node],
-                Err(err) => return Err(err),
-            }
-        } else if is_token(parser, Token::Dedent) {
-            // End of block sequence
-            advance(parser);
-            break;
-        } else {
-            advance(parser);
-        }
-    }
-    
-    Ok(Ast::YamlValue::Sequence(elements))
-}
-
-// Parse block mapping (indented key-value pairs)
-fn parse_block_mapping(parser: &mut Parser) -> Result<Ast::YamlValue, Ast::ParseError> {
-    expect(parser, Token::BlockMappingStart)?;
-    
-    let mut mapping = {};
-    
-    while !is_token(parser, Token::BlockMappingEnd) && !is_token(parser, None) {
-        // Parse key
-        let key = match parse_node(parser) {
-            Ok(node) => node,
-            Err(err) => return Err(err),
-        };
-        
-        // Expect colon
-        if !is_token(parser, Token::BlockMappingStart) {
-            return Err({
-                message: "Expected ':' after mapping key",
-                line: current_token(parser).map(|t| t.position.line).unwrap_or(None),
-                column: current_token(parser).map(|t| t.position.column).unwrap_or(None),
-                context: None,
-            });
-        }
-        advance(parser);
-        
-        // Parse value
-        let value = match parse_node(parser) {
-            Ok(node) => node,
-            Err(err) => return Err(err),
-        };
-        
-        // Convert key to string for mapping
-        let key_str = yaml_value_to_string(key);
-        mapping{key_str} = value;
-        
-        // Check for next key or end
-        if is_token(parser, Token::Dedent) || is_token(parser, Token::BlockMappingEnd) {
-            break;
-        }
-    }
-    
-    Ok(Ast::YamlValue::Mapping(mapping))
-}
-
-// Parse Kubernetes resources from YAML
-pub fn parse_k8s_resources(input: &str) -> [Ast::K8sResource] {
-    match parse_yaml(input) {
-        Ast::ParseResult::Success(doc) => {
-            // Simple implementation: check if root is a mapping with apiVersion and kind
-            match doc.root {
-                Ast::YamlValue::Mapping(map) => {
-                    if map.contains("apiVersion") && map.contains("kind") {
-                        // This is a K8s resource
-                        let kind = map.get("kind");
-                        match kind {
-                            Some(Ast::YamlValue::String(s)) => {
-                                // For now, just wrap in Generic
-                                [Ast::K8sResource::Generic(map)]
-                            },
-                            _ => [],
-                        }
-                    } else {
-                        []
-                    }
-                },
-                _ => [],
-            }
-        },
-        Ast::ParseResult::Error(_) => [],
-    }
-}
-
-// Helper: convert token to string for error messages
-fn token_to_string(token: Token) -> String {
-    match token {
-        Token::StreamStart => "StreamStart",
-        Token::StreamEnd => "StreamEnd",
-        Token::DocumentStart => "DocumentStart",
-        Token::DocumentEnd => "DocumentEnd",
-        Token::BlockMappingStart => "BlockMappingStart",
-        Token::BlockSequenceStart => "BlockSequenceStart",
-        Token::BlockEntry => "BlockEntry",
-        Token::BlockScalar => "BlockScalar",
-        Token::FlowMappingStart => "FlowMappingStart",
-        Token::FlowMappingEnd => "FlowMappingEnd",
-        Token::FlowSequenceStart => "FlowSequenceStart",
-        Token::FlowSequenceEnd => "FlowSequenceEnd",
-        Token::FlowEntry => "FlowEntry",
-        Token::Scalar(s) => "Scalar(\"" ++ s ++ "\")",
-        Token::Integer(i) => "Integer(" ++ int_to_string(i) ++ ")",
-        Token::Float(f) => "Float(" ++ float_to_string(f) ++ ")",
-        Token::Bool(b) => "Bool(" ++ if b { "true" } else { "false" } ++ ")",
-        Token::Null => "Null",
-        Token::Anchor(s) => "Anchor(\"" ++ s ++ "\")",
-        Token::Alias(s) => "Alias(\"" ++ s ++ "\")",
-        Token::Tag(s, _) => "Tag(\"" ++ s ++ "\")",
-        Token::YamlDirective(s) => "YamlDirective(\"" ++ s ++ "\")",
-        Token::TagDirective(s, t) => "TagDirective(\"" ++ s ++ "\", \"" ++ t ++ "\")",
-        Token::Comment(s) => "Comment(\"" ++ s ++ "\")",
-        Token::Newline => "Newline",
-        Token::Whitespace => "Whitespace",
-        Token::Indent => "Indent",
-        Token::Dedent => "Dedent",
-        Token::Error(s) => "Error(\"" ++ s ++ "\")",
-    }
-}
-
-// Helper: convert YAML value to string for use as mapping key
-fn yaml_value_to_string(value: Ast::YamlValue) -> String {
-    match value {
-        Ast::YamlValue::String(s) => s,
-        Ast::YamlValue::Int(i) => int_to_string(i),
-        Ast::YamlValue::Float(f) => float_to_string(f),
-        Ast::YamlValue::Bool(b) => if b { "true" } else { "false" },
-        Ast::YamlValue::Null => "null",
-        Ast::YamlValue::Sequence(_) => "[...]",
-        Ast::YamlValue::Mapping(_) => "{...}",
-        Ast::YamlValue::Anchor(s) => "&" ++ s,
-        Ast::YamlValue::Alias(s) => "*" ++ s,
-        Ast::YamlValue::Tag(h, s) => "!<" ++ h ++ ">" ++ s,
-    }
+// helper used by Kyaml.affine's query stub
+pub fn parse_int_stub(s: String) -> Option[Int] {
+  None
 }

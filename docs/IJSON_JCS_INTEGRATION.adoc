@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq — I-JSON / JCS Canonical Integration (v1, tracks hyperpolymath/ijson-jcs)
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-23
+:status: DRAFT (Phase 0 stub; normative from Phase 2)
+
+This is the normative home for "guaranteed works for the ijson-jcs scheme,
+canonical format". It states the contract `kyq` inherits from
+`hyperpolymath/ijson-jcs` and how the KYAML→JSON bridge feeds it.
+
+toc::[]
+
+== The estate JSON standard (D306)
+
+The canonical estate reference is `hyperpolymath/ijson-jcs`:
+
+* Repository: https://github.com/hyperpolymath/ijson-jcs
+* Crate: `ijson-jcs` v0.1.0, `edition = "2024"`, license MPL-2.0.
+* Specs: I-JSON RFC 7493 (MUST + SHOULD) + JCS RFC 8785 (deterministic bytes).
+
+`ijson-jcs` ships a Rust library (`src/*.rs`: `lib.rs`, `ijson.rs`, `jcs.rs`,
+`strict.rs`, `error.rs`, `bin/*.rs`) and a CLI (`ijson-jcs check`/`fix`/`canon`).
+This document does not re-specify JCS; it references `ijson-jcs`.
+
+== What kyq must inherit exactly
+
+=== 1. Validation mode
+
+Every `kyq` entry point that touches JSON canonical bytes parses in
+`ijson_jcs::JsonMode::Canonical` (the strictest mode). That is:
+
+* UTF-8 input, no BOM mis-handling.
+* Duplicate object keys → `INVALID` (detected at parse time, before `Value`
+  construction — `validate_i_json(&Value)` alone cannot see them).
+* Numbers: IEEE-754 binary64 exact representation; integers in `±(2^53−1)`, no
+  `NaN`/`Infinity`; numbers outside range → `INVALID`.
+* Strings/keys: no unpaired surrogates (`U+D800..U+DFFF`), no noncharacters,
+  only `TAB`/`LF`/`CR` as control characters.
+* Top-level value: SHOULD be object/array (enforced as warning/error per
+  policy — `kyq` follows `ijson-jcs` exactly here).
+
+=== 2. Canonical bytes (JCS)
+
+For the same logical `serde_json::Value`, `kyq` produces byte-equal output to
+`ijson_jcs::to_jcs(&value)` and `to_jcs_string(&value)`:
+
+* UTF-8, no BOM.
+* Object keys sorted by *UTF-16 code-unit* order (RFC 8785), not lexicographic.
+* No insignificant whitespace (compact form); number serialisation per ES
+  `JSON.stringify` (via `serde_json` `float_roundtrip`; `-0` vs `0`, `1e21`
+  formatting, subnormals all match).
+* Arrays preserve order; only object keys are sorted.
+* Determinism + idempotence: `to_jcs(parse(to_jcs(v))) = to_jcs(v)`; same input
+  always same bytes.
+
+=== 3. CLI surface
+
+Where `kyq` offers `check`/`fix`/`canon`-like behaviour (for YAML or JSON
+inputs), it uses the same user-visible contract as `ijson-jcs`:
+
+* `check` prints `OK path`, `NOT CANONICAL path`, or `INVALID path: reason`
+  per file, on stdout. Exit 0 if every file canonical, 1 if some valid but not
+  canonical (none invalid), 2 if any invalid/unreadable. Usage error also 2.
+* `fix` rewrites each valid, non-canonical file to canonical form + single
+  `\\n`; `OK path` when already correct and not written; `INVALID` files left
+  untouched. Exit 0 if every file valid (fixed or already OK), else 2.
+* `canon` reads stdin, writes canonical form to stdout with *no* trailing
+  newline (hash/sign input); errors to stderr as `INVALID <stdin>: reason`,
+  exit 2 on invalid.
+
+Use `--` before file names beginning with `-`. These are not kyq inventions;
+they are the `ijson-jcs` CLI spec quoted verbatim.
+
+=== 4. The trailing-newline rule (load-bearing)
+
+JCS bytes have no trailing newline, but text files on disk should end with one.
+Therefore:
+
+[cols="1,3",options="header"]
+|===
+| Form | Bytes on disk
+
+| JCS canonical bytes (for hashing/signing)
+| `b` — exactly `to_jcs(&value)`, no trailing newline. This is what you hash.
+
+| On-disk JSON file considered "canonical" by `check`
+| `b` *or* `b ++ "\n"` — i.e. the canonical form optionally followed by exactly
+  one `\\n`. Anything else (`b ++ "\n\n"`, `b ++ "\r\n"`, trailing space, leading
+  whitespace) is `NOT CANONICAL`.
+
+| `fix` output
+| Always `b ++ "\n"`.
+
+| `canon` output
+| Always `b` (no newline), so hashing `canon` output directly is correct. To
+  hash a checked file, strip the single final `\\n` first — or hash
+  `ijson-jcs canon < file`.
+|===
+
+`kyq` must implement this rule exactly; it must not produce files with double
+newlines, CRLF, or trimmed final newlines in `fix` mode.
+
+== KYAML → JCS pipeline (how kyq bridges the two)
+
+----
+YAML (KYAML) ──parse (kyaml)──▶ YamlValue ──φ──▶ serde_json::Value
+                                                    │
+                                              validate (Strict)
+                                                    │
+                                                    ▼
+                                              to_jcs(bytes) / to_jcs_string
+----
+
+* Step 1 — `parse`: KYAML parser per `docs/KYAML_SPEC.adoc`. Rejects duplicate
+  YAML keys, anchors cycles, tags it cannot preserve.
+* Step 2 — `φ` (the lossless bridge): `YamlValue::Int` → JSON number (checked
+  against `±(2^53−1)`), `Float` → JSON number (checked for finiteness), `String`
+  → JSON string (checked for surrogates/noncharacters), `Sequence` → JSON array,
+  `Mapping` (string keys) → JSON object. Non-string mapping keys are rejected;
+  integers that would become floats via `serde_json`'s `i64`/`u64` path are not
+  mis-cast — they are checked before collapse (the `validate_i_json` caveat in
+  `ijson-jcs` docs applies here too: never validate a `Value` that `serde_json`
+  already parsed naively; parse the *text* strictly).
+* Step 3 — `to_jcs`: delegates to `ijson_jcs::to_jcs`. No second implementation.
+  Byte equality with `ijson-jcs canon` for the same logical Value is a tested
+  property (Thm JCS-8).
+
+== What "guaranteed" means for this doc
+
+* Byte equality with `ijson-jcs` on the shared corpus (valid + duplicate-key +
+  unsafe-integer + surrogate/noncharacter + canonical-bytes fixtures).
+* `check`/`fix`/`canon` exit codes and printed lines match `ijson-jcs` for JSON
+  inputs; for YAML inputs the pipeline above is applied first, then the same
+  rules, and the same exit codes.
+* No bypass: a YAML input containing a duplicate key that JSON would collapse
+  to one key is still `INVALID`, because the check happens at the YAML parse
+  layer, not after `Value` construction.
+* Errors are typed (`ParseError`, `ValidationError`, `CanonicalizationError`)
+  with kind, path, and source location; no invalid input is classified valid.
+
+== Implementation note (Path A — Strict AffineScript)
+
+`Cargo.toml` is *not* added (strict AffineScript-only). `ijson-jcs` logic is
+ported to AffineScript in `src/Kyaml/Jcs.affine` + `src/Kyaml/Ijson.affine`,
+spec-driven from `hyperpolymath/ijson-jcs` `src/*.rs` and its README contract.
+`kyq`'s canonical bytes remain single-sourced to that spec (byte-equal to
+`ijson_jcs::to_jcs`), but the implementation language stays AffineScript so the
+estate invariant `affinescript-only` is preserved. The `ijson-jcs` Rust crate
+remains the external oracle for cross-checking: a shared corpus is checked with
+both `ijson-jcs canon` (Rust binary) and `kyq canon` (AffineScript/WASM) and
+must be byte-equal (Thm JCS-8).
+
+== Deferred (Phase 3)
+
+* Formal proof that UTF-16 sort is a total order matching RFC 8785 (mechanised
+  in `proofs/jcs/`).
+* Formal proof that `to_jcs` on JSON numbers agrees with ES `JSON.stringify`
+  on the I-JSON-valid number domain.
+* Formal proof that the KYAML→JCS pipeline inherits `ijson-jcs`'s determinism
+  and idempotence without regression.
+

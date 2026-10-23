@@ -4,91 +4,78 @@
 // KYAML Abstract Syntax Tree types
 // Defines the data structures for representing parsed Kubernetes YAML
 
-module Kyaml.Ast
+module Kyaml.Ast;
 
-// Option type for nullable values
-pub type Option<T> = Some(T) | None
+use prelude::{ Option, Some, None };
 
 // YAML Value types - represents any YAML value
-pub enum YamlValue {
-    // Scalar types
-    Null,
-    Bool(Bool),
-    Int(Int),
-    Float(Float),
-    String(String),
-    
-    // Collection types  
-    Sequence([YamlValue]),
-    Mapping({}String -> YamlValue),
-    
-    // Special K8s types
-    Anchor(String),
-    Alias(String),
-    Tag(String, String),  // (handle, suffix)
-}
+pub type YamlValue =
+    YamlNull
+  | YamlBool(Bool)
+  | YamlInt(Int)
+  | YamlFloat(Float)
+  | YamlString(String)
+  | YamlSequence([YamlValue])
+  | YamlMapping([(String, YamlValue)])
+  | YamlAnchor(String)
+  | YamlAlias(String)
+  | YamlTag(String, String)
 
 // Simplified K8s Resource representation
-pub enum K8sResource {
-    // Core types
-    Pod({}String -> YamlValue),
-    Deployment({}String -> YamlValue),
-    Service({}String -> YamlValue),
-    ConfigMap({}String -> YamlValue),
-    Secret({}String -> YamlValue),
-    
-    // Generic/Unknown
-    Generic({}String -> YamlValue),
-}
+pub type K8sResource =
+    K8sPod([(String, YamlValue)])
+  | K8sDeployment([(String, YamlValue)])
+  | K8sService([(String, YamlValue)])
+  | K8sConfigMap([(String, YamlValue)])
+  | K8sSecret([(String, YamlValue)])
+  | K8sGeneric([(String, YamlValue)])
 
 // Metadata common to all K8s resources
-pub type ObjectMeta = {
-    name: Option<String>,
-    namespace: Option<String>,
-    labels: Option<{}String -> String>,
-    annotations: Option<{}String -> String>,
-    uid: Option<String>,
-    resource_version: Option<String>,
+pub struct ObjectMeta {
+  name: Option[String],
+  namespace: Option[String],
+  labels: Option[[(String, String)]],
+  annotations: Option[[(String, String)]],
+  uid: Option[String],
+  resource_version: Option[String]
 }
 
 // Parse result types
-pub enum ParseResult {
-    Success(AstDocument),
-    Error(ParseError),
+pub type ParseResult =
+    ParseSuccess(AstDocument)
+  | ParseError(ParseErrorDetail)
+
+pub struct AstDocument {
+  version: Option[String],
+  tags: Option[[(String, String)]],
+  root: YamlValue,
+  resources: [K8sResource]
 }
 
-pub type AstDocument = {
-    version: Option<String>,  // YAML version
-    tags: Option<{}String -> String>,
-    root: YamlValue,
-    resources: [K8sResource],
-}
-
-pub type ParseError = {
-    message: String,
-    line: Option<Int>,
-    column: Option<Int>,
-    context: Option<String>,
+pub struct ParseErrorDetail {
+  message: String,
+  line: Option[Int],
+  column: Option[Int],
+  context: Option[String]
 }
 
 // Lint severity levels
-pub enum LintSeverity {
-    Error,
-    Warning,
-    Info,
-}
+pub type LintSeverity =
+    LintError
+  | LintWarning
+  | LintInfo
 
 // Lint issue location
-pub type LintLocation = {
-    line: Option<Int>,
-    column: Option<Int>,
-    path: Option<String>,
+pub struct LintLocation {
+  line: Option[Int],
+  column: Option[Int],
+  path: Option[String]
 }
 
 // Lint issue
-pub type LintIssue = {
-    rule: String,
-    message: String,
-    severity: LintSeverity,
-    location: LintLocation,
+pub struct LintIssue {
+  rule: String,
+  message: String,
+  severity: LintSeverity,
+  location: LintLocation
 }

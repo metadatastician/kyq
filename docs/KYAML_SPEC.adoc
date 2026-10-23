@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq — KYAML Specification (Kubernetes YAML Subset)
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-23
+:status: DRAFT (Phase 0 stub; normative from Phase 1)
+
+This is the normative home for "kyaml". A YAML document is kyaml iff it
+conforms to this spec. The spec is a *subset* of YAML 1.2; anything outside
+the subset is rejected or normalised as the spec states — never silently
+mis-parsed. This stub records the shape; Phase 1 fills the grammar.
+
+toc::[]
+
+== Purpose and non-goals
+
+* Purpose: a well-defined input language for `kyq` that is exactly "the YAML
+  that Kubernetes actually emits and accepts, with K8s conventions". All `kyq`
+  guarantees (§ guarantees) are stated with respect to this language.
+* Non-goal: handling every YAML 1.2 feature. YAML is large; kyaml is small.
+
+== Base standard
+
+* Syntax: YAML 1.2, https://yaml.org/spec/1.2/spec.html.
+* Data model on top of syntax: YAML 1.2 "Core Schema"
+  (null/bool/int/float/string/sequence/mapping resolved from plain scalars).
+* Kubernetes conventions: `apiVersion` (string), `kind` (string),
+  `metadata` (mapping with `name`, `namespace`, `labels`, `annotations`),
+  `spec` shapes per K8s OpenAPI. Multi-document streams split on `---`/`...`.
+
+References: Kubernetes API reference (`v1.25` → `v1.30`) — the K8s version range
+in `kyq_chora.deed` `(ecosystem (related :name "kubernetes" ...))`.
+
+== What counts as kyaml (informative until Phase 1)
+
+* Streams of one or more documents; each document is a mapping that is either a
+  K8s resource (has `apiVersion` + `kind`) or a plain mapping/sequence (for
+  helpers like `Kustomization`, List types).
+* Scalars: plain, single-quoted, double-quoted; block scalars (`|`, `>`) with
+  chomping/indent indicators.
+* Collections: block mappings/sequences and flow mappings/sequences.
+* Anchors (`&`) and aliases (`*`): allowed, acyclic, resolved before linting.
+* Tags (`!`, `!!`, `!mytag`): allowed; unknown tags preserved as
+  `Tag(handle,suffix)` or rejected as stated — never dropped.
+* Directives (`%YAML`, `%TAG`): optional, honoured when present.
+* Excluded (rejected or explicitly normalised — Phase 1 will enumerate):
+  complex mapping keys, `!!timestamp` implicit typing, duplicate keys (always
+  rejected; see JCS §), and any construct that introduces ambiguity about the
+  data model.
+
+== Fixtures (ground truth)
+
+[cols="1,2,1",options="header"]
+|===
+| File | Meaning | Expected verdict
+
+| `examples/deployment.yaml`
+| Well-formed Deployment + Service, `apps/v1` / `v1`, correct types, selector
+  matches pod-template labels, explicit `imagePullPolicy`, probes, resources.
+| `kyq lint` → pass; `kyq validate` → pass; `kyq fmt` idempotent.
+
+| `tests/fixtures/invalid-deployment.yaml`
+| Intentionally broken Deployment: `apiVersion: apps/v1beta2` (deprecated),
+  `spec.replicas: "3"` (type mismatch: string vs int), selector `app: nginx`
+  ≠ pod-template `app: apache` (selector mismatch), `image: nginx:latest`
+  (`latest-tag` warning).
+| `kyq lint` → at least 4 issues (deprecated-api, type-check, latest-tag,
+  selector-mismatch); each with `line`/`column`/`path`.
+
+| `templates/deployment-template.yaml`, `templates/service-template.yaml`
+| Parameterised templates with `{{VAR}}` / `{{#PORTS}}` blocks — kyq template
+  parameters, not repo placeholders.
+| `kyq envsubst` / `kyq inject` targets (Phase 1+).
+|===
+
+== Guarantees (normative — what "guaranteed works for kyaml" means)
+
+These paraphrase the theorems in `docs/PROOF_OBLIGATIONS.adoc` §§ 1–4 and will be
+proven against the final grammar in Phase 3. Phase 1 already makes them
+testable:
+
+* Lexing is total + deterministic; diagnostics point at the causing byte.
+* Parsing is total + unique (one `Success` or one `Error`, never a crash);
+  AST well-formedness (Thm KYAML-5) holds for every `Success`.
+* `fmt` is idempotent (Thm Q-5); `fmt(fmt(doc))` is byte-equal to `fmt(doc)`.
+* `get`/`set`/`del` are well-defined on the path grammar (dot + `[n]` + `[]`
+  + quoted keys) and preserve document well-formedness.
+* Required-fields, type-check, deprecated-api, latest-tag, selector-mismatch,
+  resource-name, label-key rules are sound (no false positives) and, within the
+  listed kinds, complete.
+* YAML→JSON bridge is lossless on the intersection of the two languages; lossy
+  cases (e.g. non-string keys, unsafe integers) are rejected, not coerced.
+
+== Open questions for Phase 1 (tracked, not decided here)
+
+* Exact scalar-type coercion table for the KYAML subset (which plain scalars
+  resolve to int/float/bool/null vs stay string).
+* Comment/whitespace preservation policy for `fmt` and `set -i` (preserve vs
+  normalise).
+* Whether `!!` tag shorthands are preserved or canonicalised.
+* Maximum document/stream size and anchor-expansion limits (ties to SEC-1).
+
+== Relation to ijson-jcs
+
+Kyaml is the *input* language; JSON canonical (JCS) is the *output* form used
+when kyq needs to hash, sign, or store content-addressably. The bridge is
+specified in `docs/IJSON_JCS_INTEGRATION.adoc`. In short:
+
+* `kyq to-json` produces JSON that `ijson-jcs` in `JsonMode::Strict` accepts.
+* That JSON's canonical bytes (`to_jcs`) are then exactly what `ijson-jcs`
+  would produce for the same logical Value (Thm JCS-8). No second canonical form
+  is invented.
+* Duplicate keys are caught at the text boundary in *both* YAML and JSON, so
+  `kyq` never hides a YAML duplicate that JSON would collapse.
+

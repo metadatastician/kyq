@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+//
+// JCS (RFC 8785) + I-JSON (RFC 7493) canonicalisation — AffineScript port
+// of hyperpolymath/ijson-jcs. Phase 2 stub that type-checks; full port
+// implements UTF-16 sort, ES number rules, and I-JSON validation.
+
+module Kyaml.Jcs;
+
+use Kyaml.Ast;
+use prelude::{ Option, Some, None };
+use json::{ Json, JNull, JBool, JInt, JFloat, JString, JArray, JObject };
+
+pub type IJsonError =
+    IJsonOk
+  | IJsonDuplicateKey(String)
+  | IJsonUnsafeInteger(Int)
+  | IJsonNonFiniteNumber
+  | IJsonSurrogate
+  | IJsonNonCharacter(String)
+
+pub fn validate_i_json(value: YamlValue) -> IJsonError {
+  IJsonOk
+}
+
+pub fn yaml_to_json(v: YamlValue) -> Json {
+  match v {
+    YamlNull => JNull,
+    YamlBool(b) => JBool(b),
+    YamlInt(i) => JInt(i),
+    YamlFloat(f) => JFloat(f),
+    YamlString(s) => JString(s),
+    YamlSequence(seq) => {
+      let mut out: [Json] = [];
+      for item in seq {
+        out = out ++ [yaml_to_json(item)];
+      }
+      JArray(out)
+    },
+    YamlMapping(pairs) => {
+      let mut fields: [(String, Json)] = [];
+      for (k, val) in pairs {
+        fields = fields ++ [(k, yaml_to_json(val))];
+      }
+      JObject(fields)
+    },
+    YamlAnchor(s) => JString(s),
+    YamlAlias(s) => JString(s),
+    YamlTag(h, suffix) => JString(h ++ suffix)
+  }
+}
+
+fn sort_keys_utf16(keys: [(String, Json)]) -> [(String, Json)] {
+  let mut sorted: [(String, Json)] = [];
+  for (k, v) in keys {
+    let mut inserted: Bool = false;
+    let mut next: [(String, Json)] = [];
+    for (sk, sv) in sorted {
+      if !inserted && k < sk {
+        next = next ++ [(k, v)];
+        inserted = true;
+      }
+      next = next ++ [(sk, sv)];
+    }
+    if !inserted {
+      next = next ++ [(k, v)];
+    }
+    sorted = next;
+  }
+  sorted
+}
+
+fn escape_json_string(s: String) -> String {
+  let mut out: String = "\"";
+  let mut i: Int = 0;
+  let hex: String = "0123456789ABCDEF";
+  while i < len(s) {
+    let ch = string_get(s, i);
+    let code = ord(ch);
+    if ch == '"' {
+      out = out ++ "\\\"";
+    } else if ch == '\\' {
+      out = out ++ "\\\\";
+    } else if code == 8 {
+      out = out ++ "\\b";
+    } else if code == 12 {
+      out = out ++ "\\f";
+    } else if code == 10 {
+      out = out ++ "\\n";
+    } else if code == 13 {
+      out = out ++ "\\r";
+    } else if code == 9 {
+      out = out ++ "\\t";
+    } else if code >= 0 && code <= 31 {
+      let hi = code / 16;
+      let lo = code % 16;
+      out = out ++ "\\u00" ++ string_sub(hex, hi, 1) ++ string_sub(hex, lo, 1);
+    } else {
+      out = out ++ string_sub(s, i, 1);
+    }
+    i = i + 1;
+  }
+  out ++ "\""
+}
+
+fn canonical_json_string(j: Json) -> String {
+  match j {
+    JNull => "null",
+    JBool(b) => if b { "true" } else { "false" },
+    JInt(i) => int_to_string(i),
+    JFloat(f) => float_to_string(f),
+    JString(s) => escape_json_string(s),
+    JArray(xs) => {
+      let mut s: String = "[";
+      let mut first: Bool = true;
+      for x in xs {
+        if !first { s = s ++ ","; }
+        s = s ++ canonical_json_string(x);
+        first = false;
+      }
+      s ++ "]"
+    },
+    JObject(fields) => {
+      let sorted = sort_keys_utf16(fields);
+      let mut s: String = "{";
+      let mut first: Bool = true;
+      for (k, v) in sorted {
+        if !first { s = s ++ ","; }
+        s = s ++ escape_json_string(k) ++ ":" ++ canonical_json_string(v);
+        first = false;
+      }
+      s ++ "}"
+    }
+  }
+}
+
+pub fn to_jcs(value: YamlValue) -> String {
+  let j = yaml_to_json(value);
+  canonical_json_string(j)
+}
+
+pub fn to_jcs_bytes(value: YamlValue) -> String {
+  to_jcs(value)
+}
+
+pub fn is_canonical(yaml: String) -> Bool {
+  match Kyaml.Parser::parse_yaml(yaml) {
+    ParseSuccess(doc) => {
+      let canon = to_jcs(doc.root);
+      yaml == canon || yaml == canon ++ "\n"
+    },
+    ParseError(_e) => false
+  }
+}

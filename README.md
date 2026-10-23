@@ -59,9 +59,21 @@ While `yq` is excellent for generic YAML/JSON processing, `kyq` is **optimized f
 git clone https://github.com/hyperpolymath/affinescript
 # Follow AffineScript setup instructions
 
-# Build kyq
-cd meta-repos/kyq
-make build
+# Verify repository layout and deed
+just validate
+
+# Build kyq (currently blocked: AffineScript 0.1.1 does not parse src/ — see docs/status/ROADMAP.adoc)
+just build
+```
+
+> **Current status:** `just build` / `just test` / `just bench` fail with
+> `not implemented` until the AffineScript grammar gap clears. This is
+> intentional — no placeholder artefact is emitted. See
+> `docs/ULTRAPLAN.adoc`, `docs/KYAML_SPEC.adoc`, and
+> `docs/IJSON_JCS_INTEGRATION.adoc` for the KYAML + JCS guarantees being built
+> toward, and `docs/PROOF_OBLIGATIONS.adoc` for the theorems they must satisfy.
+> K8s manifests live under `examples/`; the lint-negative fixture is
+> `tests/fixtures/invalid-deployment.yaml`.
 ```
 
 ### Pre-built Binaries

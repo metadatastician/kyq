@@ -1,0 +1,480 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq v0.2 Ultraplan — From Scaffold to Guaranteed KYAML + JCS Canonicalisation
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-23
+:author: Agent (Arena) + hyperpolymath
+
+Abstract: a field-ready plan to take `metadatastician/kyq` from an honest
+scaffold (Phase 0: 5% milestones, build does not parse) to a tool that
+*guarantees* it works for KYAML (Kubernetes YAML, a well-defined YAML 1.2
+subset) and for the estate JSON canonical form defined by
+`hyperpolymath/ijson-jcs` (I-JSON RFC 7493 + JCS RFC 8785). The plan is
+ordered by hard dependency: first the repository must be truthful, green in
+CI, documented and secure; then KYAML must be proved working; then the JCS
+canonical pipeline must be proved working on top of KYAML. Mathematical proofs
+are catalogued, not discharged, in this document.
+
+toc::[]
+
+== How to read this document
+
+* *Honest* means no placeholder binary, no fake test pass. The `Justfile`
+  recettes `build`, `test`, `bench`, `wasm` currently fail with
+  `not implemented: AffineScript 0.1.1 does not parse src/`. That is load-bearing.
+* *Guaranteed works for KYAML* means: for every input in the defined KYAML
+  language, `kyq` either accepts it and produces the specified output, or
+  rejects it with a structured, locatable error; no silent mis-parse; no crash;
+  behaviour is specified by an executable grammar, covered by property tests,
+  and bounded by stated resource limits.
+* *Guaranteed works for JCS* means the same, plus byte-for-byte determinism
+  per RFC 8785, via the `ijson-jcs` contract (`check`/`fix`/`canon` semantics,
+  trailing-newline rule, failure modes).
+* The companion catalogue `docs/PROOF_OBLIGATIONS.adoc` lists the theorems
+  that the finished product must satisfy. This ultraplan does *not* prove them;
+  it sequences the work so proofs can be added without rework.
+
+== 0. Deep recon — what is true today
+
+=== 0.1 What the repo *is*
+
+* Language: AffineScript, target WebAssembly; `src/Kyaml/*.affine` (≈ 2456 lines
+  across 9 tracked `.affine` files) drafted against a grammar AffineScript
+  0.1.1 does not accept. `coordination.k9` rule `affinescript-only` and deed
+  invariant `no-fabricated-artefacts` are correctly enforced: nothing builds,
+  rather than a lie building.
+* Commands (`lint`, `fmt`, `get`, `set`, `del`, `validate`, `split`, `merge`,
+  `diff`, `to-json`, `from-json`, `envsubst`, `inject`) are documented in
+  `README.md` and `Main.affine` help text. None are implemented. The help text
+  itself is the product today.
+* Fixtures: `tests/fixtures/invalid-deployment.yaml` (deliberately broken
+  `apps/v1beta2` + type mismatch + selector mismatch + `:latest`) and
+  `examples/deployment.yaml` (canonical good deployment + Service) are the
+  ground-truth pair for the future test suite.
+* Deed `kyq_chora.deed` is well-formed (single deed at root, `:schema-version`,
+  `(status ...)`, no `#u7`, no `.a2ml`). Road map `docs/status/ROADMAP.adoc`
+  carries blockers 1–5, including the parse gap (`lib/parser.mly` vs sources)
+  and *no program input in the WASM target* — a module today cannot read
+  argv/stdin, so even a parsing build could not read a manifest from the
+  command line.
+* CI `ci.yml` is intentionally thin (metadata + shellcheck only); the usual
+  build/test/release jobs are deliberately absent until `affinescript compile`
+  produces a module. This matches the estate pattern for blocked compilers.
+
+=== 0.2 CI/CD as measured 2026-10-23
+
+* `actions.lock` is transitively closed and SHA-pinned for all callers that
+  `hyperpolymath/standards` at `0b1898e...` needs. The check `check-action-pinning.js`
+  reports *all action refs are pinned*.
+* Four previously dead-at-startup callers (`rust-ci.yml`, `governance.yml`,
+  `secret-scanner.yml`, `scorecard.yml`) were pinned to that SHA in PR #8
+  and now *do* start. Recent `main` at `d448abd` shows:
+  `Rust CI: success`, `Secret Scanner: success`, `CI: success`,
+  `Lock Sync Gate: success`, `DEED: success`, `K9: success`,
+  `SonarQube: success`, `Governance: failure` (not startup_failure any more —
+  a substantive job failure to triage), and three Dependabot update failures
+  for `npm_and_yarn`, `pip`, `hex`.
+* Three GitHub issues (#3, #4, #5) correctly diagnosed the startup deaths
+  circa `4749fd5` but are now stale: the runs they cite succeed. Their
+  acceptance criteria ask for a planted SHA-pin control and a lock entry that
+  matches — both now hold. They should be closed with evidence, or one
+  updated and the other two closed as duplicates, and a follow-up filed for
+  the current `governance.yml` *failure* (which is different from startup_failure).
+* `dependabot.yml` declares `cargo` (correct, though no `Cargo.toml` exists
+  yet), `mix`, `npm`, `pip`, `hex` via template default. Only `github-actions`
+  and `cargo` are applicable to this repo today; the others have no manifests,
+  so Dependabot produces PRs that can never succeed (hence the three failures).
+  The estate guidance (`.github/dependabot.yml` header + `cargo` comment) is
+  to keep `github-actions` always, keep `cargo` with `open-pull-requests-limit: 0`
+  for security-only, and remove unused ecosystems rather than leave them failing.
+* `codeql.yml` correctly pins `github/codeql-action@b96794f` at `v4.38.0` with
+  4.38.1 blocked estate-wide (`nexia-list#100`). `release.yml` auto-detects
+  `Justfile` → `just build` (which today fails by design); the `build` job
+  should stay, but its failure mode must be classified as *expected-blocked*
+  not as a release defect.
+* Branch protection (inherited from `settings.yml`) expects status checks that
+  actually exist; disabled workflows (`pages.yml`, `mirror.yml`, etc.) are
+  correctly not required.
+
+=== 0.3 Documentation, security, quality signals
+
+* `README.md` still says `make build` in *Installation* while the repo uses
+  `just`; it claims binary sizes/startup times (`1–5 MB`, `10–20 ms`) as if
+  measured, but ROADMAP says nothing has been compiled. `AFFIRMATION.adoc` is
+  `DRAFT — UNSIGNED` at `4749fd5`, with correct toolchain versions, and it
+  notes the README's `//` SPDX comments rendering as visible text (still true).
+  `ARCHITECTURE.adoc` correctly says *planned rather than implemented*.
+  `CONTRIBUTING.md` lists OCaml/Rust/WASM prerequisites and an old
+  `meta-repos/kyq` clone path plus `make test`/`make wasm` — stale.
+* `SECURITY.md` + `www/.well-known/security.txt` (expiry 2027-09-30) are present
+  and consistent. `.gitleaksignore` allowlists two SHA-pins that look like
+  `generic-api-key` — correct, with commit-scoped entries.
+* `quality.yml` runs editorconfig + shellcheck (error severity); `security-policy.yml`
+  is a non-gating warning for weak crypto/HTTP/secrets. Both are soft checks by
+  design. `sonarqube.yml` and `codeql.yml` cover distinct surfaces; `static-analysis-gate.yml`
+  runs `panic-attack` + Hypatia and deposits to gitbot-fleet — intentional
+  duplication of Hypatia across `hypatia-scan.yml` (standalone scan) and the gate
+  (fleet learning), documented in `.github/workflows/README.adoc`. Keep both.
+* Missing or stale: no `Cargo.toml` (so `cargo` ecosystem is aspirational),
+  no `sonar-project.properties` for the SonarQube scan (it still succeeds on
+  the workflow surface only), no explicit `kyaml` spec doc, no `ijson-jcs`
+  integration doc.
+
+=== 0.4 What "kyaml" means today
+
+* `coordination.k9` describes kyq as *an AffineScript-based KYAML processor
+  intended as a smaller, K8s-aware alternative to yq* with target formats
+  `YAML`, `JSON`, `K8s manifests`, YAML versions `YAML 1.2`, and K8s target
+  `v1.25 → v1.30`. No formal KYAML grammar artifact exists. The intended
+  meaning is *the subset of YAML 1.2 that Kubernetes actually emits and
+  accepts*, plus K8s conventions (multi-doc `---`, anchors/aliases used
+  sparingly, tags rare, `apiVersion`/`kind`/`metadata`/`spec` required shapes).
+* Lint rules in `RequiredFields.affine` cover `required-field` for Pod,
+  Deployment, Service, ConfigMap, Secret; `README.md` enumerates a broader rule
+  set (`deprecated-api`, `latest-tag`, `selector-mismatch`, `resource-names`,
+  `label-keys`, `type-check`, etc.) that does not yet exist as code.
+
+=== 0.5 What "ijson-jcs canonical" means
+
+* `hyperpolymath/ijson-jcs` is the estate JSON standard (D306): I-JSON
+  validation (RFC 7493 MUST + SHOULD) plus JCS canonicalisation (RFC 8785),
+  Rust crate + `ijson-jcs` CLI (`check`/`fix`/`canon`), with stated exit codes,
+  trailing-newline rule (*canonical bytes optionally followed by exactly one
+  `\\n` are accepted by `check`; `fix` always writes canon + `\\n`; `canon`
+  writes canon with no trailing newline*), duplicate-key detection at parse
+  time, IEEE-754 and safe-integer `±(2^53−1)` enforcement, UTF-16 code-unit key
+  sorting, and denial of unpaired surrogates / noncharacters. The crate's test
+  suite (33+ cases) is the executable spec.
+
+== 1. Mathematical proof obligations (catalogue only)
+
+The catalogue lives in `docs/PROOF_OBLIGATIONS.adoc`. Summary below; no proofs
+are attempted here.
+
+* *KYAML language*: totality + determinism of lex/parse; bijection between
+  token streams and ASTs modulo insignificant whitespace/comments; YAML 1.2 core
+  schema faithfulness for the KYAML subset; multi-document equivalence;
+  anchor/alias resolution termination + referential transparency; tag handling.
+* *K8s schema*: soundness of `required-fields` and type rules w.r.t. the
+  embedded OpenAPI schemas (`apps/v1`, `v1`, `networking.k8s.io/v1`,
+  `batch/v1`, etc.); completeness bounds; `deprecated-api` rule correctly
+  tracks `v1beta1`→`v1` transitions; selector-mismatch detection is sound (no
+  false negatives for the checked kinds).
+* *Query + mutation language*: path query semantics (`a.b`, `[0]`, `[]`,
+  quoted keys) are deterministic and total on well-formed docs; `get`/`set`/`del`
+  preserve document well-formedness and K8s invariants where claimed; idempotence
+  of `fmt`.
+* *KYAML↔JSON bridge*: `to-json`/`from-json` are semantics-preserving on the
+  intersection of the two languages; lossy cases are characterised and rejected.
+* *JCS/I-JSON*: parsing rejects duplicate keys before `Value` construction;
+  safe-integer and float canonicalisation exactly match `ijson-jcs`
+  (`serde_json` with `float_roundtrip`, ES `JSON.stringify` number rules);
+  UTF-16 sort is a total order matching RFC 8785; `to_jcs` is deterministic,
+  idempotent, and injective on equivalence classes of JSON values modulo key
+  order/whitespace; trailing-newline rule is exactly as specified; error types
+  are exhaustive.
+* *Cross-cutting*: a K8s manifest round-trips `YAML → Value → JCS bytes →
+  Value → YAML` without semantic change outside declared normalisations;
+  resource limits and error handling are proven not to mask invalid inputs.
+
+== 2. Sequencing principle: Working → Canonical → Proven
+
+You cannot prove a tool correct before the tool exists, and you cannot claim
+the canonical form works before the underlying YAML works. The ultraplan is
+therefore strictly ordered:
+
+[horizontal]
+Phase 0 (now) :: Make the repository honest and green
+Phase 1 (next) :: Guarantee KYAML works (parse/lint/query/fmt, no JCS yet)
+Phase 2 (after) :: Guarantee JCS canonical works *on top of* Phase 1
+Phase 3 (then)  :: Discharge proof obligations, carrying evidence in-repo
+Phase 4 (last)  :: Estate adoption (dogfood, docs site, editor tooling)
+
+Each phase has a *gate* that must pass before the next phase starts. No phase
+is allowed to produce a placeholder artefact that earlier phases pretend is real.
+
+== 3. Phase 0 — Make the repository honest and green (est. 1–2 days)
+
+Gate to exit Phase 0: `just validate` passes, CI status checks that branch
+protection requires are present and green on `main`, documentation states the
+current (non-working) reality without contradiction, and no GitHub quality
+signal is left acknowledged-but-unhandled.
+
+=== 3.1 CI/CD fixes that unblock everything else
+
+* *Dependabot hygiene*: trim `.github/dependabot.yml` to the ecosystems that
+  exist: `github-actions` (always) + `cargo` (security-only,
+  `open-pull-requests-limit: 0`, grouped). Remove `mix`/`npm`/`pip` (or comment
+  with a `when Cargo.toml appears…` note). This alone clears the three
+  Dependabot `failure` runs.
+* *Close or freshen the startup-failure issues*: re-measure #3 #4 #5 at
+  `d448abd`. Expected finding: they are fixed. Post a closing comment with the
+  evidence (workflow run IDs, `actions.lock` SHA `0b1898e…`, conclusion
+  `success`) and close them; file *one* new issue for the current
+  `Governance: failure` (non-startup) with logs. Link siblings.
+* *Lockfile contract*: run `scripts/check-lock-sync.sh` in CI already via
+  `lock-sync-gate.yml` (lockless, immune to self-stall). No change needed, but
+  add a `Justfile` recipe `lock-check` that calls both `check-action-pinning.js`
+  and `check-lock-sync.sh` so contributors can reproduce locally.
+* *Permissions audit*: verify each workflow's `permissions:` block is minimal
+  (most are `contents: read`). `scorecard.yml` needs `security-events: write`
+  + `id-token: write`; `governance.yml`/`rust-ci.yml`/`secret-scanner.yml`
+  correctly use `actions: read`. No change unless a reusable adds a new scope.
+* *Release workflow*: keep `release.yml` as-is, but its release-notes job must
+  not run `just build` expecting artefact production until Phase 1; classify the
+  expected-blocked failure so a tag push today does not create a spurious failed
+  release.
+* *Invisible-characters gate*: wire `scripts/check-invisible-characters.sh`
+  into a workflow or a `just` lint recipe; it exists but is not gated in CI.
+
+=== 3.2 Documentation fixes that stop lying
+
+* `README.md` Installation: `make build` → `just build`; add *Prerequisites*
+  (AffineScript toolchain URL + pinned version) and a *Current status* banner
+  linking to `docs/status/ROADMAP.adoc` / `docs/AFFIRMATION.adoc`.
+* `CONTRIBUTING.md`: replace `make`/`meta-repos/kyq` paths, add
+  `just validate` + `just lock-check` as pre-PR checks, note the
+  `affinescript-only` rule and where to request dispensation.
+* `docs/ARCHITECTURE.adoc`: keep *planned rather than implemented* framing;
+  add a *Deviations* sub-section listing the README's measurement claims and
+  pointing to the future benchmarks.
+* `docs/status/ROADMAP.adoc`: already correct; keep it the single source of
+  truth for `phase`/`maturity` percentages.
+* `coordination.k9` / `kyq_chora.deed`: no change — they already carry the
+  `no-fabricated-artefacts` and `no-fabricated-tests` invariants.
+
+=== 3.3 Security & quality close-out
+
+* `.gitleaksignore` is correct — leave it.
+* `www/.well-known/security.txt` expiry is 2027-09-30 — correct.
+* `CODEOWNERS`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `SUPPORT.md`,
+  `labels.json` are estate-standard — leave them.
+* Add `docs/KYAML_SPEC.adoc` (Phase 0 stub) and
+  `docs/IJSON_JCS_INTEGRATION.adoc` (Phase 0 stub) so reviewers have a place
+  to comment on scope before implementation starts.
+
+=== 3.4 What Phase 0 does *not* do
+
+No source change in `src/`, no new binary, no new dependency, no relaxation of
+`affinescript-only`. The only code on `main` after Phase 0 is docs, CI config,
+and scripts — so the repo can still honestly say *nothing builds yet*.
+
+== 4. Phase 1 — Guarantee KYAML works
+
+Gate to exit Phase 1: a `kyq` binary can be built on a clean checkout,
+`kyq lint`/`fmt`/`get`/`set`/`del`/`validate`/`split`/`merge`/`diff`/`to-json`/`from-json`
+exist and are specified, and a property suite proves the parser total/deterministic
+on the defined KYAML language (see proof catalogue Thms 1–6). CI runs build + unit +
+integration + fixtures on every PR.
+
+=== 4.1 Define KYAML precisely
+
+Create `docs/KYAML_SPEC.adoc` as the normative subset:
+
+* Base: YAML 1.2 "Core Schema" + Kubernetes conventions; explicit `---` multi-doc,
+  anchors/aliases allowed, tags allowed but not required, directives optional.
+* Exclusions: YAML 1.2 features K8s never emits (e.g. `!!timestamp` implicit,
+  complex keys) are either rejected or normalised — the spec must say which.
+* Fixtures become spec: `examples/deployment.yaml` (good) and
+  `tests/fixtures/invalid-deployment.yaml` (bad) plus
+  `docs/KYAML_SPEC.adoc#examples` are the first conformance tests.
+
+=== 4.2 Choose an implementation path (decision required)
+
+There are three honest ways to clear AffineScript blocker 1. Phase 1 needs one:
+
+[cols="2,3,2",options="header"]
+|===
+| Path | What changes | Cost
+
+| A — AffineScript port (purist)
+| Rewrite ~50% of `src/` to AffineScript 0.1.1 grammar (mechanical 5% +
+  semi-mechanical 25% + AST rewrite) and add stdin/argv support (blocker 3) in
+  the AffineScript toolchain itself.
+| Preserves `affinescript-only` with no dispensation; longest calendar time;
+  depends on upstream.
+
+| B — Rust bootstrap with AffineScript shim (pragmatic)
+| ~~B — Rust bootstrap with AffineScript shim (pragmatic)~~ — *REJECTED per owner ruling 2026-10-23: strict AffineScript-only.*
+| Would have added `Cargo.toml` + `crates/kyq-cli`; kept `src/*.affine` as spec.
+  Rejected — violates `coordination.k9` invariant `affinescript-only` (severity
+  critical). Not used.
+
+| C — Hosted AffineScript (hybrid) — *DEFERRED, not chosen*
+| Compile AffineScript to WASM via `affinescript compile` for the pure parser
+  and drive I/O from a tiny host shim that supplies argv/stdin (fixing blocker 3
+  at the host layer, not the compiler). Keeps most code in AffineScript; still
+  blocked on Path A for parsing until `affinescript compile` works. Not the
+  Phase 1 pick; may be revisited for WASM distribution in Phase 4.
+
+|===
+
+*Decision 2026-10-23: strict AffineScript-only (Path A). No Rust code, no
+Cargo.toml, no dispensation.* Rationale: estate invariant `affinescript-only`
+is load-bearing for the WASM/affine-type safety story; `ijson-jcs` integration
+will be achieved by porting the JCS/I-JSON logic to AffineScript (see §5.2
+Strict), not by adding a Rust dependency. Calendar cost is +2–4 weeks vs Path B,
+and depends on clearing the AffineScript compiler gaps (grammar parity,
+WASM argv/stdin).
+
+=== 4.3 What ships in Phase 1
+
+* Parser + AST + lexer fully covered by property tests (totality, determinism,
+  whitespace/comment erasure, anchor termination).
+* Linter rules: `required-fields`, `type-check`, `deprecated-api`, `latest-tag`,
+  `selector-mismatch`, `resource-names`, `label-keys` — each with positive +
+  negative fixtures and a `kyq lint --format sarif` output.
+* Query/mutation: dot-path + bracket indexing + wildcard; `get`/`set`/`del`
+  semantics specified, including creation of intermediate mappings.
+* `fmt` is idempotent by construction (proven by property test).
+* CI: new `build` + `test` jobs replace the "not implemented" failure; release
+  pipeline produces a real artefact (or a WASM bundle in Path C).
+
+== 5. Phase 2 — Guarantee JCS canonical works (on top of KYAML)
+
+Gate to exit Phase 2: `kyq` speaks the same canonical contract as
+`ijson-jcs check`/`fix`/`canon` on the intersection of the two input languages,
+with byte-equal output for the same logical JSON value, and the same exit-code
+and error taxonomy. The integration is proven not to reintroduce duplicate-key
+or noncharacter bypasses.
+
+=== 5.1 The canonical pipeline
+
+----
+YAML (KYAML) ──parse──▶ Value (lossless) ──validate I-JSON──▶ JCS bytes
+        │                                           │
+        │ to-json (stable)                    to_jcs / to_jcs_string
+        ▼                                           ▼
+     JSON text  ◀── from-json ──  Value  ── check/fix/canon ── bytes on disk
+----
+
+* KYAML `to-json` must emit JSON that `ijson-jcs` would accept in
+  `JsonMode::Strict`; if it does not, the pipeline must error, not silently
+  coerce.
+* For hashing/signing, the hash input is *exactly* `to_jcs(&value)` (no trailing
+  newline). For on-disk files, `fix` semantics apply (canon + single `\\n`).
+  Both rules are already specified by `ijson-jcs`; kyq must not invent a
+  second trailing-newline policy.
+* Duplicate keys, unsafe integers, floats outside IEEE-754, lone surrogates,
+  noncharacters must be caught at the YAML→Value boundary, not only at the
+  Value→bytes boundary — otherwise `serde_yaml`/`serde_json` collapsing would
+  hide them (the `validate_i_json` vs `parse_json` caveat in `ijson-jcs` docs).
+
+=== 5.2 Implementation (Path A — Strict AffineScript)
+
+* `ijson-jcs` logic is *ported* to AffineScript in `src/Kyaml/Jcs.affine` and
+  `src/Kyaml/Ijson.affine` (not linked as a Rust crate). The port is
+  specification-driven from `hyperpolymath/ijson-jcs` README + `src/*.rs`:
+  duplicate-key detection at parse time (before `Value` construction), safe
+  integer `±(2^53−1)`, IEEE-754 finite checks, surrogate/noncharacter safety,
+  UTF-16 code-unit key sort per RFC 8785, ES `JSON.stringify` number rules
+  (via ported `float_roundtrip` logic), and the trailing-newline rule.
+
+  The AffineScript module exposes:
+
+  * `Kyaml.parse(&str) -> ParseResult` (per docs/KYAML_SPEC.adoc)
+  * `Kyaml.toValue(&YamlValue) -> JsonValue` (lossless, typed; lossy cases
+    rejected before `JsonValue` construction — the `validate_i_json` caveat
+    in `ijson-jcs` docs applies: never validate a `Value` that collapsed keys)
+  * `Kyaml.Jcs.canonicalBytes(&JsonValue) -> Result<Vec<u8>, CanonicalError>`
+    (byte-equal to `ijson_jcs::to_jcs`; single-sourced spec)
+  * CLI subcommands `kyq canon`, `kyq check`, `kyq fix` that mirror `ijson-jcs`
+    exit codes (0/1/2) for JSON-file inputs, and extend them to YAML inputs via
+    the pipeline above.
+
+  No `Cargo.toml` is added; `Justfile` continues to call `affinescript compile`
+  (failing loudly until the grammar gap clears, per `no-fabricated-artefacts`).
+
+* CLI help must state the trailing-newline rule verbatim, as `ijson-jcs` does.
+
+=== 5.3 Testing strategy (maps 1:1 to proof obligations Thms 7–12)
+
+* Unit: every example in `ijson-jcs` README becomes a kyq test case.
+* Property: `canon(canon(x)) == canon(x)` (idempotence); `canon(x) == canon(y)`
+  iff `x` and `y` are the same JSON value modulo key order/whitespace;
+  UTF-16 sort is total and stable; number serialisation matches `ijson-jcs`
+  fixtures (including `-0`, `1e21`, subnormals).
+* Integration: `kyq check`/`fix`/`canon` produce byte-equal output to
+  `ijson-jcs check`/`fix`/`canon` on a shared corpus; `diff` on the two
+  binaries must be empty.
+* Negative: duplicate-key YAML (e.g. `a: 1\na: 2`) is rejected before JCS;
+  documents with noncharacters/unpaired surrogates are rejected with locations.
+
+== 6. Phase 3 — Proof foundations
+
+Gate to exit Phase 3: each theorem in `docs/PROOF_OBLIGATIONS.adoc` is either
+mechanically proven (Lean/Coq/TLA+ artifact in `proofs/`) or has a tracked
+property-test suite + manual proof sketch that the owner has signed. No theorem
+is both unproven and un-tracked.
+
+This phase is intentionally *after* working code: proofs are written against
+the executable spec and the real fixtures, not against a wish.
+
+Outline (not proofs):
+
+* `proofs/kyaml/` — YAML 1.2 subset grammar, lex/parse totality, anchor termination.
+* `proofs/jcs/` — UTF-16 sort total order, ES number serialisation correctness,
+  canonical bytes determinism + injectivity, trailing-newline handling.
+* `proofs/estate/` — K8s schema soundness, selector-mismatch soundness,
+  resource-name/label-key validation.
+* Tooling choice (Lean 4 vs Coq vs TLA+) is deferred; the first proof should be
+  `JCS idempotence`, the smallest closed property with independent value.
+
+== 7. Phase 4 — Estate adoption
+
+* `just bench` vs yq baseline; `gradings/` thresholds become CI gates.
+* GitHub Action (`kyq lint` as a check), pre-commit hook, VS Code / LSP.
+* `www/` docs site (GitHub Pages, already in `pages.yml`).
+* Affirmation at each milestone (`AFFIRMATION.adoc` per the estate standard).
+
+== 8. What we are doing *now* (Phase 0 execution)
+
+Already landed on `arena/dc1301aa-kyq` (previous commit):
+
+* This ultraplan + `docs/PROOF_OBLIGATIONS.adoc` + `docs/KYAML_SPEC.adoc` (stub)
+  + `docs/IJSON_JCS_INTEGRATION.adoc` (stub) as the spec surface.
+* Hygiene: trimmed `dependabot.yml` (now `github-actions` + `cargo` only),
+  noted Governance `Actions-lock verify` failure as follow-up, added
+  `just lock-check`, corrected `README.md`/`CONTRIBUTING.md`.
+
+This commit (post D1=A):
+
+* Records the owner's strict AffineScript-only ruling (2026-10-23) in §4.2
+  and §5.2: no Cargo, no dispensation.
+* Details the Phase 1 AffineScript port tasks (§4.3 strict) and the Phase 2
+  JCS port (AffineScript `src/Kyaml/Jcs.affine`, not a Rust crate).
+* Fixes the stale `push-email-notify.yml` comment SHA (was `v0.3.0`,
+  now `v0.5.0`) that contributed to Governance lockfile verify flake.
+
+Next steps (still Phase 0, no source build yet):
+
+* Close #3 #4 #5 with evidence (now stale) and file one issue for the
+  current `Governance: Actions lockfile verify: failure`.
+* Regenerate `actions.lock` with `gh actions-lock` v0.2.0 once the
+  extension is reachable (release-assets network); until then the governance
+  failure is tracked, not hidden.
+* File AffineScript upstream gaps: grammar parity (`module;`, `use` vs `import`,
+  `#{}` literals, 2-segment paths, no `&mut T`/`break`/`if let`/map type) and
+  WASM argv/stdin.
+
+== 9. Decisions (recorded)
+
+[horizontal]
+D1 — Implementation path :: **A — strict AffineScript-only** (owner ruling 2026-10-23; Path B rejected, Path C deferred)
+D2 — Dependabot scope :: **DONE** — `mix`/`npm`/`pip` removed (only `github-actions` + `cargo` remain)
+D3 — Governance failure :: track as new issue; close #3 #4 #5 as stale with evidence
+D4 — Spec stubs :: `docs/KYAML_SPEC.adoc` + `docs/IJSON_JCS_INTEGRATION.adoc` are the normative homes for the two guarantees
+
+No mathematical proof is claimed in this plan; every guarantee above is stated
+as a testable property with a named theorem that will be discharged in Phase 3.
+
+== References
+
+* `kyq` repo deed `kyq_chora.deed`, coordination `coordination.k9`, roadmap
+  `docs/status/ROADMAP.adoc`, affirmation `docs/AFFIRMATION.adoc`.
+* `hyperpolymath/ijson-jcs` README + `Cargo.toml` + `src/lib.rs` (RFC 7493/8785).
+* Estate standards: deed grammar, K9 coordination 1.1.1, RSR templates,
+  `actions-lock`, `sha_pinning_required` allowlist.
+

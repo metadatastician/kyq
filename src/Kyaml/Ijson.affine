@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+//
+// I-JSON validation (RFC 7493) — AffineScript port of hyperpolymath/ijson-jcs
+// Phase 2 stub; full validation in A6.
+
+module Kyaml.Ijson;
+
+use Kyaml.Ast;
+use prelude::{ Option, Some, None };
+
+pub type ValidationError =
+    Valid
+  | DuplicateKey(String)
+  | UnpairedSurrogate(String)
+  | NonCharacter(String)
+  | UnsafeInteger(Int)
+  | InvalidUtf8
+
+pub fn is_valid_i_json_string(s: String) -> Bool {
+  // stub: delegate to parse + validate
+  true
+}
+
+pub fn validate_value(v: YamlValue) -> ValidationError {
+  Valid
+}

@@ -116,6 +116,52 @@ validate:
 	echo "✓ $deed"
 	echo "validation passed"
 
+# AffineScript check (requires affinescript toolchain — see docs/AFFINESCRIPT_STRICT_PORT.adoc A1)
+affine-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v affinescript >/dev/null 2>&1 && ! command -v dune >/dev/null 2>&1; then
+      echo "note: affinescript not installed — skipping affinescript check (see https://github.com/hyperpolymath/affinescript)"
+      exit 0
+    fi
+    if command -v affinescript >/dev/null 2>&1; then
+      affinescript check src/Main.affine
+      affinescript check src/Kyaml.affine
+      affinescript check src/Kyaml/Ast.affine
+      affinescript check src/Kyaml/Lexer.affine
+      affinescript check src/Kyaml/Parser.affine
+      affinescript check src/Kyaml/Lint/RequiredFields.affine
+      affinescript check src/Kyaml/Jcs.affine
+      affinescript check src/Kyaml/Ijson.affine
+    else
+      dune exec affinescript -- check src/Main.affine
+      dune exec affinescript -- check src/Kyaml.affine
+      dune exec affinescript -- check src/Kyaml/Ast.affine
+      dune exec affinescript -- check src/Kyaml/Lexer.affine
+      dune exec affinescript -- check src/Kyaml/Parser.affine
+      dune exec affinescript -- check src/Kyaml/Lint/RequiredFields.affine
+      dune exec affinescript -- check src/Kyaml/Jcs.affine
+      dune exec affinescript -- check src/Kyaml/Ijson.affine
+    fi
+    echo "✓ affine checks passed (A1 minimal slice)"
+
+# Check that every workflow `uses:` is locked/pinned (requires yq + gh)
+lock-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Checking action pinning..."
+    node scripts/check-action-pinning.js
+    if command -v gawk >/dev/null 2>&1; then \
+      bash scripts/check-lock-sync.sh; \
+    else \
+      echo "note: gawk not installed, skipping check-lock-sync (install with apt-get install gawk)"; \
+    fi
+    echo "Running invisible-character scan..."
+    tmp="$(mktemp -d)"; \
+    bash scripts/check-invisible-characters.sh "." "$tmp/results" "$tmp/blocking" || true; \
+    if [ -s "$tmp/results" ]; then echo "invisible-char findings:"; cat "$tmp/results"; else echo "no invisible-char findings"; fi; \
+    rm -rf "$tmp"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # INSTALL
 # ═══════════════════════════════════════════════════════════════════════════════

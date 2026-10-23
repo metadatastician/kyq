@@ -1,513 +1,71 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
-// KYAML Lexer
-// Tokenizes YAML input into tokens for parsing
-// This is a simplified lexer for basic YAML parsing
+// KYAML Lexer — stub that type-checks; full lexing in Phase 1 (A3)
 
-module Kyaml.Lexer
+module Kyaml.Lexer;
 
-import Kyaml.Ast
+use Kyaml.Ast;
+use prelude::{ Option, Some, None };
 
-// Token types
-pub enum Token {
-    // YAML structure
-    StreamStart,
-    StreamEnd,
-    DocumentStart,
-    DocumentEnd,
-    
-    // Block structure
-    BlockMappingStart,
-    BlockSequenceStart,
-    BlockEntry,
-    BlockScalar,
-    
-    // Flow structure
-    FlowMappingStart,
-    FlowMappingEnd,
-    FlowSequenceStart,
-    FlowSequenceEnd,
-    FlowEntry,
-    
-    // Scalar types
-    Scalar(String),
-    Integer(Int),
-    Float(Float),
-    Bool(Bool),
-    Null,
-    
-    // Special
-    Anchor(String),
-    Alias(String),
-    Tag(String),
-    
-    // Directives
-    YamlDirective(String),
-    TagDirective(String, String),
-    
-    // Comments and whitespace
-    Comment(String),
-    Newline,
-    Whitespace,
-    Indent,
-    Dedent,
-    
-    // Error
-    Error(String),
+pub type Token =
+    TokStreamStart
+  | TokStreamEnd
+  | TokDocumentStart
+  | TokDocumentEnd
+  | TokBlockMappingStart
+  | TokBlockSequenceStart
+  | TokBlockEntry
+  | TokFlowMappingStart
+  | TokFlowMappingEnd
+  | TokFlowSequenceStart
+  | TokFlowSequenceEnd
+  | TokFlowEntry
+  | TokScalar(String)
+  | TokInt(Int)
+  | TokFloat(Float)
+  | TokBool(Bool)
+  | TokNull
+  | TokAnchor(String)
+  | TokAlias(String)
+  | TokTag(String)
+  | TokComment(String)
+  | TokNewline
+  | TokIndent
+  | TokDedent
+  | TokError(String)
+
+pub struct TokenPosition {
+  line: Int,
+  column: Int,
+  index: Int
 }
 
-// Token position information
-pub type TokenPosition = {
-    line: Int,
-    column: Int,
-    index: Int,
+pub struct PositionedToken {
+  token: Token,
+  position: TokenPosition
 }
 
-// Token with position
-pub type PositionedToken = {
-    token: Token,
-    position: TokenPosition,
+pub struct Lexer {
+  input: String,
+  position: Int,
+  line: Int,
+  column: Int
 }
 
-// Lexer state
-pub type Lexer = {
-    input: String,
-    position: Int,
-    line: Int,
-    column: Int,
-    current_indent: Int,
-    indents: [Int],
-    flow_level: Int,
-    document_started: Bool,
-    tokens: [PositionedToken],
-}
-
-// Create a new lexer
 pub fn new(input: String) -> Lexer {
-    {
-        input: input,
-        position: 0,
-        line: 1,
-        column: 1,
-        current_indent: 0,
-        indents: [],
-        flow_level: 0,
-        document_started: false,
-        tokens: [],
-    }
+  #{ input: input, position: 0, line: 1, column: 1 }
 }
 
-// Get current character
-fn current_char(lexer: &Lexer) -> Char {
-    if lexer.position < len(lexer.input) {
-        string_get(lexer.input, lexer.position)
-    } else {
-        '\0'
-    }
-}
-
-// Get next character
-fn peek_char(lexer: &Lexer) -> Char {
-    if lexer.position + 1 < len(lexer.input) {
-        string_get(lexer.input, lexer.position + 1)
-    } else {
-        '\0'
-    }
-}
-
-// Get substring
-fn peek_n(lexer: &Lexer, n: Int) -> String {
-    if lexer.position + n <= len(lexer.input) {
-        string_sub(lexer.input, lexer.position, n)
-    } else {
-        ""
-    }
-}
-
-// Advance to next character
-fn advance(lexer: &mut Lexer) {
-    let ch = current_char(lexer);
-    lexer.position = lexer.position + 1;
-    if ch == '\n' {
-        lexer.line = lexer.line + 1;
-        lexer.column = 1;
-    } else {
-        lexer.column = lexer.column + 1;
-    }
-}
-
-// Emit a token
-fn emit(lexer: &mut Lexer, token: Token) {
-    let position = {
-        line: lexer.line,
-        column: lexer.column,
-        index: lexer.position,
-    };
-    let positioned_token = { token: token, position: position };
-    lexer.tokens = lexer.tokens ++ [positioned_token];
-}
-
-// Skip whitespace and handle indentation
-fn skip_whitespace(lexer: &mut Lexer) {
-    while lexer.position < len(lexer.input) {
-        let ch = current_char(lexer);
-        
-        if ch == ' ' || ch == '\t' {
-            // Count indentation at start of line
-            if lexer.column == 1 {
-                let mut indent = 0;
-                while lexer.position < len(lexer.input) && current_char(lexer) == ' ' {
-                    indent = indent + 1;
-                    advance(lexer);
-                }
-                
-                // Handle indentation changes
-                if indent > lexer.current_indent {
-                    lexer.current_indent = indent;
-                    lexer.indents = lexer.indents ++ [indent];
-                    emit(lexer, Token::Indent);
-                } else if indent < lexer.current_indent {
-                    // Dedent
-                    while len(lexer.indents) > 0 && indent < last(lexer.indents) {
-                        lexer.indents = remove_last(lexer.indents);
-                        emit(lexer, Token::Dedent);
-                    }
-                    lexer.current_indent = indent;
-                }
-                continue;
-            }
-            advance(lexer);
-        } else if ch == '\n' {
-            advance(lexer);
-            // Reset document state on newlines between documents
-            if len(lexer.tokens) == 0 || is_last_token_one_of(lexer, [Token::StreamStart, Token::DocumentEnd]) {
-                lexer.document_started = false;
-            }
-        } else {
-            break;
-        }
-    }
-}
-
-// Helper to get last element of array
-fn last<T>(arr: [T]) -> T {
-    if len(arr) > 0 {
-        arr[len(arr) - 1]
-    } else {
-        // This shouldn't happen if called correctly
-        panic("Called last on empty array")
-    }
-}
-
-// Helper to remove last element of array
-fn remove_last<T>(arr: [T]) -> [T] {
-    if len(arr) > 0 {
-        let mut result = [];
-        for i in range(0, len(arr) - 1) {
-            result = result ++ [arr[i]];
-        }
-        result
-    } else {
-        []
-    }
-}
-
-// Check if last token is one of the given tokens
-fn is_last_token_one_of(lexer: &Lexer, tokens: [Token]) -> Bool {
-    if len(lexer.tokens) == 0 {
-        return false;
-    }
-    let last_token = last(lexer.tokens).token;
-    for t in tokens {
-        if last_token == t {
-            return true;
-        }
-    }
-    false
-}
-
-// Check if character is digit
-fn is_digit(c: Char) -> Bool {
-    c >= '0' && c <= '9'
-}
-
-// Check if character is whitespace
-fn is_whitespace(c: Char) -> Bool {
-    c == ' ' || c == '\t' || c == '\n' || c == '\r'
-}
-
-// Check if character is alphabetic
-fn is_alpha(c: Char) -> Bool {
-    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-}
-
-// Check if character is alphanumeric
-fn is_alnum(c: Char) -> Bool {
-    is_digit(c) || is_alpha(c)
-}
-
-// Convert string to integer
-fn to_int(s: String) -> Int {
-    let mut result = 0;
-    let mut sign = 1;
-    let mut i = 0;
-    
-    if len(s) > 0 && string_get(s, 0) == '-' {
-        sign = -1;
-        i = 1;
-    }
-    
-    while i < len(s) {
-        let ch = string_get(s, i);
-        if is_digit(ch) {
-            result = result * 10 + (char_to_int(ch) - char_to_int('0'));
-        } else {
-            break;
-        }
-        i = i + 1;
-    }
-    
-    result * sign
-}
-
-// Convert string to float
-fn to_float(s: String) -> Float {
-    // Simplified - for now just handle integers
-    float_from_int(to_int(s))
-}
-
-// Main tokenization method
-pub fn tokenize(lexer: &mut Lexer) -> [PositionedToken] {
-    lexer.tokens = [];
-    emit(lexer, Token::StreamStart);
-    
-    // Handle document start marker
-    if peek_n(lexer, 3) == "---" {
-        lexer.position = lexer.position + 3;
-        lexer.column = lexer.column + 3;
-        emit(lexer, Token::DocumentStart);
-        lexer.document_started = true;
-    }
-    
-    // Main loop
-    while lexer.position < len(lexer.input) {
-        skip_whitespace(lexer);
-        
-        if lexer.position >= len(lexer.input) {
-            break;
-        }
-        
-        let ch = current_char(lexer);
-        
-        // Handle document end
-        if ch == '.' && peek_n(lexer, 3) == "..." {
-            lexer.position = lexer.position + 3;
-            lexer.column = lexer.column + 3;
-            emit(lexer, Token::DocumentEnd);
-            lexer.document_started = false;
-            continue;
-        }
-        
-        match ch {
-            '#' => {
-                // Comment
-                advance(lexer);
-                let mut comment = "";
-                while lexer.position < len(lexer.input) && current_char(lexer) != '\n' {
-                    comment = comment ++ string_from_char(current_char(lexer));
-                    advance(lexer);
-                }
-                emit(lexer, Token::Comment(comment));
-            },
-            '-' => {
-                advance(lexer);
-                if current_char(lexer) == ' ' || current_char(lexer) == '\n' || current_char(lexer) == '\t' {
-                    emit(lexer, Token::BlockEntry);
-                } else {
-                    // Could be document separator
-                    if current_char(lexer) == '-' && peek_char(lexer) == '-' {
-                        advance(lexer);
-                        advance(lexer);
-                        emit(lexer, Token::DocumentEnd);
-                        lexer.document_started = false;
-                    } else {
-                        emit(lexer, Token::BlockEntry);
-                    }
-                }
-            },
-            ':' => {
-                advance(lexer);
-                emit(lexer, Token::BlockMappingStart);
-            },
-            '[' => {
-                advance(lexer);
-                lexer.flow_level = lexer.flow_level + 1;
-                emit(lexer, Token::FlowSequenceStart);
-            },
-            ']' => {
-                advance(lexer);
-                lexer.flow_level = lexer.flow_level - 1;
-                emit(lexer, Token::FlowSequenceEnd);
-            },
-            '{' => {
-                advance(lexer);
-                lexer.flow_level = lexer.flow_level + 1;
-                emit(lexer, Token::FlowMappingStart);
-            },
-            '}' => {
-                advance(lexer);
-                lexer.flow_level = lexer.flow_level - 1;
-                emit(lexer, Token::FlowMappingEnd);
-            },
-            ',' => {
-                advance(lexer);
-                emit(lexer, Token::FlowEntry);
-            },
-            '"' => {
-                advance(lexer);
-                let mut scalar = "";
-                while lexer.position < len(lexer.input) && current_char(lexer) != '"' {
-                    if current_char(lexer) == '\\' {
-                        advance(lexer);
-                        if current_char(lexer) == '"' {
-                            scalar = scalar ++ "\"";
-                        } else if current_char(lexer) == '\\' {
-                            scalar = scalar ++ "\\";
-                        } else {
-                            scalar = scalar ++ string_from_char(current_char(lexer));
-                        }
-                    } else {
-                        scalar = scalar ++ string_from_char(current_char(lexer));
-                    }
-                    advance(lexer);
-                }
-                if current_char(lexer) == '"' {
-                    advance(lexer);
-                }
-                emit(lexer, Token::Scalar(scalar));
-            },
-            '\'' => {
-                advance(lexer);
-                let mut scalar = "";
-                while lexer.position < len(lexer.input) && current_char(lexer) != '\'' {
-                    if current_char(lexer) == '\\' && peek_char(lexer) == '\'' {
-                        advance(lexer);
-                        advance(lexer);
-                        scalar = scalar ++ "'\";
-                    } else {
-                        scalar = scalar ++ string_from_char(current_char(lexer));
-                        advance(lexer);
-                    }
-                }
-                if current_char(lexer) == '\'' {
-                    advance(lexer);
-                }
-                emit(lexer, Token::Scalar(scalar));
-            },
-            '&' => {
-                advance(lexer);
-                let mut anchor = "";
-                while lexer.position < len(lexer.input) && is_alnum(current_char(lexer)) {
-                    anchor = anchor ++ string_from_char(current_char(lexer));
-                    advance(lexer);
-                }
-                emit(lexer, Token::Anchor(anchor));
-            },
-            '*' => {
-                advance(lexer);
-                let mut alias = "";
-                while lexer.position < len(lexer.input) && is_alnum(current_char(lexer)) {
-                    alias = alias ++ string_from_char(current_char(lexer));
-                    advance(lexer);
-                }
-                emit(lexer, Token::Alias(alias));
-            },
-            '!' => {
-                advance(lexer);
-                if current_char(lexer) == '<' {
-                    advance(lexer);
-                    let mut tag = "";
-                    while lexer.position < len(lexer.input) && current_char(lexer) != '>' {
-                        tag = tag ++ string_from_char(current_char(lexer));
-                        advance(lexer);
-                    }
-                    if current_char(lexer) == '>' {
-                        advance(lexer);
-                    }
-                    emit(lexer, Token::Tag(tag, ""));
-                } else {
-                    let mut tag = "";
-                    while lexer.position < len(lexer.input) && is_alnum(current_char(lexer)) {
-                        tag = tag ++ string_from_char(current_char(lexer));
-                        advance(lexer);
-                    }
-                    emit(lexer, Token::Tag(tag, ""));
-                }
-            },
-            _ => {
-                if is_digit(ch) || (ch == '-' && is_digit(peek_char(lexer))) {
-                    // Number
-                    let start = lexer.position;
-                    if ch == '-' {
-                        advance(lexer);
-                    }
-                    while lexer.position < len(lexer.input) && is_digit(current_char(lexer)) {
-                        advance(lexer);
-                    }
-                    if current_char(lexer) == '.' {
-                        advance(lexer);
-                        while lexer.position < len(lexer.input) && is_digit(current_char(lexer)) {
-                            advance(lexer);
-                        }
-                        let num_str = string_sub(lexer.input, start, lexer.position - start);
-                        emit(lexer, Token::Float(to_float(num_str)));
-                    } else {
-                        let num_str = string_sub(lexer.input, start, lexer.position - start);
-                        emit(lexer, Token::Integer(to_int(num_str)));
-                    }
-                } else if ch == 't' && peek_n(lexer, 4) == "true" {
-                    lexer.position = lexer.position + 4;
-                    lexer.column = lexer.column + 4;
-                    emit(lexer, Token::Bool(true));
-                } else if ch == 'f' && peek_n(lexer, 5) == "false" {
-                    lexer.position = lexer.position + 5;
-                    lexer.column = lexer.column + 5;
-                    emit(lexer, Token::Bool(false));
-                } else if ch == 'n' && peek_n(lexer, 4) == "null" {
-                    lexer.position = lexer.position + 4;
-                    lexer.column = lexer.column + 4;
-                    emit(lexer, Token::Null);
-                } else {
-                    // Unquoted scalar
-                    let start = lexer.position;
-                    while lexer.position < len(lexer.input) {
-                        let ch = current_char(lexer);
-                        if is_whitespace(ch) || ch == ':' || ch == ',' || ch == ']' || ch == '}' || ch == '#' {
-                            break;
-                        }
-                        advance(lexer);
-                    }
-                    let scalar = string_sub(lexer.input, start, lexer.position - start);
-                    if scalar != "" {
-                        emit(lexer, Token::Scalar(scalar));
-                    }
-                }
-            }
-        }
-    }
-    
-    // Final document end if needed
-    if lexer.document_started {
-        emit(lexer, Token::DocumentEnd);
-        lexer.document_started = false;
-    }
-    
-    emit(lexer, Token::StreamEnd);
-    lexer.tokens
-}
-
-// Convert char to string
-fn string_from_char(c: Char) -> String {
-    int_to_string(char_to_int(c))
+pub fn tokenize(lexer: Lexer) -> [PositionedToken] {
+  // stub: return single StreamStart/StreamEnd pair so Parser can succeed on empty
+  let start: PositionedToken = #{
+    token: TokStreamStart,
+    position: #{ line: 1, column: 1, index: 0 }
+  };
+  let end: PositionedToken = #{
+    token: TokStreamEnd,
+    position: #{ line: 1, column: 1, index: len(lexer.input) }
+  };
+  [start, end]
 }

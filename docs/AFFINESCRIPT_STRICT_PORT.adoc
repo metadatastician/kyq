@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq — Strict AffineScript-Only Port Plan (Path A)
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-23
+
+This note details the work implied by the owner's ruling *strict AffineScript
+only* (2026-10-23). No Rust/Cargo code is added; `coordination.k9`
+`affinescript-only` stays enforced. The plan turns the ROADMAP Blocker 1
+breakdown into actionable upstream and in-repo tasks.
+
+toc::[]
+
+== Why this plan exists
+
+`docs/status/ROADMAP.adoc` Blockers says AffineScript 0.1.1 does not parse any
+of the 9 tracked `.affine` files. Until that changes, `just build`/`test`/`wasm`
+fail by design (`no-fabricated-artefacts`). A Rust bootstrap would clear the
+blocker in days, but the owner explicitly rejected it — so we fix the
+AffineScript side.
+
+== What the compiler gap is (from ROADMAP)
+
+Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
+
+* Mechanical: `module X;` needs its semicolon, `import` → `use`, no trailing enum
+  commas, `&mut T` → `mut T`.
+* Semi-mechanical: `#{…}` record literals, two-segment paths only, no variant
+  named after a builtin type (`String`, `Int`), etc. Read against `lib/parser.mly`.
+* Rewrite: 0.1.1 has no `Map` type, no `break`/`continue`, no `if let`, so the
+  AST and every map operation change shape (the `{}String -> YamlValue` maps in
+  `src/Kyaml/Ast.affine` must become an AffineScript-supported representation).
+
+== In-repo tasks (kyq side)
+
+[cols="1,3",options="header"]
+|===
+| Task | Description
+
+| A1 — Minimal compilable slice
+| Reduce `src/` to the smallest file that `affinescript check` accepts, then
+  re-add constructs one by one, documenting which line-7/8 parse error fires.
+  Outcome: an exact checklist of grammar deltas.
+
+| A2 — Port `Ast.affine`
+| Replace `{}String -> V` maps with the AffineScript 0.1.1 container type
+  (or a list-of-pairs representation with helper functions). No `Map` builtin
+  means every `map.contains`/`map.get` call site changes.
+
+| A3 — Port `Lexer.affine` + `Parser.affine`
+| `while`, `break`/`continue`, `if let` → structured equivalents; `&mut T`
+  → `mut T`; enum commas; import syntax. Keep the YAML 1.2 lex rules.
+
+| A4 — Port `Kyaml.affine` + `Main.affine` query helpers
+| `split_path`, `query_value`, `set_value` and friends — same control-flow
+  rewrites as A3.
+
+| A5 — Port `Lint/RequiredFields.affine` and add the remaining 6 lint rules
+| Type-check, deprecated-api, latest-tag, selector-mismatch, resource-names,
+  label-keys — each as a pure `LintRule = Doc -> [LintIssue]`.
+
+| A6 — Port JCS/I-JSON to AffineScript (`src/Kyaml/Jcs.affine`, `Ijson.affine`)
+| UTF-16 code-unit sort, safe-integer `±(2^53−1)`, float finite check,
+  surrogate/noncharacter rejection, ES number rules, trailing-newline handling.
+  Spec is `hyperpolymath/ijson-jcs` README + `src/*.rs`; tests are byte-equal
+  to its corpus.
+
+| A7 — WASM host I/O
+| Blocker 3: the 0.1.1 WASM target gives a module no argv/stdin. Upstream fix
+  or a minimal host that passes `args`/`stdin`/`stdout`/`stderr` as imports
+  so `kyq lint`/`check`/`canon` can run. Until then, `just build` produces a
+  module that can be unit-tested in-process but not invoked as a CLI.
+
+| A8 — CI build/test jobs
+| Replace `ci.yml`'s two-job stub with `build` (affinescript compile) +
+  `test` (affine tests on `kyaml_parser_test.affine`/`lint_rules_test.affine`)
+  once A1 clears. Keep `no-fabricated-artefacts`: a failing compile is a
+  failing job, never a fake pass.
+
+|===
+
+== Upstream tasks (affinescript side, filed as issues there)
+
+* Grammar parity: `module;`, `use`, record literals, path segments, trailing
+  commas, `&mut T` spelling — each as a separate issue with a one-line
+  reproducer (`affinescript check src/Kyaml/Ast.affine` at line 7).
+* Container type: `Map<K,V>` or equivalent, with `contains`/`get`/`set`.
+* Control flow: `break`/`continue` or structured loop alternative, `if let`
+  (or `match` desugaring).
+* WASM I/O: argv/stdin/stdout/stderr imports for the WASM target (blocker 3).
+* Verify `affinescript check` covers imports: plant a type error in an
+  imported module and confirm it is rejected.
+
+== How KYAML guarantee is shown before proofs
+
+* Executable spec: `docs/KYAML_SPEC.adoc` + `examples/deployment.yaml` (good) +
+  `tests/fixtures/invalid-deployment.yaml` (bad) are the first conformance
+  tests.
+* Property harness (AffineScript test module, not Rust proptest yet): parse
+  totality/determinism, `fmt` idempotence, `get`/`set` round-trip, selector
+  soundness — each as an AffineScript test that runs via `affinescript test`
+  once A1 clears.
+* Shared corpus with `ijson-jcs`: valid/invalid/canonical JSON triples; `kyq
+  canon` (AffineScript) and `ijson-jcs canon` (Rust oracle) must be byte-equal
+  (Thm JCS-8). The oracle is external — no Rust code is added to kyq.
+
+== Ordering
+
+A1 → A2 → A3/A4 (parallel) → A5 → A6 (needs A2's `JsonValue`) → A7 → A8.
+Phase 1 gate (KYAML working) is A1..A5 + `ci.yml` build/test green. Phase 2 gate
+(JCS canonical) is A6 + corpus byte-equality. Proofs (Phase 3) are after both.
+
