@@ -24,6 +24,19 @@ fi
 printf 'TOOLCHAIN %s\n' "$version_output"
 printf 'NOTICE: A1 census only; completion is not a build or test PASS.\n'
 
+emit_notice() {
+  [ "${A1_ANNOTATIONS:-0}" = "1" ] || return 0
+  local title="$1"
+  local message="$2"
+  title="${title//'%'/'%25'}"
+  message="${message//'%'/'%25'}"
+  message="${message//$'\r'/'%0D'}"
+  message="${message//$'\n'/'%0A'}"
+  printf '::notice title=%s::%s\n' "$title" "$message"
+}
+
+emit_notice 'A1 toolchain' "$version_output (census only; not a build/test PASS)"
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -38,6 +51,7 @@ probe() {
   local source="$2"
   local file="$work/$name.affine"
   local mode output rc diagnostic
+  local evidence=''
 
   printf '%s' "$source" > "$file"
   for mode in parse check; do
@@ -48,10 +62,12 @@ probe() {
     set -e
     diagnostic="$(one_line < "$output")"
     printf 'PROBE %-30s %-5s rc=%d %s\n' "$name" "$mode" "$rc" "${diagnostic:--}"
+    evidence+="$mode rc=$rc ${diagnostic:--}"$'\n'
     if [ "$rc" -ne 0 ]; then
       sed 's/^/  | /' "$output"
     fi
   done
+  emit_notice "A1 probe $name" "$evidence"
 }
 
 # Smallest accepted candidates, then one grammar delta at a time. Parse and
@@ -112,6 +128,7 @@ while IFS= read -r file; do
   set -e
   diagnostic="$(one_line < "$output")"
   printf 'SOURCE %-45s rc=%d %s\n' "$file" "$rc" "${diagnostic:--}"
+  emit_notice "A1 source $file" "check rc=$rc ${diagnostic:--}"
   if [ "$rc" -ne 0 ]; then
     source_failures=$((source_failures + 1))
     sed 's/^/  | /' "$output"

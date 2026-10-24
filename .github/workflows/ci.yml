@@ -115,6 +115,8 @@ jobs:
           "$RUNNER_TEMP/affinescript" --version
 
       - name: Record A1 grammar and current-source census
+        env:
+          A1_ANNOTATIONS: '1'
         run: |
           set -euo pipefail
           export AFFINESCRIPT="$RUNNER_TEMP/affinescript"
