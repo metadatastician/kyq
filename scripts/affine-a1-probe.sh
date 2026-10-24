@@ -16,6 +16,19 @@ if ! command -v "$compiler" >/dev/null 2>&1; then
   printf 'Set AFFINESCRIPT to a pinned affinescript executable (A1 uses v0.1.1).\n' >&2
   exit 2
 fi
+compiler="$(command -v "$compiler")"
+if [[ "$compiler" != /* ]]; then
+  compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
+fi
+
+stdlib="${AFFINESCRIPT_STDLIB:-./stdlib}"
+if [ ! -f "$stdlib/prelude.affine" ]; then
+  printf 'MISSING_TOOLCHAIN: AffineScript standard library not found: %s\n' "$stdlib" >&2
+  printf 'Set AFFINESCRIPT_STDLIB to the pinned v0.1.1 stdlib directory.\n' >&2
+  exit 2
+fi
+stdlib="$(cd "$stdlib" && pwd)"
+export AFFINESCRIPT_STDLIB="$stdlib"
 
 if ! version_output="$("$compiler" --version 2>&1)"; then
   printf 'TOOLCHAIN_ERROR: %s --version failed:\n%s\n' "$compiler" "$version_output" >&2
@@ -90,6 +103,13 @@ probe use_list 'module A1;
 use prelude::{ Option, Some, None };'
 probe option_bracket_type 'module A1;
 pub type MaybeInt = Option[Int]'
+probe option_constructors 'module A1;
+pub fn some() -> Option[Int] { Some(42) }
+pub fn none() -> Option[Int] { None }'
+probe imported_option_constructors 'module A1;
+use prelude::{ Option, Some, None };
+pub fn some() -> Option[Int] { Some(42) }
+pub fn none() -> Option[Int] { None }'
 probe qualified_three_segment_type 'module A1;
 pub type Qualified = A.B.C'
 probe record_literal 'module A1;
@@ -104,9 +124,9 @@ pub type E = A | B,'
 probe braced_enum_trailing_comma 'module A1;
 pub enum E { A, B, }'
 probe variant_named_string 'module A1;
-pub type E = String'
+pub type E = String | Other'
 probe variant_named_int 'module A1;
-pub type E = Int'
+pub type E = Int | Other'
 probe mut_param 'module A1;
 fn identity(mut value: Int) -> Int { value }'
 probe legacy_ref_mut_param 'module A1;
@@ -129,8 +149,13 @@ while IFS= read -r file; do
   [ -n "$file" ] || continue
   source_count=$((source_count + 1))
   output="$work/source.$source_count.out"
+  if [[ "$file" == src/* ]]; then
+    source_path="${file#src/}"
+  else
+    source_path="../$file"
+  fi
   set +e
-  "$compiler" check "$file" > "$output" 2>&1
+  (cd src && "$compiler" check "$source_path") > "$output" 2>&1
   rc=$?
   set -e
   diagnostic="$(one_line < "$output")"

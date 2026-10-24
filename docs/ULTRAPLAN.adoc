@@ -46,11 +46,16 @@ toc::[]
 
 === 0.1 What the repo *is*
 
-* Language: AffineScript, target WebAssembly; `src/Kyaml/*.affine` (≈ 2456 lines
-  across 9 tracked `.affine` files) drafted against a grammar AffineScript
-  0.1.1 does not accept. `coordination.k9` rule `affinescript-only` and deed
-  invariant `no-fabricated-artefacts` are correctly enforced: nothing builds,
-  rather than a lie building.
+* Language: AffineScript, target WebAssembly; `src/Kyaml/` (785 lines across
+  6 tracked `.affine` files, including `src/Kyaml/Lint/`) drafted against a
+  grammar AffineScript 0.1.1 does not accept. `coordination.k9` rule
+  `affinescript-only` and deed invariant `no-fabricated-artefacts` are correctly
+  enforced: nothing builds,
+  rather than a lie building. *2026-10-24 A1 update:* the repository now has 11
+  tracked `.affine` files across `src/`, `tests/`, and `benches/`; 3 pass `check`
+  and 8 tracked files fail. The minimal slice passes, but there is still no
+  full build/test PASS. See
+  `docs/status/A1_GRAMMAR_CENSUS.adoc`.
 * Commands (`lint`, `fmt`, `get`, `set`, `del`, `validate`, `split`, `merge`,
   `diff`, `to-json`, `from-json`, `envsubst`, `inject`) are documented in
   `README.md` and `Main.affine` help text. None are implemented. The help text
@@ -65,29 +70,36 @@ toc::[]
   and *no program input in the WASM target* — a module today cannot read
   argv/stdin, so even a parsing build could not read a manifest from the
   command line.
-* CI `ci.yml` is intentionally thin (metadata + shellcheck only); the usual
-  build/test/release jobs are deliberately absent until `affinescript compile`
-  produces a module. This matches the estate pattern for blocked compilers.
+* CI `ci.yml` remains intentionally thin: metadata, shellcheck, and the
+  non-gating A1 compiler census. The usual build/test/release jobs are
+  deliberately absent until `affinescript compile` produces a module. The
+  census explicitly does not fabricate that gate.
 
 === 0.2 CI/CD as measured 2026-10-23
 
-* `actions.lock` is transitively closed and SHA-pinned for all callers that
-  `hyperpolymath/standards` at `0b1898e...` needs. The check `check-action-pinning.js`
-  reports *all action refs are pinned*.
-* Four previously dead-at-startup callers (`rust-ci.yml`, `governance.yml`,
-  `secret-scanner.yml`, `scorecard.yml`) were pinned to that SHA in PR #8
-  and now *do* start. Recent `main` at `d448abd` shows:
-  `Rust CI: success`, `Secret Scanner: success`, `CI: success`,
-  `Lock Sync Gate: success`, `DEED: success`, `K9: success`,
-  `SonarQube: success`, `Governance: failure` (not startup_failure any more —
-  a substantive job failure to triage), and three Dependabot update failures
-  for `npm_and_yarn`, `pip`, `hex`.
-* Three GitHub issues (#3, #4, #5) correctly diagnosed the startup deaths
-  circa `4749fd5` but are now stale: the runs they cite succeed. Their
-  acceptance criteria ask for a planted SHA-pin control and a lock entry that
-  matches — both now hold. They should be closed with evidence, or one
-  updated and the other two closed as duplicates, and a follow-up filed for
-  the current `governance.yml` *failure* (which is different from startup_failure).
+*Update 2026-10-24:* the earlier statement that #3/#4/#5 were simply stale was
+too strong. Their old zero-job examples were stale, but the reusable jobs still
+failed during `Set up job` because both kyq's caller lock and the called
+standards lock at `0b1898e` carried own-SHA `ref` metadata. A caller-only repair
+did not clear setup. Moving all six standards callers to `cf8f9121` and
+relocking the closure did: PR run 40092167032 passed all 21 Governance jobs,
+40092166982 passed all 3 Secret Scanner jobs, and 40092166972 passed Rust CI's
+real detection job with Cargo jobs correctly skipped. See
+`docs/status/CI_LOCKFILE_REPAIR.adoc`. #4/#5 still require post-merge `main`
+evidence; no Scorecard/Hypatia/Mirror runtime PASS is claimed.
+
+* Current: `actions.lock` is transitively closed and SHA-pinned for the
+  `hyperpolymath/standards` `cf8f9121...` closure. `check-action-pinning.js`
+  reports *all action refs are pinned* and rejects backend-invalid own-SHA
+  `ref` metadata.
+* Historical 2026-10-14: PR #8 pinned the four callers to `0b1898e...`, and
+  `d448abd` had successful Rust CI, Secret Scanner, CI, Lock Sync, DEED, K9,
+  and SonarQube runs. Those old successes did not prove the later setup state:
+  the called lock's own-SHA metadata subsequently became the blocker described
+  above.
+* Issue #3 is closed. #4/#5 have passing PR controls but remain open for their
+  required post-merge `main` evidence; they must not be closed merely from the
+  historical green runs.
 * `dependabot.yml` declares `cargo` (correct, though no `Cargo.toml` exists
   yet), `mix`, `npm`, `pip`, `hex` via template default. Only `github-actions`
   and `cargo` are applicable to this repo today; the others have no manifests,

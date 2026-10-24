@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Reusable-workflow lockfile repair — 2026-10-24
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-24
+
+This is the CI follow-up for kyq #3/#4/#5. It is separate from the
+AffineScript A1–A8 port: no language, source, CLI, or WASM claim is implied.
+
+toc::[]
+
+== Outcome
+
+The pull-request control is green after moving both lock scopes to repaired
+metadata:
+
+* Governance: **21/21 jobs succeeded**, including the substantive checks.
+* Secret Scanner: **3/3 jobs succeeded** (`gitleaks`, `rust-secrets`, and
+  `shell-secrets`).
+* Rust CI: `Detect Cargo.toml` succeeded; its four Cargo jobs were correctly
+  skipped because this AffineScript repository has no `Cargo.toml`. This is not
+  a Rust build/test PASS.
+* Lock Sync Gate and the independent caller-pinning check passed.
+
+Issues #4 and #5 remain open until their explicit acceptance condition is met
+on the first `main` push after merge. The PR evidence below is not substituted
+for that condition.
+
+== Root cause: two lockfiles, not an allowlist gap
+
+The failing diagnostic was:
+
+[source,text]
+----
+Unable to resolve action `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`:
+invalid lockfile pin. Run `gh actions-lock` to update the lockfile
+----
+
+A full-SHA dependency key whose `ref` is that same SHA is invalid. Upstream
+`github/gh-actions-lock` PR
+https://github.com/github/gh-actions-lock/pull/198[#198] and commit `dacafb7`
+state this explicitly and implement the repair: record an exact tag at the
+commit, or a branch containing it, while retaining the immutable `commit`
+field. Released v0.4.0 (`759f9c2d44e8599fa5b29224e5a30c58b3555211`) contains
+that implementation.
+
+There are two relevant lock scopes:
+
+. kyq's caller `.github/workflows/actions.lock`;
+. the called `hyperpolymath/standards` lock at the reusable-workflow SHA.
+
+Repairing only scope 1 was insufficient. Commit `55cfdff` changed all 11
+caller own-SHA `ref` fields, but these controls still failed every `Set up job`
+with the same checkout diagnostic:
+
+[cols="2,2,3",options="header"]
+|===
+| Caller-only control | Workflow | Result
+
+| Run https://github.com/metadatastician/kyq/actions/runs/40091930751[40091930751]
+| Governance
+| 15 failed setup steps; no substantive step ran
+
+| Run https://github.com/metadatastician/kyq/actions/runs/40091930622[40091930622]
+| Secret Scanner
+| 3 failed setup steps; no scan ran
+
+| Run https://github.com/metadatastician/kyq/actions/runs/40091930627[40091930627]
+| Rust CI
+| 1 failed setup step; downstream jobs skipped
+|===
+
+The pinned standards revision `0b1898e2e6a0fc88348c0f2517970593d373ca10`
+still carried the invalid called-side metadata. The selected revision
+`cf8f91219d80da55cf8cbbfcd587d00c2d8798ed` has symbolic refs for every action
+leaf used by kyq, including `actions/checkout@v7.0.1` metadata for the same
+immutable checkout commit. It is an ancestor of standards `main` (`compare`
+reported `ahead`, `behind=0`). No action allowlist or Actions policy was
+changed.
+
+== Changes
+
+=== Caller metadata and regression gate — `55cfdff`
+
+Eleven caller entries changed only their `ref` metadata. Eight action commits
+have exact semver tags; three reusable-workflow commits have no exact tag and
+are contained by `main`. Keys, commits, owner/repository IDs, and transitive
+edges stayed unchanged.
+
+`scripts/check-action-pinning.js` now rejects an own-SHA `ref` instead of
+reporting a false pinning PASS:
+
+* before the repair: exit 1, exactly 11 findings;
+* after the repair: exit 0, `all action refs are pinned`;
+* planted single-entry checkout control in a temporary directory: exit 1,
+  exactly the planted finding.
+
+This local check does not replace GitHub's resolver or the lock-sync gate.
+
+=== Called-side pin and closure — `009cbcd`
+
+All six standards callers moved from `0b1898e…` to `cf8f9121…`: Governance,
+Secret Scanner, Rust CI, Scorecard, Hypatia, and Mirror. The lock was updated
+atomically with standards' purpose-built `relock-standards-pin.sh`, then the
+new reusable root received symbolic `main` metadata to satisfy the same
+own-SHA rule.
+
+The closure diff adds the two new Governance action dependencies
+(`denoland/setup-deno` and the bare-SHA `oven-sh/setup-bun` record) and retains
+all existing immutable commits. The temporary v0.4.0 generator evidence was
+not used as the final lock: full generation prunes job-level reusable roots,
+a documented generator limitation. The purpose-built relock preserves them.
+
+== Passing PR evidence
+
+All rows are at source commit `009cbcd33512c65bdecb47c887d7f638c46f92dd`.
+
+[cols="2,2,4",options="header"]
+|===
+| Run | Gate | Exact result
+
+| https://github.com/metadatastician/kyq/actions/runs/40092167032[40092167032]
+| Governance
+| `completed / success`; 21 jobs, 21 successful `Set up job` steps, all 21 jobs
+  successful.
+
+| https://github.com/metadatastician/kyq/actions/runs/40092166982[40092166982]
+| Secret Scanner
+| `completed / success`; 3 jobs, 3 successful setup steps, all three scans
+  successful.
+
+| https://github.com/metadatastician/kyq/actions/runs/40092166972[40092166972]
+| Rust CI
+| `completed / success`; `Detect Cargo.toml` succeeded and four Cargo jobs
+  skipped. No Cargo build/test claim.
+
+| https://github.com/metadatastician/kyq/actions/runs/40092166315[40092166315]
+| Lock Sync Gate
+| `completed / success`; GNU-awk closure check passed in CI.
+
+| https://github.com/metadatastician/kyq/actions/runs/40092166337[40092166337]
+| CI
+| `completed / success`; includes the explicitly non-gating A1 census. This is
+  not an AffineScript build/test PASS.
+|===
+
+Local `check-lock-sync.sh` could not run in the sandbox because compatible GNU
+awk is absent; that was recorded as a toolchain failure, not skipped or called
+a PASS. The CI run above supplies the positive closure evidence.
+
+== Remaining acceptance and limits
+
+. Merge the fix, then inspect the first `main` runs of Governance and Secret
+  Scanner. Close #4/#5 only if their setup and jobs run successfully there;
+  record those run IDs.
+. Scorecard, Hypatia, and Mirror were relocked to the same standards revision,
+  but they did not have PR-triggered runs in this control. No runtime PASS is
+  claimed for them here.
+. The A1 grammar/source ratchet and A7 upstream WASM host-I/O limitation are
+  unchanged. This CI repair does not implement `kyq`, remove PyYAML from any
+  existing external tooling, or make a CLI available.
