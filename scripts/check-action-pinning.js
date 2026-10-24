@@ -61,12 +61,29 @@ function main() {
   }
 
   let known = new Set();
+  const ownShaRefs = [];
   if (existsSync(LOCK)) {
     const lock = readFileSync(LOCK, "utf8");
     known = new Set(
       [...lock.matchAll(/'([^']+@[^']+)'/g)].map((m) => m[1].toLowerCase()),
     );
     console.log(`lockfile present: ${known.size} ref(s) resolvable through it`);
+
+    // The Actions backend rejects a full-SHA dependency key whose recorded
+    // `ref` is that same SHA. It needs the tag or branch containing the
+    // commit; the immutable `commit` field remains the exact source pin.
+    let dependency = "";
+    lock.split("\n").forEach((line, i) => {
+      const key = /^    '([^']+)':$/.exec(line);
+      if (key) dependency = key[1];
+      const ref = /^        ref: '([^']+)'$/.exec(line);
+      if (!ref || !dependency) return;
+      const at = dependency.lastIndexOf("@");
+      const sha = at === -1 ? "" : dependency.slice(at + 1);
+      if (/^[a-f0-9]{40}$/.test(sha) && ref[1].toLowerCase() === sha) {
+        ownShaRefs.push(`${LOCK}:${i + 1}: ${dependency} records its own SHA as ref`);
+      }
+    });
   } else {
     console.log("no lockfile — every ref must be an inline 40-character SHA");
   }
@@ -89,6 +106,14 @@ function main() {
       if (known.has(ref.toLowerCase()) || known.has(`${root}@${tag}`.toLowerCase())) return;
       bad.push(`${wf}:${i + 1}: ${ref}`);
     });
+  }
+
+  if (ownShaRefs.length) {
+    console.log("\nERROR: these lockfile entries have backend-invalid own-SHA ref metadata:");
+    for (const entry of ownShaRefs) console.log(`  ${entry}`);
+    console.log("\nRun `gh actions-lock` to record an exact tag, or a branch containing");
+    console.log("the commit. Preserve job-level reusable-workflow closure manually.");
+    return 1;
   }
 
   if (bad.length) {
