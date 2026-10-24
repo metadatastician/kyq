@@ -18,8 +18,8 @@ toc::[]
 `docs/status/ROADMAP.adoc` Blockers records the original 2026-10-07 result:
 AffineScript 0.1.1 did not parse any of the then-9 tracked `.affine` files.
 The 2026-10-24 A1 rerun supersedes that as the *current* state: the minimal
-slice passes and 3 of the now-11 files pass standalone `check`, but 8 entry
-points still fail and there is no full build/test/WASM PASS. Until the whole
+slice passes and 3 of the now-11 files pass standalone `check`, but 8 tracked
+files still fail and there is no full build/test/WASM PASS. Until the whole
 tree compiles, `just build`/`test`/`wasm` still fail by design
 (`no-fabricated-artefacts`). A Rust bootstrap would clear the blocker sooner,
 but the owner explicitly rejected it — so we fix the AffineScript side. See

@@ -46,13 +46,15 @@ toc::[]
 
 === 0.1 What the repo *is*
 
-* Language: AffineScript, target WebAssembly; `src/Kyaml/*.affine` (≈ 2456 lines
-  across 9 tracked `.affine` files) drafted against a grammar AffineScript
-  0.1.1 does not accept. `coordination.k9` rule `affinescript-only` and deed
-  invariant `no-fabricated-artefacts` are correctly enforced: nothing builds,
-  rather than a lie building. *2026-10-24 A1 update:* the tree now has 11
-  tracked `.affine` files; 3 pass `check` and 8 entry points fail. The minimal
-  slice passes, but there is still no full build/test PASS. See
+* Language: AffineScript, target WebAssembly; `src/Kyaml/` (785 lines across
+  6 tracked `.affine` files, including `src/Kyaml/Lint/`) drafted against a
+  grammar AffineScript 0.1.1 does not accept. `coordination.k9` rule
+  `affinescript-only` and deed invariant `no-fabricated-artefacts` are correctly
+  enforced: nothing builds,
+  rather than a lie building. *2026-10-24 A1 update:* the repository now has 11
+  tracked `.affine` files across `src/`, `tests/`, and `benches/`; 3 pass `check`
+  and 8 tracked files fail. The minimal slice passes, but there is still no
+  full build/test PASS. See
   `docs/status/A1_GRAMMAR_CENSUS.adoc`.
 * Commands (`lint`, `fmt`, `get`, `set`, `del`, `validate`, `split`, `merge`,
   `diff`, `to-json`, `from-json`, `envsubst`, `inject`) are documented in
