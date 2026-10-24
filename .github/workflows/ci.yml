@@ -86,3 +86,39 @@ jobs:
           fi
           shellcheck --severity=error "${scripts[@]}"
           shellcheck --severity=warning kyq-launcher.sh
+
+  # A1 evidence collection is manual/PR-only until the strict port clears.
+  # It does not run on push, and a completed census is NOT a build/test PASS.
+  # The compiler and its digest are pinned independently of floating `main`.
+  affine-a1-census:
+    name: AffineScript A1 grammar census (manual; not a build gate)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned AffineScript v0.1.1
+        env:
+          AFFINE_VERSION: v0.1.1
+          AFFINE_SHA256: b8f2cab7380306ca07b9599d7fe2470328236e7287a51c78c3bbb5e973fef5dc
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/hyperpolymath/affinescript/releases/download/${AFFINE_VERSION}/affinescript-linux-x64" \
+            -o "$RUNNER_TEMP/affinescript"
+          echo "${AFFINE_SHA256}  $RUNNER_TEMP/affinescript" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/affinescript"
+          "$RUNNER_TEMP/affinescript" --version
+
+      - name: Record A1 grammar and current-source census
+        env:
+          A1_ANNOTATIONS: '1'
+        run: |
+          set -euo pipefail
+          export AFFINESCRIPT="$RUNNER_TEMP/affinescript"
+          test -x "$AFFINESCRIPT"
+          bash scripts/affine-a1-probe.sh
