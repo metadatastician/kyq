@@ -4,7 +4,7 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-10-23
+:revdate: 2026-10-24
 
 This note details the work implied by the owner's ruling *strict AffineScript
 only* (2026-10-23). No Rust/Cargo code is added; `coordination.k9`
@@ -15,11 +15,16 @@ toc::[]
 
 == Why this plan exists
 
-`docs/status/ROADMAP.adoc` Blockers says AffineScript 0.1.1 does not parse any
-of the 9 tracked `.affine` files. Until that changes, `just build`/`test`/`wasm`
-fail by design (`no-fabricated-artefacts`). A Rust bootstrap would clear the
-blocker in days, but the owner explicitly rejected it — so we fix the
-AffineScript side.
+`docs/status/ROADMAP.adoc` Blockers records the original 2026-10-07 result:
+AffineScript 0.1.1 did not parse any of the then-9 tracked `.affine` files.
+The 2026-10-24 A1 rerun supersedes that as the *current* state: the minimal
+slice passes and 3 of the now-11 files pass standalone `check`, but 8 entry
+points still fail and there is no full build/test/WASM PASS. Until the whole
+tree compiles, `just build`/`test`/`wasm` still fail by design
+(`no-fabricated-artefacts`). A Rust bootstrap would clear the blocker sooner,
+but the owner explicitly rejected it — so we fix the AffineScript side. See
+`docs/status/A1_GRAMMAR_CENSUS.adoc` for the run, exact diagnostics, and
+ratchet.
 
 == What the compiler gap is (from ROADMAP)
 
@@ -27,11 +32,14 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
 
 * Mechanical: `module X;` needs its semicolon, `import` → `use`, no trailing enum
   commas, `&mut T` → `mut T`.
-* Semi-mechanical: `#{…}` record literals, two-segment paths only, no variant
-  named after a builtin type (`String`, `Int`), etc. Read against `lib/parser.mly`.
-* Rewrite: 0.1.1 has no `Map` type, no `break`/`continue`, no `if let`, so the
-  AST and every map operation change shape (the `{}String -> YamlValue` maps in
-  `src/Kyaml/Ast.affine` must become an AffineScript-supported representation).
+* Semi-mechanical: no variant named after a builtin type (`String`, `Int`).
+  A1 disproved the earlier “two-segment paths only” claim: multi-segment paths
+  and `#{…}` record literals both passed their probes.
+* Rewrite: the probes reject legacy map-type syntax, `break`/`continue`, and
+  working `if let` binding. The AST now uses association lists and passes
+  `check`; parser/query control flow still needs structured equivalents.
+  Generic `if let` tokens can parse as an `if` containing a let expression, so
+  a parse-only result is not evidence of pattern-binding support.
 
 == In-repo tasks (kyq side)
 
@@ -40,14 +48,19 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
 | Task | Description
 
 | A1 — Minimal compilable slice
-| Reduce `src/` to the smallest file that `affinescript check` accepts, then
-  re-add constructs one by one, documenting which line-7/8 parse error fires.
-  Outcome: an exact checklist of grammar deltas.
+| *Minimum cleared 2026-10-24; full-tree work continues in A2–A6.* Zero-byte,
+  module-only, and minimal-function files pass parse and check. One-construct
+  probes and all 11 sources ran under the digest-pinned release asset with its
+  matching stdlib. Exact result: 3 files pass, 6 have direct parse failures,
+  and 2 entry points fail through those imports. Evidence and checklist:
+  `docs/status/A1_GRAMMAR_CENSUS.adoc` (CI 40090907337). This is not a build,
+  test, or CLI pass.
 
 | A2 — Port `Ast.affine`
-| Replace `{}String -> V` maps with the AffineScript 0.1.1 container type
-  (or a list-of-pairs representation with helper functions). No `Map` builtin
-  means every `map.contains`/`map.get` call site changes.
+| Replace legacy maps with the AffineScript 0.1.1 container type (or a
+  list-of-pairs representation with helper functions). Current evidence:
+  `Ast.affine` already uses `[(String, JsonValue)]` and passes `check`; query
+  and mutation helpers still need the same representation discipline.
 
 | A3 — Port `Lexer.affine` + `Parser.affine`
 | `while`, `break`/`continue`, `if let` → structured equivalents; `&mut T`
@@ -76,16 +89,21 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
 | A8 — CI build/test jobs
 | Replace `ci.yml`'s two-job stub with `build` (affinescript compile) +
   `test` (affine tests on `kyaml_parser_test.affine`/`lint_rules_test.affine`)
-  once A1 clears. Keep `no-fabricated-artefacts`: a failing compile is a
-  failing job, never a fake pass.
+  after A2–A6 make their tracked sources compile. A1's minimal-slice result is
+  not sufficient to start claiming those gates. Keep
+  `no-fabricated-artefacts`: a failing compile is a failing job, never a fake
+  pass.
 
 |===
 
-== Upstream tasks (affinescript side, filed as issues there)
+== Upstream tasks (affinescript side)
 
-* Grammar parity: `module;`, `use`, record literals, path segments, trailing
-  commas, `&mut T` spelling — each as a separate issue with a one-line
-  reproducer (`affinescript check src/Kyaml/Ast.affine` at line 7).
+A1 did not file upstream issues. Do not file the disproved path/record/use
+claims as grammar gaps. Remaining candidates, each with a minimal reproducer,
+are:
+
+* Variant names that collide with builtin types, if upstream wants to support
+  them; the in-repo `YamlString`/`YamlInt` spellings already avoid the issue.
 * Container type: `Map<K,V>` or equivalent, with `contains`/`get`/`set`.
 * Control flow: `break`/`continue` or structured loop alternative, `if let`
   (or `match` desugaring).

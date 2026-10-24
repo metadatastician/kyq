@@ -91,7 +91,7 @@ jobs:
   # It does not run on push, and a completed census is NOT a build/test PASS.
   # The compiler and its digest are pinned independently of floating `main`.
   affine-a1-census:
-    name: AffineScript A1 grammar census (manual; not a build gate)
+    name: AffineScript A1 grammar census (evidence; not a build gate)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10

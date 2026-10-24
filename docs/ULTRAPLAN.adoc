@@ -50,7 +50,10 @@ toc::[]
   across 9 tracked `.affine` files) drafted against a grammar AffineScript
   0.1.1 does not accept. `coordination.k9` rule `affinescript-only` and deed
   invariant `no-fabricated-artefacts` are correctly enforced: nothing builds,
-  rather than a lie building.
+  rather than a lie building. *2026-10-24 A1 update:* the tree now has 11
+  tracked `.affine` files; 3 pass `check` and 8 entry points fail. The minimal
+  slice passes, but there is still no full build/test PASS. See
+  `docs/status/A1_GRAMMAR_CENSUS.adoc`.
 * Commands (`lint`, `fmt`, `get`, `set`, `del`, `validate`, `split`, `merge`,
   `diff`, `to-json`, `from-json`, `envsubst`, `inject`) are documented in
   `README.md` and `Main.affine` help text. None are implemented. The help text
@@ -65,9 +68,10 @@ toc::[]
   and *no program input in the WASM target* — a module today cannot read
   argv/stdin, so even a parsing build could not read a manifest from the
   command line.
-* CI `ci.yml` is intentionally thin (metadata + shellcheck only); the usual
-  build/test/release jobs are deliberately absent until `affinescript compile`
-  produces a module. This matches the estate pattern for blocked compilers.
+* CI `ci.yml` remains intentionally thin: metadata, shellcheck, and the
+  non-gating A1 compiler census. The usual build/test/release jobs are
+  deliberately absent until `affinescript compile` produces a module. The
+  census explicitly does not fabricate that gate.
 
 === 0.2 CI/CD as measured 2026-10-23
 

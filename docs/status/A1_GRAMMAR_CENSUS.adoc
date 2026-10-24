@@ -1,0 +1,275 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= AffineScript A1 grammar census — 2026-10-24
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-24
+
+This is the executable evidence for task A1 in
+`docs/AFFINESCRIPT_STRICT_PORT.adoc`. It is a grammar/source census, not a
+build, test, WASM, release, or CLI attestation.
+
+toc::[]
+
+== Outcome
+
+*A1's minimal slice clears.* The zero-byte file, `module A1;`, and a minimal
+typed function all have `parse` and `check` exit code 0. The full port does not
+clear: the current ratchet is **3 passing / 8 failing across 11 tracked
+`.affine` files**. The three passing files are `src/Kyaml/Ast.affine`,
+`src/Kyaml/Ijson.affine`, and `src/Kyaml/Lexer.affine`.
+
+No `MISSING_TOOLCHAIN` occurred in the authoritative run. A local negative
+control without `affinescript` on `PATH` exited 2 and printed
+`MISSING_TOOLCHAIN`, as required. The local gate now also rejects a missing
+stdlib instead of silently skipping or misreporting import failures.
+
+== Pinned toolchain and authoritative evidence
+
+[cols="1,3",options="header"]
+|===
+| Item | Value
+
+| Release asset
+| `hyperpolymath/affinescript` `v0.1.1`, `affinescript-linux-x64`
+
+| Asset SHA-256
+| `b8f2cab7380306ca07b9599d7fe2470328236e7287a51c78c3bbb5e973fef5dc`
+
+| Release tag object / peeled commit
+| `9ea8cd414e4b55f394c70689ef5f7a84206e029c` /
+  `26cdb43e141a5fdce5408e00b8baca7df6862cb8`
+
+| Stdlib
+| The same peeled commit; `AFFINESCRIPT_STDLIB` points at its `stdlib/`
+
+| Self-reported version
+| `affinescript --version` prints `0.1.0`. This is an upstream version-reporting
+  mismatch, not evidence that a different asset ran. The release URL and the
+  checksum above pin the executed bytes.
+
+| Authoritative run
+| CI run https://github.com/metadatastician/kyq/actions/runs/40090907337[40090907337],
+  job https://github.com/metadatastician/kyq/actions/runs/40090907337/job/120863183367[120863183367],
+  source commit `90e4c79003a58dbf6aed63313de107042205be33`
+
+| Evidence channel
+| The job's `A1 toolchain`, `A1 grammar census`, and `A1 source census`
+  annotations contain the exit codes and diagnostics tabulated below.
+|===
+
+The CI job's green conclusion means only that the pinned compiler ran and the
+census was collected. Its name and output explicitly deny a build/test PASS.
+`just affine-check` remains the fail-closed source gate.
+
+== Reproduce
+
+[source,bash]
+----
+export AFFINESCRIPT=/path/to/affinescript-linux-x64
+export AFFINESCRIPT_STDLIB=/path/to/affinescript-26cdb43/stdlib
+
+# Non-gating one-construct + full-source census.
+bash scripts/affine-a1-probe.sh
+
+# Gating check: rc=2 for missing compiler/stdlib; rc=1 while any source fails.
+just affine-check
+----
+
+Project checks run from `src/`. This is required by the v0.1.1 module loader:
+it searches the current directory and `AFFINESCRIPT_STDLIB`, not `src/`
+implicitly. Tests and benches are checked as `../tests/...` and
+`../benches/...` from that directory.
+
+== Minimal-slice and grammar-delta results
+
+`rc=0` means that command succeeded. `rc=124` is the compiler's failure exit,
+not a timeout in this run. “accepted” below refers to the parse command only;
+it does not imply resolution or type correctness.
+
+[cols="2,1,4",options="header"]
+|===
+| Probe | Parse / check rc | Diagnostic and port consequence
+
+| `empty`
+| 0 / 0
+| Zero bytes accepted; check prints `Type checking passed`.
+
+| `module_only`
+| 0 / 0
+| `module A1;` accepted.
+
+| `minimal_function`
+| 0 / 0
+| `pub fn answer() -> Int { 42 }` accepted and checked.
+
+| `module_missing_semicolon`
+| 124 / 124
+| `1:8: parse error: Syntax error`; keep the module semicolon.
+
+| `module_multisegment`
+| 0 / 0
+| `module Kyaml.Ast;` accepted.
+
+| `legacy_import`
+| 124 / 124
+| `1:10: parse error: Syntax error`; use `use`, not `import`.
+
+| `use_list`
+| 0 / 0
+| `use prelude::{ Option, Some, None };` accepted with the pinned stdlib.
+
+| `option_bracket_type`
+| 0 / 0
+| `Option[Int]` accepted in this alias. This probe alone does not establish
+  constructor resolution or semantic validity of every unknown type name.
+
+| `option_constructors`
+| 0 / 124
+| Without the prelude import, `Some` is `Resolution error:
+  (Resolve.UndefinedVariable ...)` at 2:30. Keep the prelude import where
+  constructors are used.
+
+| `qualified_three_segment_type`
+| 0 / 0
+| `A.B.C` accepted in this type alias; the old “two segments only” grammar
+  claim is not correct for this release.
+
+| `record_literal`
+| 0 / 0
+| `#{ x: 0 }` accepted and checked for a one-field struct.
+
+| `assoc_list_type`
+| 0 / 0
+| `[(String, Int)]` accepted and checked; this is the current map replacement.
+
+| `legacy_map_type`
+| 124 / 124
+| `{}String -> Int` fails at 2:19; there is no legacy map-type syntax.
+
+| `inline_enum_trailing_comma`
+| 124 / 124
+| `pub type E = A \| B,` fails at 2:18; remove the trailing comma.
+
+| `braced_enum_trailing_comma`
+| 124 / 124
+| `pub enum E { A, B, }` fails at 2:18; remove the trailing comma.
+
+| `variant_named_string`
+| 124 / 124
+| In actual variant position, `String \| Other` fails at 2:14. A lone
+  `type E = String` is an alias probe and must not be mistaken for this case.
+
+| `variant_named_int`
+| 124 / 124
+| In actual variant position, `Int \| Other` fails at 2:14.
+
+| `mut_param`
+| 0 / 0
+| `fn identity(mut value: Int)` accepted and checked.
+
+| `legacy_ref_mut_param`
+| 124 / 124
+| `&mut value: Int` fails at 2:12; use `mut value: Int` for this parameter
+  form.
+
+| `while_break`
+| 124 / 124
+| `break;` fails at 2:32. Although the lexer has a `break` token, the grammar
+  does not accept this loop construct.
+
+| `while_continue`
+| 124 / 124
+| `continue;` fails at 2:33; rewrite the control flow.
+
+| `if_let`
+| 0 / 124
+| The token sequence parses, but the branch's `x` is unresolved at 2:55.
+  This is not working `if let` pattern-binding semantics; use `match`.
+
+| `match_instead`
+| 0 / 0
+| The corresponding simple `match value { x => x }` accepted and checked.
+|===
+
+== Current source ratchet
+
+All rows below ran with the pinned compiler and stdlib from `src/`. An
+`ImportError` row means the named entry point reached module loading but an
+imported file had the indicated parse error; it is not a second, independent
+grammar defect.
+
+[cols="3,1,5",options="header"]
+|===
+| Tracked file | Check rc | First result
+
+| `benches/kyaml_parsing_bench.affine`
+| 124
+| `Resolve.ImportError`: imported `src/Kyaml/Parser.affine` has a syntax error.
+
+| `src/Kyaml.affine`
+| 124
+| `Kyaml.affine:16:9: parse error: Syntax error`
+
+| `src/Kyaml/Ast.affine`
+| 0
+| `Type checking passed`
+
+| `src/Kyaml/Ijson.affine`
+| 0
+| `Type checking passed`
+
+| `src/Kyaml/Jcs.affine`
+| 124
+| `Kyaml/Jcs.affine:131:15: parse error: Syntax error`
+
+| `src/Kyaml/Lexer.affine`
+| 0
+| `Type checking passed`
+
+| `src/Kyaml/Lint/RequiredFields.affine`
+| 124
+| `Kyaml/Lint/RequiredFields.affine:22:15: parse error: Syntax error`
+
+| `src/Kyaml/Parser.affine`
+| 124
+| `Kyaml/Parser.affine:23:12: parse error: Syntax error`
+
+| `src/Main.affine`
+| 124
+| `Resolve.ImportError`: imported `src/Kyaml.affine` has a syntax error.
+
+| `tests/kyaml_parser_test.affine`
+| 124
+| `../tests/kyaml_parser_test.affine:19:15: parse error: Syntax error`
+
+| `tests/lint_rules_test.affine`
+| 124
+| `../tests/lint_rules_test.affine:19:15: parse error: Syntax error`
+|===
+
+The ratchet is therefore **3 passing, 6 direct parse failures, and 2 entry
+points failing because their imports hit those parse failures**. It may only
+improve: the three passing files must not regress, and the failing count may
+only fall as A2–A6 land.
+
+== A2–A4 checklist derived from the probes
+
+. Keep the already-ported `module ...;`, `use`, multi-segment paths, `#{...}`,
+  `Option[...]`, and association-list types. Multi-segment paths are not a
+  v0.1.1 blocker.
+. Keep `prelude` imports where `Some`/`None` constructors are used and always
+  provide the pinned stdlib. A missing stdlib is `MISSING_TOOLCHAIN`, not a
+  source regression.
+. Do not reintroduce `{}String -> V`, trailing enum commas, variants named
+  `String` or `Int`, or `&mut` parameters.
+. Rewrite every `break` and `continue`; token existence is not grammar support.
+  The first parser failure is now `src/Kyaml/Parser.affine:23:12`, at `break`.
+. Rewrite `if let` as `match`. Its surface tokens can parse as a generic `if`
+  with a let expression, but the expected branch binding does not resolve.
+. Work the direct parse failures before treating entry-point `ImportError`s as
+  separate work: `Kyaml.affine`, `Parser.affine`,
+  `Lint/RequiredFields.affine`, `Jcs.affine`, and the two test files.
+. Keep A7/A8 open. This census does not demonstrate WASM argv/stdin, a CLI,
+  execution of the test modules, or removal of any existing YAML tooling.
