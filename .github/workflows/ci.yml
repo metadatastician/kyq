@@ -104,6 +104,7 @@ jobs:
       - name: Install pinned AffineScript v0.1.1
         env:
           AFFINE_VERSION: v0.1.1
+          AFFINE_COMMIT: 26cdb43e141a5fdce5408e00b8baca7df6862cb8
           AFFINE_SHA256: b8f2cab7380306ca07b9599d7fe2470328236e7287a51c78c3bbb5e973fef5dc
         run: |
           set -euo pipefail
@@ -113,6 +114,12 @@ jobs:
           echo "${AFFINE_SHA256}  $RUNNER_TEMP/affinescript" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/affinescript"
           "$RUNNER_TEMP/affinescript" --version
+          git init -q "$RUNNER_TEMP/affinescript-src"
+          git -C "$RUNNER_TEMP/affinescript-src" remote add origin https://github.com/hyperpolymath/affinescript.git
+          git -C "$RUNNER_TEMP/affinescript-src" fetch -q --depth 1 origin "$AFFINE_COMMIT"
+          git -C "$RUNNER_TEMP/affinescript-src" checkout -q FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/affinescript-src" rev-parse HEAD)" = "$AFFINE_COMMIT"
+          test -f "$RUNNER_TEMP/affinescript-src/stdlib/prelude.affine"
 
       - name: Record A1 grammar and current-source census
         env:
@@ -120,5 +127,6 @@ jobs:
         run: |
           set -euo pipefail
           export AFFINESCRIPT="$RUNNER_TEMP/affinescript"
+          export AFFINESCRIPT_STDLIB="$RUNNER_TEMP/affinescript-src/stdlib"
           test -x "$AFFINESCRIPT"
           bash scripts/affine-a1-probe.sh

@@ -129,10 +129,26 @@ affine-check:
       echo "Set AFFINESCRIPT to a pinned affinescript executable." >&2
       exit 2
     fi
+    compiler="$(command -v "$compiler")"
+    if [[ "$compiler" != /* ]]; then
+      compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
+    fi
+    stdlib="${AFFINESCRIPT_STDLIB:-./stdlib}"
+    if [ ! -f "$stdlib/prelude.affine" ]; then
+      echo "MISSING_TOOLCHAIN: AffineScript standard library not found: $stdlib" >&2
+      echo "Set AFFINESCRIPT_STDLIB to the pinned v0.1.1 stdlib directory." >&2
+      exit 2
+    fi
+    export AFFINESCRIPT_STDLIB="$(cd "$stdlib" && pwd)"
     "$compiler" --version
     failed=0
     while IFS= read -r file; do
-      if ! "$compiler" check "$file"; then
+      if [[ "$file" == src/* ]]; then
+        source_path="${file#src/}"
+      else
+        source_path="../$file"
+      fi
+      if ! (cd src && "$compiler" check "$source_path"); then
         echo "AFFINE_CHECK_FAILED: $file" >&2
         failed=$((failed + 1))
       fi
