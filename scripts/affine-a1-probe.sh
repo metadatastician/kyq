@@ -106,6 +106,10 @@ pub type MaybeInt = Option[Int]'
 probe option_constructors 'module A1;
 pub fn some() -> Option[Int] { Some(42) }
 pub fn none() -> Option[Int] { None }'
+probe imported_option_constructors 'module A1;
+use prelude::{ Option, Some, None };
+pub fn some() -> Option[Int] { Some(42) }
+pub fn none() -> Option[Int] { None }'
 probe qualified_three_segment_type 'module A1;
 pub type Qualified = A.B.C'
 probe record_literal 'module A1;
