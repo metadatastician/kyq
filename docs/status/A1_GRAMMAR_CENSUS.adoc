@@ -50,9 +50,9 @@ stdlib instead of silently skipping or misreporting import failures.
   checksum above pin the executed bytes.
 
 | Authoritative run
-| CI run https://github.com/metadatastician/kyq/actions/runs/40090907337[40090907337],
-  job https://github.com/metadatastician/kyq/actions/runs/40090907337/job/120863183367[120863183367],
-  source commit `90e4c79003a58dbf6aed63313de107042205be33`
+| CI run https://github.com/metadatastician/kyq/actions/runs/40092388430[40092388430],
+  job https://github.com/metadatastician/kyq/actions/runs/40092388430/job/120867562881[120867562881],
+  source commit `fbc4e3f7ce92388397805d59b88d8fcd7a5d7279`
 
 | Evidence channel
 | The job's `A1 toolchain`, `A1 grammar census`, and `A1 source census`
@@ -130,6 +130,12 @@ it does not imply resolution or type correctness.
 | Without the prelude import, `Some` is `Resolution error:
   (Resolve.UndefinedVariable ...)` at 2:30. Keep the prelude import where
   constructors are used.
+
+| `imported_option_constructors`
+| 0 / 0
+| Positive control added by the owner: the same `Some(42)` and `None`
+  functions pass after `use prelude::{ Option, Some, None };`. This separates
+  import resolution from grammar acceptance.
 
 | `qualified_three_segment_type`
 | 0 / 0

@@ -53,7 +53,7 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
   probes and all 11 sources ran under the digest-pinned release asset with its
   matching stdlib. Exact result: 3 files pass, 6 have direct parse failures,
   and 2 entry points fail through those imports. Evidence and checklist:
-  `docs/status/A1_GRAMMAR_CENSUS.adoc` (CI 40090907337). This is not a build,
+  `docs/status/A1_GRAMMAR_CENSUS.adoc` (CI 40092388430). This is not a build,
   test, or CLI pass.
 
 | A2 — Port `Ast.affine`

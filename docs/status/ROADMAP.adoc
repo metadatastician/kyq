@@ -59,7 +59,7 @@ from `src/`, 3 of 11 tracked files pass `check` (`Ast`, `Ijson`, `Lexer`), 6
 have direct parse failures, and 2 entry points fail through those imports.
 This supersedes “none of them compiles” as the current state, not as a report
 of the original measurement. It is not a full build/test/WASM/CLI PASS. Exact
-probes and diagnostics: `docs/status/A1_GRAMMAR_CENSUS.adoc`, CI run 40090907337.
+probes and diagnostics: `docs/status/A1_GRAMMAR_CENSUS.adoc`, CI run 40092388430.
 . **The gap is a port, not a fix.** Read against the v0.1.1 grammar
   (`lib/parser.mly`), not yet confirmed by the compiler past line 7: about
   half of the 2456 lines need touching. Roughly 5% is mechanical (`module X;`
