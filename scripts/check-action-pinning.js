@@ -54,6 +54,19 @@ function workflowFiles() {
     .map((f) => join(WF, f));
 }
 
+/**
+ * Check immediate workflow YAML files and optional actions.lock under the
+ * working directory's .github/workflows.
+ *
+ * Accept inline lowercase 40-hex SHAs or case-insensitive lockfile matches,
+ * including repository roots for subpath actions. Skip local, expression,
+ * Docker, and actions/github-script refs. Reject lock entries whose lowercase
+ * full-SHA key suffix is also their ref.
+ *
+ * @returns {number} 0 if the workflows directory is absent or no violations are
+ * found; 1 for unpinned refs or invalid own-SHA metadata.
+ * @throws {Error} Propagates filesystem errors while listing or reading files.
+ */
 function main() {
   if (!existsSync(WF)) {
     console.log("no .github/workflows — nothing to check");
