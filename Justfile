@@ -116,34 +116,39 @@ validate:
 	echo "✓ $deed"
 	echo "validation passed"
 
-# AffineScript check (requires affinescript toolchain — see docs/AFFINESCRIPT_STRICT_PORT.adoc A1)
+# Check every tracked AffineScript file. Missing tools and source failures are
+# both hard failures: this recipe never skips a strict check or prints a
+# placeholder PASS. Set AFFINESCRIPT to a pinned executable when it is not on
+# PATH (see docs/AFFINESCRIPT_STRICT_PORT.adoc A1).
 affine-check:
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! command -v affinescript >/dev/null 2>&1 && ! command -v dune >/dev/null 2>&1; then
-      echo "note: affinescript not installed — skipping affinescript check (see https://github.com/hyperpolymath/affinescript)"
-      exit 0
+    compiler="${AFFINESCRIPT:-affinescript}"
+    if ! command -v "$compiler" >/dev/null 2>&1; then
+      echo "MISSING_TOOLCHAIN: AffineScript compiler not found: $compiler" >&2
+      echo "Set AFFINESCRIPT to a pinned affinescript executable." >&2
+      exit 2
     fi
-    if command -v affinescript >/dev/null 2>&1; then
-      affinescript check src/Main.affine
-      affinescript check src/Kyaml.affine
-      affinescript check src/Kyaml/Ast.affine
-      affinescript check src/Kyaml/Lexer.affine
-      affinescript check src/Kyaml/Parser.affine
-      affinescript check src/Kyaml/Lint/RequiredFields.affine
-      affinescript check src/Kyaml/Jcs.affine
-      affinescript check src/Kyaml/Ijson.affine
-    else
-      dune exec affinescript -- check src/Main.affine
-      dune exec affinescript -- check src/Kyaml.affine
-      dune exec affinescript -- check src/Kyaml/Ast.affine
-      dune exec affinescript -- check src/Kyaml/Lexer.affine
-      dune exec affinescript -- check src/Kyaml/Parser.affine
-      dune exec affinescript -- check src/Kyaml/Lint/RequiredFields.affine
-      dune exec affinescript -- check src/Kyaml/Jcs.affine
-      dune exec affinescript -- check src/Kyaml/Ijson.affine
+    "$compiler" --version
+    failed=0
+    while IFS= read -r file; do
+      if ! "$compiler" check "$file"; then
+        echo "AFFINE_CHECK_FAILED: $file" >&2
+        failed=$((failed + 1))
+      fi
+    done < <(git ls-files '*.affine' | LC_ALL=C sort)
+    if [ "$failed" -ne 0 ]; then
+      echo "affine check failed for $failed tracked file(s)" >&2
+      exit 1
     fi
-    echo "✓ affine checks passed (A1 minimal slice)"
+    echo "✓ affine checks passed for every tracked .affine file"
+
+# Run the non-gating A1 grammar census (same MISSING_TOOLCHAIN contract).
+affine-a1:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export AFFINESCRIPT="${AFFINESCRIPT:-affinescript}"
+    bash scripts/affine-a1-probe.sh
 
 # Check that every workflow `uses:` is locked/pinned (requires yq + gh)
 lock-check:
