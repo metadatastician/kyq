@@ -46,6 +46,7 @@ one_line() {
   tr '\n\t' '  ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
 }
 
+probe_evidence=''
 probe() {
   local name="$1"
   local source="$2"
@@ -60,14 +61,18 @@ probe() {
     "$compiler" "$mode" "$file" > "$output" 2>&1
     rc=$?
     set -e
-    diagnostic="$(one_line < "$output")"
+    if [ "$mode" = "parse" ] && [ "$rc" -eq 0 ]; then
+      diagnostic='accepted'
+    else
+      diagnostic="$(one_line < "$output")"
+    fi
     printf 'PROBE %-30s %-5s rc=%d %s\n' "$name" "$mode" "$rc" "${diagnostic:--}"
     evidence+="$mode rc=$rc ${diagnostic:--}"$'\n'
     if [ "$rc" -ne 0 ]; then
       sed 's/^/  | /' "$output"
     fi
   done
-  emit_notice "A1 probe $name" "$evidence"
+  probe_evidence+="$name"$'\n'"$evidence"
 }
 
 # Smallest accepted candidates, then one grammar delta at a time. Parse and
@@ -114,10 +119,12 @@ probe if_let 'module A1;
 fn unwrap(value: Int) -> Int { if let Some(x) = value { x } else { 0 } }'
 probe match_instead 'module A1;
 fn unwrap(value: Int) -> Int { match value { x => x } }'
+emit_notice 'A1 grammar census' "$probe_evidence"
 
 printf '\nSOURCE CENSUS (affinescript check; every tracked .affine file)\n'
 source_count=0
 source_failures=0
+source_evidence=''
 while IFS= read -r file; do
   [ -n "$file" ] || continue
   source_count=$((source_count + 1))
@@ -128,7 +135,7 @@ while IFS= read -r file; do
   set -e
   diagnostic="$(one_line < "$output")"
   printf 'SOURCE %-45s rc=%d %s\n' "$file" "$rc" "${diagnostic:--}"
-  emit_notice "A1 source $file" "check rc=$rc ${diagnostic:--}"
+  source_evidence+="$file check rc=$rc ${diagnostic:--}"$'\n'
   if [ "$rc" -ne 0 ]; then
     source_failures=$((source_failures + 1))
     sed 's/^/  | /' "$output"
@@ -137,3 +144,5 @@ done < <(git ls-files '*.affine' | LC_ALL=C sort)
 
 printf 'A1_CENSUS_COMPLETE sources=%d source_failures=%d (not a build or test PASS)\n' \
   "$source_count" "$source_failures"
+emit_notice 'A1 source census' \
+  "$source_evidence"$'A1_CENSUS_COMPLETE sources='"$source_count"$' source_failures='"$source_failures"$' (not a build or test PASS)'
