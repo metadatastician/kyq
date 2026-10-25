@@ -1,7 +1,7 @@
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 # Rust CI — thin wrapper calling the shared estate reusable in
-# hyperpolymath/standards. Configure once, propagate everywhere.
+# metadatastician/standards. Configure once, propagate everywhere.
 # See: docs/CI-REUSABLE-WORKFLOWS.adoc in standards.
 name: Rust CI
 on:
@@ -16,4 +16,4 @@ permissions:
   contents: read
 jobs:
   rust-ci:
-    uses: hyperpolymath/standards/.github/workflows/rust-ci-reusable.yml@cf8f91219d80da55cf8cbbfcd587d00c2d8798ed
+    uses: metadatastician/standards/.github/workflows/rust-ci-reusable.yml@cf8f91219d80da55cf8cbbfcd587d00c2d8798ed
