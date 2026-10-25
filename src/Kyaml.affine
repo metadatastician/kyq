@@ -7,40 +7,54 @@
 module Kyaml;
 
 use Kyaml.Ast::*;
-use Kyaml.Lexer;
-use Kyaml.Parser;
-use Kyaml.Lint.RequiredFields;
+use Kyaml.Lexer::{ new as new_lexer, tokenize, TokError };
+use Kyaml.Parser::{ parse_yaml as parse_yaml_impl, parse_k8s_resources };
 use prelude::{ Option, Some, None };
 
+// Imported struct definitions are absent from v0.1.1's importer type
+// environment. These public structural aliases preserve the AST field layout
+// for lint results until the upstream import fix can be adopted.
+pub type LintLocationValue = {
+  line: Option[Int],
+  column: Option[Int],
+  path: Option[String]
+}
+
+pub type LintIssueValue = {
+  rule: String,
+  message: String,
+  severity: LintSeverity,
+  location: LintLocationValue
+}
+
 pub fn parse_yaml(input: String) -> ParseResult {
-  Parser::parse_yaml(input)
+  parse_yaml_impl(input)
 }
 
 pub fn parse_k8s(input: String) -> [K8sResource] {
-  Parser::parse_k8s_resources(input)
+  parse_k8s_resources(input)
 }
 
 pub fn validate_yaml_syntax(input: String) -> Bool {
-  let lexer = Lexer::new(input);
-  let tokens = Lexer::tokenize(lexer);
+  let lexer = new_lexer(input);
+  let tokens = tokenize(lexer);
   for tok in tokens {
     match tok.token {
-      TokError(_msg) => return false,
+      TokError(_) => return false,
       _ => ()
     }
   }
   true
 }
 
-pub fn lint_k8s(yaml: String) -> [LintIssue] {
-  let mut issues: [LintIssue] = [];
+pub fn lint_k8s(yaml: String) -> [LintIssueValue] {
+  let mut issues: [LintIssueValue] = [];
   match parse_yaml(yaml) {
-    ParseSuccess(doc) => {
-      let req = RequiredFields::lint_required_fields(doc);
-      issues = issues ++ req;
-    },
+    // A5 will add the required-fields rule; its current implementation is a
+    // stub, so a successful parse contributes no issues in A4.
+    ParseSuccess(_) => (),
     ParseError(err) => {
-      let issue: LintIssue = #{
+      let issue: LintIssueValue = #{
         rule: "syntax-error",
         message: "YAML syntax error: " ++ err.message,
         severity: LintError,
@@ -52,14 +66,14 @@ pub fn lint_k8s(yaml: String) -> [LintIssue] {
       };
       issues = issues ++ [issue];
     }
-  }
+  };
   issues
 }
 
 pub fn query_yaml(yaml: String, path: String) -> Option[YamlValue] {
   match parse_yaml(yaml) {
     ParseSuccess(doc) => query_value(doc.root, path),
-    ParseError(_e) => None
+    ParseError(_) => None
   }
 }
 
@@ -98,10 +112,10 @@ fn query_value(value: YamlValue, path: String) -> Option[YamlValue] {
         }
       },
       None => { return None; }
-    }
+    };
     match current {
       None => return None,
-      Some(_v) => ()
+      Some(_) => ()
     }
   }
   current
@@ -137,7 +151,7 @@ fn parse_int(s: String) -> Option[Int] {
     let ch = string_get(s, i);
     if ch == '-' {
       if i != 0 { return None; }
-    } else if ch >= '0' && ch <= '9' {
+    } else if char_to_int(ch) >= char_to_int('0') && char_to_int(ch) <= char_to_int('9') {
       n = n * 10 + (char_to_int(ch) - char_to_int('0'));
     } else {
       return None;
@@ -167,7 +181,7 @@ pub fn del_yaml(yaml: String, path: String) -> Option[String] {
 pub fn pretty_print_yaml(yaml: String) -> Option[String] {
   match parse_yaml(yaml) {
     ParseSuccess(doc) => Some(format_yaml(doc.root)),
-    ParseError(_e) => None
+    ParseError(_) => None
   }
 }
 
