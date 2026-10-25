@@ -121,11 +121,11 @@ fn parse_scalar(s: String) -> YamlValue {
     }
   }
   // strip quotes if present
-  if len(t) >= 2 && string_get(t, 0) == '"' && string_get(t, len(t)-1) == '"' {
-    return YamlString(string_sub(t, 1, len(t)-2));
+  if len(t) >= 2 && string_get(t, 0) == '"' && string_get(t, len(t) - 1) == '"' {
+    return YamlString(string_sub(t, 1, len(t) - 2));
   }
-  if len(t) >= 2 && string_get(t, 0) == '\'' && string_get(t, len(t)-1) == '\'' {
-    return YamlString(string_sub(t, 1, len(t)-2));
+  if len(t) >= 2 && string_get(t, 0) == '\'' && string_get(t, len(t) - 1) == '\'' {
+    return YamlString(string_sub(t, 1, len(t) - 2));
   }
   YamlString(t)
 }
