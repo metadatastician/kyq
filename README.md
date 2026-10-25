@@ -82,6 +82,30 @@ Pre-built WebAssembly and native binaries will be available in [Releases](https:
 
 ---
 
+### Conformance gate (KYAML and I-JSON/JCS)
+
+The KYAML and JCS contracts in [`docs/KYAML_SPEC.adoc`](docs/KYAML_SPEC.adoc) and
+[`docs/IJSON_JCS_INTEGRATION.adoc`](docs/IJSON_JCS_INTEGRATION.adoc) are executable,
+not aspirational. `conformance/` holds the gate that enforces them:
+
+```bash
+node --test conformance/test/*.test.js                     # the gate's own corpus
+node conformance/bin/kyq-conformance.mjs check $(git ls-files '*.yaml' '*.yml')
+```
+
+It rejects duplicate keys and complex/merge keys, reports every parse error with
+a line and column, verifies `fmt(fmt(x)) == fmt(x)` byte-for-byte over the whole
+valid corpus, and emits JCS bytes that are diffed against the pinned
+[`hyperpolymath/ijson-jcs`](https://github.com/hyperpolymath/ijson-jcs) commit.
+
+**The gate is a verification harness, not this implementation.** `src/` remains
+the AffineScript deliverable and must pass the same corpus once it compiles. Pin
+a release tarball digest and copy the CI job verbatim from
+[`docs/CONFORMANCE_GATE.adoc`](docs/CONFORMANCE_GATE.adoc); until such a gate
+exists, consumer CI cannot honestly claim to enforce KYAML/JCS conformance.
+
+---
+
 ## Usage
 
 ### Basic Commands

@@ -1,0 +1,144 @@
+{
+  "schema": "kyq-conformance-corpus-v1",
+  "kind": "rfc8785-vectors",
+  "note": "RFC 8785 \u00a73.2.2.3 (numbers) and \u00a73.2.3 (sorting, string escaping). Each number is given as a JSON token, because the token decides what the parser may accept: an integer token beyond 2^53-1 is invalid I-JSON, whereas the same value written as a float token is legal.",
+  "numbers": [
+    {
+      "token": "0",
+      "jcs": "0"
+    },
+    {
+      "token": "-0",
+      "jcs": "0"
+    },
+    {
+      "token": "-0.0",
+      "jcs": "0"
+    },
+    {
+      "token": "1.0",
+      "jcs": "1"
+    },
+    {
+      "token": "4.50",
+      "jcs": "4.5"
+    },
+    {
+      "token": "-1.25",
+      "jcs": "-1.25"
+    },
+    {
+      "token": "0.002",
+      "jcs": "0.002"
+    },
+    {
+      "token": "2e-3",
+      "jcs": "0.002"
+    },
+    {
+      "token": "0.000001",
+      "jcs": "0.000001"
+    },
+    {
+      "token": "1e-7",
+      "jcs": "1e-7"
+    },
+    {
+      "token": "1e-27",
+      "jcs": "1e-27"
+    },
+    {
+      "token": "1e20",
+      "jcs": "100000000000000000000"
+    },
+    {
+      "token": "1e21",
+      "jcs": "1e+21"
+    },
+    {
+      "token": "1e30",
+      "jcs": "1e+30"
+    },
+    {
+      "token": "333333333.3333333",
+      "jcs": "333333333.3333333"
+    },
+    {
+      "token": "333333333.33333329",
+      "jcs": "333333333.3333333"
+    },
+    {
+      "token": "123456789012345680000.0",
+      "jcs": "123456789012345680000"
+    },
+    {
+      "token": "9007199254740992.0",
+      "jcs": "9007199254740992"
+    },
+    {
+      "token": "5e-324",
+      "jcs": "5e-324"
+    },
+    {
+      "token": "-5e-324",
+      "jcs": "-5e-324"
+    },
+    {
+      "token": "1.7976931348623157e308",
+      "jcs": "1.7976931348623157e+308"
+    },
+    {
+      "token": "-1.5e-9",
+      "jcs": "-1.5e-9"
+    }
+  ],
+  "strings": [
+    {
+      "source": "euro-sign",
+      "raw": "\\u20ac",
+      "jcs": "\u20ac"
+    },
+    {
+      "source": "escaped-controls",
+      "raw": "\\u0000\\u000f\\u001f",
+      "jcs": "\\u0000\\u000f\\u001f"
+    },
+    {
+      "source": "quote-backslash-solidus",
+      "raw": "\\\"\\\\\\/",
+      "jcs": "\\\"\\\\/"
+    },
+    {
+      "source": "tab-newline-carriage",
+      "raw": "\\t\\n\\r",
+      "jcs": "\\t\\n\\r"
+    },
+    {
+      "source": "short-escapes",
+      "raw": "\\b\\f",
+      "jcs": "\\b\\f"
+    },
+    {
+      "source": "non-ascii-raw",
+      "raw": "caf\u00e9 \u00f6",
+      "jcs": "caf\u00e9 \u00f6"
+    }
+  ],
+  "sorting": [
+    {
+      "name": "rfc8785-3.2.3-sorting",
+      "input": "{\n  \"\\u20ac\": \"Euro Sign\",\n  \"\\r\": \"Carriage Return\",\n  \"\\ufb33\": \"Hebrew Letter Dalet With Dagesh\",\n  \"1\": \"One\",\n  \"\\ud83d\\ude00\": \"Emoji: Grinning Face\",\n  \"\\u0080\": \"Control\",\n  \"\\u00f6\": \"Latin Small Letter O With Diaeresis\"\n}",
+      "jcs": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u0080\":\"Control\",\"\u00f6\":\"Latin Small Letter O With Diaeresis\",\"\u20ac\":\"Euro Sign\",\"\ud83d\ude00\":\"Emoji: Grinning Face\",\"\ufb33\":\"Hebrew Letter Dalet With Dagesh\"}"
+    },
+    {
+      "name": "ascii-prefix",
+      "input": "{\"ab\":1,\"a\":2,\"abc\":3}",
+      "jcs": "{\"a\":2,\"ab\":1,\"abc\":3}"
+    },
+    {
+      "name": "code-unit-not-code-point",
+      "input": "{\"\\ufb33\":1,\"\\ud83d\\ude00\":2}",
+      "jcs": "{\"\ud83d\ude00\":2,\"\ufb33\":1}"
+    }
+  ]
+}

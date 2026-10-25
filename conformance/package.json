@@ -1,0 +1,28 @@
+{
+  "name": "kyq-conformance",
+  "version": "0.1.0",
+  "description": "Executable conformance gate for the KYAML and I-JSON/JCS contracts (docs/KYAML_SPEC.adoc, docs/IJSON_JCS_INTEGRATION.adoc)",
+  "license": "MPL-2.0",
+  "author": "Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>",
+  "type": "module",
+  "bin": {
+    "kyq-conformance": "bin/kyq-conformance.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "test/",
+    "tools/",
+    "fixtures/",
+    "VERSION"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "private": true,
+  "dependencies": {},
+  "devDependencies": {}
+}

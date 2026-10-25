@@ -1,0 +1,448 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq Conformance Gate — Operator Manual
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-25
+:revnumber: 0.1.0
+:status: NORMATIVE — describes `conformance/` at v0.1.0
+
+This document is the manual for the executable gate that enforces
+`docs/KYAML_SPEC.adoc` (KYAML) and `docs/IJSON_JCS_INTEGRATION.adoc`
+(I-JSON / JCS). It covers what the gate is, how to install and pin it, exactly
+what its CLI promises, how a consumer repository calls it from CI, and — in the
+same amount of detail — what it does not claim.
+
+The gate lives in `conformance/` and ships as `kyq-conformance`.
+
+toc::[]
+
+== Why this exists
+
+`docs/KYAML_SPEC.adoc` and `docs/IJSON_JCS_INTEGRATION.adoc` described two
+contracts that nothing executed. Consumer repositories were being asked to
+depend on them, and their CI could not honestly say whether it enforced KYAML or
+JCS conformance:
+
+> Until an executable gate exists, consumer CI cannot honestly claim to enforce
+> KYAML / JCS conformance.
+
+That sentence is the reason for every byte in `conformance/`. A specification
+that is only prose is a preference; a specification plus a gate that fails on
+violation is a contract. The gate turns the prose into the latter, and this
+document is how you run it.
+
+== What the gate is, and what it is not
+
+The gate is a **verification harness**: a dependency-free ESM (JavaScript)
+program that parses KYAML, bridges to JSON, validates strictly per I-JSON, and
+emits JCS bytes — with a CLI whose exit codes, printed lines and diagnostics are
+part of the contract.
+
+The gate is **not** the kyq implementation. `coordination.k9` requires all
+implementation code to be AffineScript, and the AffineScript implementation
+under `src/` does not yet compile (see `docs/status/A1_GRAMMAR_CENSUS.adoc`). The
+gate is repo-owned tooling in the same role as `scripts/check-action-pinning.js`:
+it is the oracle the implementation must satisfy. Two rules keep that honest,
+and both are binding:
+
+. the gate MUST NOT be described as kyq's implementation in release notes, the
+  README, or the deed;
+. when the AffineScript implementation builds, it MUST pass this corpus, and the
+  differential test then compares three implementations (the Rust
+  `ijson-jcs` oracle, this gate, and kyq) instead of substituting one for the
+  other.
+
+== Requirements
+
+[cols="1,2,3",options="header"]
+|===
+| Requirement | Version | Note
+
+| Node.js | ≥ 20 (developed on v22) | `node --test` is the runner; no test framework is installed
+| git | any | only to fetch the repo or clone the oracle
+| GNU tar, gzip, sha256sum | any | `conformance-package` only (reproducible archive)
+| Rust + cargo | stable, 2024 edition | `conformance-oracle` only
+|===
+
+There are **no** runtime dependencies. `conformance/package.json` has no
+`dependencies` and no `devDependencies`, and the tarball ships no
+`node_modules`. The estate's runtime preference is Bun; the gate runs under Bun
+as well (`bun test` is *not* used — the suite is written for `node --test`, and
+`bun bin/kyq-conformance.mjs` works unchanged).
+
+Python is not used and must not be introduced.
+
+== Installing and pinning
+
+The gate is distributed as a **versioned tarball attached to a git tag**, not as
+a floating branch and not (yet) through a package registry. Pinning has three
+parts, and all three are required for a consumer's claim to be honest:
+
+. a **tag** — `kyq-conformance-v0.1.0`;
+. a **SHA-256** of the tarball, from that release's `SHA256SUMS`;
+. the gate's own `--version` output (`kyq-conformance 0.1.0`), asserted in CI so
+  a silently different artifact cannot pass as the pinned one.
+
+"Available now" and "available at the first tag" are different claims, so here is
+the boundary. `conformance/VERSION`, the corpus and the tooling are in-tree at
+v0.1.0, and they are what the self-test job exercises on every push. A *release
+artifact* exists once the `kyq-conformance-v0.1.0` tag is pushed. Until then, a
+consumer that vendors the gate pins the **commit** plus the digest it builds
+itself, and MUST NOT describe that as a released version:
+
+[source,bash]
+----
+# pre-release pinning: commit + locally built digest
+git -C kyq rev-parse HEAD                 # record this in the consumer's CI
+bash conformance/tools/package.sh
+cat dist/SHA256SUMS                       # record the digest next to the commit
+----
+
+Once the tag is published, the download form below is the only supported
+installation:
+
+[source,bash]
+----
+# 1. fetch the release artifact and verify it against the published digest
+tag=kyq-conformance-v0.1.0
+gh release download "$tag" \
+  --repo metadatastician/kyq \
+  --pattern 'kyq-conformance-*.tar.gz' \
+  --pattern SHA256SUMS
+sha256sum --check --strict SHA256SUMS
+
+# 2. unpack and assert the version the tarball claims
+tar -xzf "kyq-conformance-${tag#kyq-conformance-v}.tar.gz"
+cd "kyq-conformance-${tag#kyq-conformance-v}"
+node bin/kyq-conformance.mjs --version   # kyq-conformance 0.1.0
+----
+
+`--check --strict` matters: without `--strict`, `sha256sum` skips files it cannot
+find and still exits 0.
+
+What is never acceptable is a floating branch (`main`, `latest`): it resolves to
+different bytes over time, so a green run says nothing about what was tested.
+Every pin above is either an immutable commit id or a digest of immutable bytes,
+and the `--version` assertion catches the case where both are right but the
+artifact is not the one that was reviewed.
+
+=== Building the release artifact
+
+[source,bash]
+----
+just conformance-package     # or: bash conformance/tools/package.sh
+cat dist/SHA256SUMS
+----
+
+The archive is byte-reproducible for a given tree: entries sorted, mtimes at
+epoch 0, owners 0:0, `gzip -9n`. Re-running on the same commit yields the same
+SHA-256, so a published digest is meaningful. That is precisely why GNU tar is
+required — bsdtar cannot sort entries or fix mtimes.
+
+== The CLI contract
+
+[source,text]
+----
+kyq-conformance <command> [options] [--] FILE...
+----
+
+[cols="1,3",options="header"]
+|===
+| Command | Behaviour
+
+| `check FILE...` | one line per file on stdout: `OK <file>`, `NOT CANONICAL <file>`,
+  or `INVALID <file>: <reason>`. Never writes.
+| `fix FILE...` | rewrites each valid, non-canonical file to its canonical form and
+  prints `FIXED <file>`; prints `OK <file>` for a file already canonical (and
+  does not write). Invalid files are left untouched and do not stop the others.
+| `canon` | reads stdin, writes canonical bytes to stdout with **no** trailing
+  newline; diagnostics go to stderr as `INVALID <stdin>: <reason>`.
+| `validate FILE...` | structural validity only: canonicality and lint-level
+  complaints are not failures.
+|===
+
+`fmt` is accepted as an alias of `fix` (the formatter's entry point before the
+CLI was tightened to match `ijson-jcs`).
+
+[cols="1,1,3",options="header"]
+|===
+| Flag | Values | Meaning
+
+| `--format` | `yaml`, `json` | force the input format instead of inferring from the extension
+| `--report` | `text` (default), `json` | `text` prints the one-line forms above; `json` prints one object per file to stdout
+| `--array` | — | `canon` only: bridge a multi-document stream as a single JSON array
+| `--` | — | end of options, for file names beginning with `-`
+| `--help`, `--version` | — | usage text; `kyq-conformance <version>`
+|===
+
+=== Exit status
+
+[cols="1,3",options="header"]
+|===
+| Status | Meaning
+
+| 0 | every file was canonical valid input (`check`, `fix`), or the canonical bytes were produced (`canon`), or every file was structurally valid (`validate`)
+| 1 | `check` only: every file was valid but at least one was not canonical
+| 2 | any invalid file, unreadable file, or usage error (unknown command, unknown option, missing argument, `--format` disagreement)
+|===
+
+Status 1 and 2 are deliberately distinct: "your file is not formatted" and "your
+file is not valid" call for different fixes, and a gate that collapses them
+forces every consumer to guess.
+
+=== Diagnostics
+
+Messages mirror `ijson-jcs` byte-for-byte for JSON inputs, including
+`JSON parse error: duplicate object key "a" (forbidden by RFC 7493 §2.3); first
+seen at line 1 column 2 at line 1 column 8`, and the line is terminated by a
+source location `(line L, column C)`, optionally followed by a JSON-Pointer-ish
+`(path a/1/b~0~1c)` for semantic errors.
+
+`--report json` emits one object per file:
+
+[source,json]
+----
+{"file":"bad.yaml","format":"yaml","status":"invalid",
+ "error":{"code":"DUPLICATE_KEY","kind":"kyaml",
+          "message":"duplicate mapping key \"a\"","reason":"… (line 3, column 1)",
+          "line":3,"column":1,"path":"spec/containers/0"}}
+----
+
+`kind` is one of `kyaml`, `bridge`, `json`, `jcs`. `status` is one of `ok`,
+`not-canonical`, `invalid`. Machine consumers should branch on `code` and
+`kind`, not on message text; message text is for humans and is pinned only for
+JSON inputs where parity with `ijson-jcs` is itself the contract.
+
+Error codes include `DUPLICATE_KEY`, `NON_STRING_KEY`, `UNSAFE_INTEGER`,
+`NON_FINITE_NUMBER`, `UNEXPECTED_INDENT`, `UNSUPPORTED_TAG`,
+`UNSUPPORTED_MERGE_KEY`, `UNKNOWN_ANCHOR`, `NONCHARACTER`, `LONE_SURROGATE`,
+`INVALID_UTF8`, `JSON_PARSE_ERROR`, `MULTI_DOC_STREAM`, `EMPTY_STREAM`,
+`NODE_BUDGET`.
+
+== The corpus
+
+[cols="2,1,3",options="header"]
+|===
+| Path | Count | What it pins
+
+| `fixtures/kyaml/valid/*.yaml` | 10 | inputs that must parse, and their canonical form
+| `fixtures/kyaml/invalid/*.yaml` | 32 | inputs that must be refused, and why
+| `fixtures/kyaml/cases.json` | — | the single expectation per fixture (reason text, code, line/column)
+| `fixtures/ijson/vectors.json` | 37 | strict I-JSON acceptance/refusal and JCS bytes
+| `fixtures/ijson/check.json` | 13 | file bytes → `check` exit status, including BOM, CRLF and double-newline
+| `fixtures/rfc8785/vectors.json` | 31 | RFC 8785 §3.2.2.3 numbers (22), §3.2.3 string escaping (6) and key sorting (3)
+| `fixtures/bridge/vectors.json` | 26 | KYAML text → JCS bytes, or a located refusal
+| `fixtures/oracle/ijson-jcs.json` | — | expectations transcribed from the pinned oracle's own tests, each with a `source` citation
+|===
+
+Two invariants keep the corpus honest, and both are enforced by
+`test/corpus.test.js`:
+
+* every fixture on disk has exactly one expectation, and every expectation has a
+  fixture — no orphan either way, so a deleted fixture cannot leave a green
+  "passing" expectation behind;
+* the required error codes are all exercised by at least one fixture, so the
+  refusal table in the spec cannot rot silently.
+
+Every fixture file is pure ASCII with LF endings. Control characters,
+noncharacters and BOMs that the vectors are *about* are written as `\uXXXX`
+escapes in the JSON source, never as raw bytes — otherwise the estate's
+invisible-character scanner flags the corpus and, worse, a reader cannot see what
+the vector tests.
+
+== What is tested
+
+[cols="2,3",options="header"]
+|===
+| Suite | Property
+
+| `test/json.test.js` (104) | I-JSON strictness and JCS bytes: key sorting by UTF-16 code units, ES number formatting, escaping, duplicate keys, surrogates, noncharacters, BOM handling, unsafe integers, the non-reflexive float vectors
+| `test/corpus.test.js` (81) | every KYAML fixture accepts/refuses as declared, with a located reason and the declared code; corpus invariants above
+| `test/formatter.test.js` (37) | for every valid fixture: `parse(fmt(x))` has the same JCS image (VALUE), `fmt(fmt(x)) == fmt(x)` byte-equal (FIXED), and exactly one trailing newline or zero bytes (HYGIENE)
+| `test/bridge.test.js` (48) | φ: integer range checks, finiteness, non-string keys, alias/node budget, multi-document streams, JSON-Pointer paths
+| `test/cli.test.js` (43) | exit codes, printed lines, `--report json`, `fix` rewriting, `canon` newline rule, `--`, usage errors, and the CLI vectors transcribed from `ijson-jcs`
+|===
+
+313 tests in total. Formatter idempotence (`fmt(fmt(x)) == fmt(x)`, compared as
+bytes) is a property over the whole valid corpus, not one hand-picked example:
+`fixtures/kyaml/valid/canonical.yaml` is a fixed point by construction, and
+`examples/deployment.yaml` is deliberately *not* canonical, so both directions
+are exercised.
+
+== Running it in CI
+
+The invocation is the whole contract — a workflow that runs anything else is not
+running the gate.
+
+[source,bash]
+----
+node --test conformance/test/*.test.js      # the gate's own suite
+node conformance/bin/kyq-conformance.mjs check $(git ls-files '*.yaml' '*.yml')
+----
+
+The glob `test/*.test.js` is required: `node --test test` fails with
+`MODULE_NOT_FOUND` on Node 22.
+
+=== A complete consumer job
+
+[source,yaml]
+----
+name: kyq conformance
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  kyaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch the pinned gate
+        env:
+          TAG: kyq-conformance-v0.1.0
+          SHA256SUMS: <sha256 of SHA256SUMS from the release>
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo metadatastician/kyq \
+            --pattern 'kyq-conformance-*.tar.gz' --pattern SHA256SUMS
+          echo "$SHA256SUMS  SHA256SUMS" | sha256sum --check --strict
+          sha256sum --check --strict SHA256SUMS
+          tar -xzf "kyq-conformance-${TAG#kyq-conformance-v}.tar.gz"
+          echo "KYQ_CONFORMANCE=$PWD/kyq-conformance-${TAG#kyq-conformance-v}" >> "$GITHUB_ENV"
+      - name: Assert the pinned version
+        run: test "$(node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" --version)" = 'kyq-conformance 0.1.0'
+      - name: Gate every manifest
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.yaml' '*.yml')
+          node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" check "${files[@]}"
+      - name: Canonicalise on demand
+        if: failure()
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.yaml' '*.yml')
+          node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" fix "${files[@]}"
+          git --no-pager diff --stat
+----
+
+Notes that are not decoration:
+
+* **`--strict`** — without it `sha256sum` silently skips missing files.
+* **`mapfile`** — a bare `$(git ls-files ...)` word-splits, so a path with a
+  space becomes two arguments and the gate reports a file that does not exist.
+* **`git ls-files`, not `find`** — untracked scratch files must not be able to
+  turn a consumer's CI red, and tracked files are exactly the ones being
+  published.
+* **Templates** — if a consumer's repository uses kyq's `{{VAR}}` template
+  syntax, those files are not KYAML data and must be excluded from the glob
+  (`grep -v '^templates/'`); this repository does exactly that for its own
+  `templates/`.
+* **`check` and not `validate`** — `validate` ignores canonicality by design; a
+  gate that only validates will pass a file that no formatter has ever produced.
+
+=== This repository's own workflow
+
+`.github/workflows/conformance.yml` runs three jobs:
+
+[cols="1,3",options="header"]
+|===
+| Job | What it proves
+
+| `selftest` | the suite passes, every tracked manifest in this repo is valid KYAML (dogfood), `fixtures/kyaml/valid/canonical.yaml` is a fixpoint, and the RFC 8785 sample's bytes match through the CLI
+| `oracle` | the pinned `hyperpolymath/ijson-jcs` commit is cloned, built with `--locked`, and diffed against the gate case by case (`conformance/tools/ijson-jcs-diff.mjs`)
+| `package` | the release tarball builds reproducibly, is smoke-tested from the unpacked form, and is attached to the `kyq-conformance-v*` tag
+|===
+
+Locally the same three are `just conformance`, `just conformance-oracle` and
+`just conformance-package`.
+
+=== The differential oracle
+
+[source,bash]
+----
+node conformance/tools/ijson-jcs-diff.mjs                     # clone, build, diff
+node conformance/tools/ijson-jcs-diff.mjs --bin ./ijson-jcs    # diff against a binary you built
+----
+
+The tool collects every canonicalisation, refusal and `check` case from
+`fixtures/ijson/`, `fixtures/oracle/` and the transcribed `cliVectors` — 76 as of
+v0.1.0 — and fails if the oracle and the gate disagree on bytes, on exit status,
+or on the printed line. A pinned-commit mismatch, an unavailable toolchain or an
+unbuildable crate exits **2**; none of them can produce a green run.
+
+It also re-validates the corpus itself: if the pinned bytes in the fixtures no
+longer match what the oracle emits, the tool says the expectation is stale rather
+than quietly comparing stale data to stale data.
+
+== Adopting the gate in an existing repository
+
+`check` is a formatting gate, and no existing repository is in canonical form.
+Turning it on undiffs every manifest at once, which buries the review. Adopt in
+three steps, in this order:
+
+[cols="1,2,3",options="header"]
+|===
+| Step | Command | What it catches
+
+| 1. Validity | `kyq-conformance validate $(git ls-files '*.yaml' '*.yml')` | duplicate keys, tab indentation, unsupported tags and merge keys — no formatting churn at all
+| 2. One mechanical reformat | `kyq-conformance fix …` then commit | the canonical form, as a single commit that touches nothing else
+| 3. Canonicality | `kyq-conformance check …` | drift afterwards, which is now a real signal because the baseline was formatted
+|===
+
+This repository is at step 1: `.github/workflows/conformance.yml` runs `validate`
+over every tracked manifest, because `examples/deployment.yaml` is deliberately
+non-canonical (a test asserts the formatter changes it) and reformatting forty
+workflows inside the change that introduces the gate would make the gate's own
+review impossible.
+
+Do not skip to step 3 and disable the job when it goes red. A gate that is turned
+off on first contact teaches the next reader that red is normal.
+
+== Failure modes and what they mean
+
+[cols="2,3",options="header"]
+|===
+| Symptom | Cause and response
+
+| `cannot tell the format of '<f>' from its extension` | pass `--format yaml` (or `.yaml`/`.yml` naming); `.json` is read as JSON by default
+| `NOT CANONICAL` on a file that looks fine | usually a missing/extra final newline, CRLF, or unsorted keys — run `fix` and diff
+| `INVALID … (line L, column C)` on a file a YAML 1.1 reader accepts | KYAML is a YAML 1.2 core-schema subset: duplicate keys, merge keys, complex keys, and unsupported tags are refusals by design (`docs/KYAML_SPEC.adoc` §5)
+| `MULTI_DOC_STREAM` from `canon` | pass `--array` to bridge the stream as one array, or split the documents
+| `EMPTY_STREAM` | a stream with no documents has no JSON image
+| `NODE_BUDGET` | alias expansion exceeded the budget; the document is refused rather than expanded
+| `unknown option: --…` | exit 2 by design; `--help` lists the accepted flags
+| exit 1 from `check` in CI | valid but unformatted: run `fix`, commit the result
+|===
+
+== Reproducibility and provenance
+
+* The gate's behaviour is pinned by data in `conformance/fixtures/`, not by
+  prose in this document; every claim above has a test that fails if it stops
+  being true (`docs/KYAML_SPEC.adoc` §"Guarantees and their evidence").
+* `fixtures/oracle/ijson-jcs.json` records the oracle commit, its subject line,
+  crate version and the exact source location of each transcribed expectation.
+* The release tarball is byte-reproducible, so `SHA256SUMS` is a real pin.
+* Nothing in the gate is generated at build time: there is no codegen step, no
+  vendored binary, and no network access at runtime.
+
+== Known limits
+
+* **Byte-compatibility is not oracle correctness.** The gate reproduces
+  `ijson-jcs` exactly, and `ijson-jcs` has at least one round-trip gap (JCS text
+  of a large float is not strict input). The gate pins the behaviour and names
+  the gap (`docs/IJSON_JCS_INTEGRATION.adoc` §"Known upstream interaction")
+  instead of inventing a divergent canonical form.
+* **The KYAML surface is deliberately small.** No anchors-as-structure beyond
+  one-pass aliases, no merge keys, no tags beyond the core schema; see the
+  rejected-construct table in the spec. A gate over a subset is honest; a gate
+  over "all of YAML" would not be.
+* **Not the implementation.** `src/*.affine` is still the deliverable, and it
+  still has to pass this corpus. Until it does, `kyq` the tool remains
+  unimplemented and the gate is the only executable statement of the contract.
+* **No registry package yet.** Consumers pin a tarball digest. Publishing to a
+  registry is deferred until the artifact can be signed, not merely hashed.
+* **Windows line endings** are refused, not normalised: `CRLF` in a manifest is
+  a defect to fix, not a dialect to accept.

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: CC-BY-SA-4.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-= kyq — I-JSON / JCS Canonical Integration (v1, tracks hyperpolymath/ijson-jcs)
+= kyq — I-JSON / JCS Canonical Integration (v0.1.0, tracks hyperpolymath/ijson-jcs)
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-10-23
-:status: DRAFT (Phase 0 stub; normative from Phase 2)
+:revdate: 2026-10-25
+:revnumber: 0.1.0
+:status: NORMATIVE — executable gate in `conformance/` (v0.1.0)
 
 This is the normative home for "guaranteed works for the ijson-jcs scheme,
 canonical format". It states the contract `kyq` inherits from
-`hyperpolymath/ijson-jcs` and how the KYAML→JSON bridge feeds it.
+`hyperpolymath/ijson-jcs`, how the KYAML→JSON bridge feeds it, and which
+clauses are executable today. Clause-by-clause execution lives in
+`conformance/`; `docs/CONFORMANCE_GATE.adoc` is the manual.
 
 toc::[]
 
@@ -18,147 +21,219 @@ toc::[]
 The canonical estate reference is `hyperpolymath/ijson-jcs`:
 
 * Repository: https://github.com/hyperpolymath/ijson-jcs
-* Crate: `ijson-jcs` v0.1.0, `edition = "2024"`, license MPL-2.0.
+* Pinned oracle: commit `2c880594c8b1f823a7ab2a8a830c894975a1792e`
+  ("Clarify kyq's four-format estate route and kyX boundary (#6)"),
+  crate `ijson-jcs` 0.1.0, `edition = "2024"`, license MPL-2.0.
 * Specs: I-JSON RFC 7493 (MUST + SHOULD) + JCS RFC 8785 (deterministic bytes).
 
 `ijson-jcs` ships a Rust library (`src/*.rs`: `lib.rs`, `ijson.rs`, `jcs.rs`,
 `strict.rs`, `error.rs`, `bin/*.rs`) and a CLI (`ijson-jcs check`/`fix`/`canon`).
-This document does not re-specify JCS; it references `ijson-jcs`.
+This document does not re-specify JCS; it references `ijson-jcs` and pins it by
+commit so the comparison is reproducible.
 
 == What kyq must inherit exactly
 
 === 1. Validation mode
 
-Every `kyq` entry point that touches JSON canonical bytes parses in
-`ijson_jcs::JsonMode::Canonical` (the strictest mode). That is:
+Every `kyq` entry point that touches JSON canonical bytes parses as strictly as
+`ijson_jcs::JsonMode::Canonical`:
 
-* UTF-8 input, no BOM mis-handling.
-* Duplicate object keys → `INVALID` (detected at parse time, before `Value`
-  construction — `validate_i_json(&Value)` alone cannot see them).
-* Numbers: IEEE-754 binary64 exact representation; integers in `±(2^53−1)`, no
-  `NaN`/`Infinity`; numbers outside range → `INVALID`.
-* Strings/keys: no unpaired surrogates (`U+D800..U+DFFF`), no noncharacters,
-  only `TAB`/`LF`/`CR` as control characters.
-* Top-level value: SHOULD be object/array (enforced as warning/error per
-  policy — `kyq` follows `ijson-jcs` exactly here).
+* UTF-8 input; a BOM is not accepted as whitespace.
+* Duplicate object keys → `INVALID`, detected while reading the text (a parsed
+  `Value` can no longer show them — `validate_i_json(&Value)` alone cannot).
+* Integer tokens outside ±(2^53−1) → `INVALID`; float tokens are accepted as
+  doubles; numbers outside the binary64 range (`1e400`) → `INVALID`.
+* Strings/keys: no unpaired surrogates (`U+D800..U+DFFF`), no noncharacters;
+  escaped control characters are allowed (RFC 7493 §2.1 does not forbid them).
+* Top-level value: `ijson-jcs` follows RFC 7493's SHOULD here by *allowing* any
+  value; `kyq` does the same, so the two agree.
+
+Executable: `conformance/fixtures/ijson/vectors.json` (38 vectors),
+`conformance/fixtures/oracle/ijson-jcs.json`, `conformance/test/json.test.js`.
 
 === 2. Canonical bytes (JCS)
 
-For the same logical `serde_json::Value`, `kyq` produces byte-equal output to
-`ijson_jcs::to_jcs(&value)` and `to_jcs_string(&value)`:
+For the same logical value, `kyq` produces byte-equal output to
+`ijson_jcs::to_jcs` / `to_jcs_string`:
 
 * UTF-8, no BOM.
-* Object keys sorted by *UTF-16 code-unit* order (RFC 8785), not lexicographic.
-* No insignificant whitespace (compact form); number serialisation per ES
-  `JSON.stringify` (via `serde_json` `float_roundtrip`; `-0` vs `0`, `1e21`
-  formatting, subnormals all match).
-* Arrays preserve order; only object keys are sorted.
-* Determinism + idempotence: `to_jcs(parse(to_jcs(v))) = to_jcs(v)`; same input
-  always same bytes.
+* Object keys sorted by *UTF-16 code-unit* order (RFC 8785 §3.2.3), not by code
+  point and not lexicographically.
+* No insignificant whitespace; arrays keep their order.
+* Numbers serialised per ECMAScript `Number.prototype.toString`
+  (`1E30`→`1e+30`, `4.50`→`4.5`, `-0`→`0`, `1e-7`→`1e-7`,
+  `1e+20`→`100000000000000000000`).
+* Strings escaped as `serde_json` does: only `"`, `\` and C0 controls, the short
+  forms where they exist, `\u00xx` lowercase hex otherwise; `/` and all
+  non-ASCII stay raw.
+* Determinism and idempotence: same input, same bytes.
+
+Executable: `fixtures/rfc8785/vectors.json` (RFC examples),
+`fixtures/ijson/vectors.json`, the transcribed `esNumberVectors` and
+`canonVectors` in `fixtures/oracle/ijson-jcs.json`, and the differential job.
 
 === 3. CLI surface
 
-Where `kyq` offers `check`/`fix`/`canon`-like behaviour (for YAML or JSON
-inputs), it uses the same user-visible contract as `ijson-jcs`:
+Where `kyq` offers `check`/`fix`/`canon` behaviour it uses the same user-visible
+contract as `ijson-jcs`, for JSON *and* for KYAML inputs:
 
-* `check` prints `OK path`, `NOT CANONICAL path`, or `INVALID path: reason`
-  per file, on stdout. Exit 0 if every file canonical, 1 if some valid but not
-  canonical (none invalid), 2 if any invalid/unreadable. Usage error also 2.
-* `fix` rewrites each valid, non-canonical file to canonical form + single
-  `\\n`; `OK path` when already correct and not written; `INVALID` files left
-  untouched. Exit 0 if every file valid (fixed or already OK), else 2.
-* `canon` reads stdin, writes canonical form to stdout with *no* trailing
-  newline (hash/sign input); errors to stderr as `INVALID <stdin>: reason`,
-  exit 2 on invalid.
+* `check` prints `OK path`, `NOT CANONICAL path` or `INVALID path: reason`, one
+  line per file on stdout. Exit 0 if every file canonical, 1 if some valid but
+  not canonical (none invalid), 2 if any invalid or unreadable.
+* `fix` rewrites each valid, non-canonical file to canonical form plus a single
+  `\n`; prints `OK path` when it is already byte-identical (and does not write),
+  `FIXED path` otherwise; `INVALID` files are left untouched and the other files
+  are still processed. Exit 0 if every file was valid, else 2.
+* `canon` reads stdin, writes the canonical form to stdout with *no* trailing
+  newline (the bytes to hash/sign), errors to stderr as
+  `INVALID <stdin>: reason`, exit 2 on invalid.
+* `--` before file names beginning with `-`; a usage error exits 2.
 
-Use `--` before file names beginning with `-`. These are not kyq inventions;
-they are the `ijson-jcs` CLI spec quoted verbatim.
+Executable: `conformance/test/cli.test.js`, including the CLI cases transcribed
+from `ijson-jcs`'s own `tests/cli.rs`.
 
 === 4. The trailing-newline rule (load-bearing)
-
-JCS bytes have no trailing newline, but text files on disk should end with one.
-Therefore:
 
 [cols="1,3",options="header"]
 |===
 | Form | Bytes on disk
 
-| JCS canonical bytes (for hashing/signing)
-| `b` — exactly `to_jcs(&value)`, no trailing newline. This is what you hash.
-
-| On-disk JSON file considered "canonical" by `check`
-| `b` *or* `b ++ "\n"` — i.e. the canonical form optionally followed by exactly
-  one `\\n`. Anything else (`b ++ "\n\n"`, `b ++ "\r\n"`, trailing space, leading
-  whitespace) is `NOT CANONICAL`.
-
+| JCS canonical bytes (hash/sign input)
+| `b` — exactly `to_jcs(&value)`, no trailing newline.
+| On-disk JSON file considered canonical by `check`
+| `b` *or* `b ++ "\n"`; anything else (`b ++ "\n\n"`, `b ++ "\r\n"`, trailing
+  space, leading whitespace) is `NOT CANONICAL`.
 | `fix` output
 | Always `b ++ "\n"`.
-
 | `canon` output
-| Always `b` (no newline), so hashing `canon` output directly is correct. To
-  hash a checked file, strip the single final `\\n` first — or hash
-  `ijson-jcs canon < file`.
+| Always `b` (no newline).
 |===
 
-`kyq` must implement this rule exactly; it must not produce files with double
-newlines, CRLF, or trimmed final newlines in `fix` mode.
+KYAML uses the same rule around the formatter's single trailing newline: the
+canonical text is accepted with or without that final newline, and `fix` always
+writes it.
+
+Executable: `fixtures/ijson/check.json` (13 file-level vectors) and
+`cli.test.js`; both directions of the rule are pinned, not just the happy path.
 
 == KYAML → JCS pipeline (how kyq bridges the two)
 
 ----
-YAML (KYAML) ──parse (kyaml)──▶ YamlValue ──φ──▶ serde_json::Value
-                                                    │
-                                              validate (Strict)
-                                                    │
-                                                    ▼
-                                              to_jcs(bytes) / to_jcs_string
+YAML (KYAML) ──parse (kyaml)──▶ AST ──φ──▶ JSON value
+                                            │
+                                      validate (strict)
+                                            │
+                                            ▼
+                                     to_jcs(bytes) / to_jcs_string
 ----
 
 * Step 1 — `parse`: KYAML parser per `docs/KYAML_SPEC.adoc`. Rejects duplicate
-  YAML keys, anchors cycles, tags it cannot preserve.
-* Step 2 — `φ` (the lossless bridge): `YamlValue::Int` → JSON number (checked
-  against `±(2^53−1)`), `Float` → JSON number (checked for finiteness), `String`
-  → JSON string (checked for surrogates/noncharacters), `Sequence` → JSON array,
-  `Mapping` (string keys) → JSON object. Non-string mapping keys are rejected;
-  integers that would become floats via `serde_json`'s `i64`/`u64` path are not
-  mis-cast — they are checked before collapse (the `validate_i_json` caveat in
-  `ijson-jcs` docs applies here too: never validate a `Value` that `serde_json`
-  already parsed naively; parse the *text* strictly).
-* Step 3 — `to_jcs`: delegates to `ijson_jcs::to_jcs`. No second implementation.
-  Byte equality with `ijson-jcs canon` for the same logical Value is a tested
-  property (Thm JCS-8).
+  keys, complex/merge keys, alias cycles, unsupported tags, non-string mapping
+  keys (at the bridge), surrogates and noncharacters.
+* Step 2 — φ: `null`→`null`; `bool`→boolean; `int`→JSON number after a `BigInt`
+  range check; `float`→JSON number after a finiteness check; `string`→JSON
+  string after the Unicode checks; `seq`→array; `map` (string keys)→object.
+  Lossy cases are refused, never coerced (`docs/KYAML_SPEC.adoc` §6).
+* Step 3 — `to_jcs`: the same canonicaliser for both formats. There is no second
+  implementation in the gate; the Rust crate remains the external oracle.
 
-== What "guaranteed" means for this doc
+The gate implements this pipeline once, in `conformance/src/`:
+`kyaml.js` (parser) → `bridge.js` (φ) → `json.js` + `jcs.js` (validation and
+canonical bytes) → `cli.js` (the CLI contract above).
 
-* Byte equality with `ijson-jcs` on the shared corpus (valid + duplicate-key +
-  unsafe-integer + surrogate/noncharacter + canonical-bytes fixtures).
+== Known upstream interaction: JCS text of a large float is not strict input
+
+`ijson-jcs` refuses an *integer token* outside ±(2^53−1) but accepts any float
+token. JCS then prints a float with ES number rules, which for values such as
+`1e20` yields an integer-looking token:
+
+[source,text]
+----
+input       1e20                      (valid I-JSON: float token)
+canon      100000000000000000000      (JCS bytes; correct per RFC 8785 §3.2.2.3)
+re-parse   INVALID: Number outside safe integer range
+----
+
+So `ijson-jcs canon` (and `kyq-conformance canon`) succeeds while re-reading the
+resulting bytes strictly does not. `ijson-jcs fix` has the same round-trip gap:
+it will write such a file, and `check` will then call it `INVALID`.
+
+`kyq` **does not invent a second canonical form to paper over this.** Byte
+equality with the oracle is the contract, so the gate reproduces the behaviour
+and pins it:
+
+* `fixtures/ijson/vectors.json` marks these two vectors `"reflexive": false`;
+* `conformance/test/json.test.js` has a dedicated test named
+  "known upstream interaction", asserting both the bytes and the refusal;
+* practical guidance: hash `canon` output (do not re-read it), or keep
+  magnitudes that large as strings. A future `ijson-jcs` revision that accepts
+  an integer token when its value came from a float token would remove the gap;
+  until then the gate reports exactly what the oracle reports.
+
+(This is a finding from building the gate, not a kyq defect. It is also the
+reason `docs/CONFORMANCE_GATE.adoc` says the gate makes byte-compatibility
+*testable*, not that the oracle is bug-free.)
+
+== What "guaranteed" means for this document
+
+* Byte equality with `ijson-jcs` on the shared corpus (valid, duplicate-key,
+  unsafe-integer, surrogate/noncharacter, canonical-bytes and CLI vectors) —
+  transcribed statically, and re-derived in CI by building the pinned commit.
 * `check`/`fix`/`canon` exit codes and printed lines match `ijson-jcs` for JSON
-  inputs; for YAML inputs the pipeline above is applied first, then the same
-  rules, and the same exit codes.
-* No bypass: a YAML input containing a duplicate key that JSON would collapse
-  to one key is still `INVALID`, because the check happens at the YAML parse
-  layer, not after `Value` construction.
-* Errors are typed (`ParseError`, `ValidationError`, `CanonicalizationError`)
-  with kind, path, and source location; no invalid input is classified valid.
+  inputs; for KYAML inputs the pipeline above is applied first, then the same
+  rules and the same exit codes.
+* No bypass: a YAML input with a duplicate key that JSON would collapse is still
+  `INVALID`, because the check happens at the YAML parse layer.
+* Errors are typed (`code`, `line`, `column`, `path`, `kind`) with a text and a
+  JSON rendering; no invalid input is classified valid.
 
-== Implementation note (Path A — Strict AffineScript)
+Not claimed: that `ijson-jcs` is itself bug-free (see above), that the
+AffineScript implementation under `src/` satisfies this contract (it does not
+compile yet), or that any of this is formally proved.
 
-`Cargo.toml` is *not* added (strict AffineScript-only). `ijson-jcs` logic is
-ported to AffineScript in `src/Kyaml/Jcs.affine` + `src/Kyaml/Ijson.affine`,
-spec-driven from `hyperpolymath/ijson-jcs` `src/*.rs` and its README contract.
-`kyq`'s canonical bytes remain single-sourced to that spec (byte-equal to
-`ijson_jcs::to_jcs`), but the implementation language stays AffineScript so the
-estate invariant `affinescript-only` is preserved. The `ijson-jcs` Rust crate
-remains the external oracle for cross-checking: a shared corpus is checked with
-both `ijson-jcs canon` (Rust binary) and `kyq canon` (AffineScript/WASM) and
-must be byte-equal (Thm JCS-8).
+== The gate and the AffineScript-only invariant
+
+`coordination.k9` requires implementation code to be AffineScript. The gate in
+`conformance/` is a *verification harness*, not the kyq implementation: it is
+plain ESM JavaScript with no dependencies, in the same spirit and the same role
+as `scripts/check-action-pinning.js` and the other repo-owned tooling under
+`scripts/`. It exists so the contracts in this document can be executed at all,
+since `src/*.affine` does not compile under AffineScript 0.1.1
+(`docs/status/A1_GRAMMAR_CENSUS.adoc`).
+
+Two rules keep that honest:
+
+. the gate MUST NOT be presented as kyq's implementation in release notes,
+  README claims or the deed; it is the oracle the implementation must pass;
+. when the AffineScript implementation builds, it MUST pass the same corpus, and
+  the differential test then compares three implementations (Rust oracle,
+  JS gate, AffineScript kyq) rather than substituting one for another.
+
+== Corpus and oracle pinning
+
+[cols="2,3",options="header"]
+|===
+| File | Contents
+
+| `conformance/fixtures/ijson/vectors.json` | 38 strict-I-JSON / JCS byte and refusal vectors
+| `conformance/fixtures/ijson/check.json` | 13 file-level `check` vectors (bytes → exit status)
+| `conformance/fixtures/rfc8785/vectors.json` | RFC 8785 §3.2.2.3 numbers, §3.2.3 sorting and escaping
+| `conformance/fixtures/oracle/ijson-jcs.json` | Expectations transcribed from the pinned `ijson-jcs` sources, each with a `source` citation
+| `conformance/fixtures/bridge/vectors.json` | 26 bridge vectors (KYAML text → JCS bytes or a located refusal)
+|===
+
+`conformance/tools/ijson-jcs-diff.mjs` clones the pinned commit, builds the
+crate, and runs `conformance/test/oracle.test.js` against the resulting binary.
+The `conformance-oracle` CI job does this on a pinned Rust toolchain; the
+version printed by the binary is asserted to be the pinned crate version, so a
+silently different oracle fails the job instead of passing it.
 
 == Deferred (Phase 3)
 
-* Formal proof that UTF-16 sort is a total order matching RFC 8785 (mechanised
-  in `proofs/jcs/`).
+* Formal proof that UTF-16 sort is a total order matching RFC 8785
+  (mechanised in `proofs/jcs/`).
 * Formal proof that `to_jcs` on JSON numbers agrees with ES `JSON.stringify`
   on the I-JSON-valid number domain.
 * Formal proof that the KYAML→JCS pipeline inherits `ijson-jcs`'s determinism
-  and idempotence without regression.
-
+  and idempotence.
+* Upstream proposal to `ijson-jcs` for the large-float round-trip gap above.

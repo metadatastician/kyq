@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# GitGuardian configuration.
+#
+# `conformance/fixtures/` is test data, not code: every literal in it is there
+# because a byte vector must reproduce it exactly — RFC 8785 number tokens such
+# as "1.7976931348623157e308" (DBL_MAX), surrogate and noncharacter escapes, and
+# canonical outputs that are compared byte-for-byte. The generic high-entropy
+# detector reads a long numeric token as a credential. There is no secret in the
+# corpus, and rewriting a vector to dodge a heuristic would weaken the test it
+# exists to be.
+#
+# The ignore is scoped to the corpus directory, so scanning of the gate's own
+# source, tests and tooling is unchanged.
+version: 2
+secret:
+  ignored_paths:
+    - "conformance/fixtures/**"

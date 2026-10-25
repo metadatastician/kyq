@@ -184,6 +184,54 @@ lock-check:
     rm -rf "$tmp"
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CONFORMANCE GATE  (docs/CONFORMANCE_GATE.adoc)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# The gate is a verification harness, not the kyq implementation: it is plain
+# ESM JavaScript with no dependencies, in the same role as the scripts/ tooling.
+# It fails closed — a missing toolchain or an unrun test is a red recipe, never
+# a printed PASS.
+
+# Run the conformance gate: its test corpus, then this repo's own manifests
+conformance:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cli=conformance/bin/kyq-conformance.mjs
+	node "$cli" --version
+	node --test conformance/test/*.test.js
+	mapfile -t manifests < <(git ls-files '*.yaml' '*.yml' \
+	  | grep -v -E '^(templates/|conformance/fixtures/kyaml/invalid/)' || true)
+	if [ "${#manifests[@]}" -eq 0 ]; then
+	  echo "no manifests found; refusing to report a vacuous pass" >&2
+	  exit 1
+	fi
+	node "$cli" validate "${manifests[@]}"
+
+# Differential run against the pinned hyperpolymath/ijson-jcs commit.
+# Requires git, cargo and network. Exits 2 (not 0, not "skipped") when the
+# oracle cannot be built, because an unavailable oracle proves nothing.
+conformance-oracle:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	node conformance/tools/ijson-jcs-diff.mjs
+
+# Build the pinned release tarball; prints dist/SHA256SUMS
+conformance-package:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	bash conformance/tools/package.sh
+
+# Gate files as KYAML: `just conformance-check a.yaml b.yaml`
+conformance-check *files:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ "$#" -eq 0 ]; then
+	  echo "usage: just conformance-check FILE..." >&2
+	  exit 2
+	fi
+	node conformance/bin/kyq-conformance.mjs check "$@"
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # INSTALL
 # ═══════════════════════════════════════════════════════════════════════════════
 

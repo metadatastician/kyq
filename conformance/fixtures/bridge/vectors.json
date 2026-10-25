@@ -1,0 +1,197 @@
+{
+  "schema": "kyq-conformance-corpus-v1",
+  "kind": "bridge-vectors",
+  "note": "The KYAML -> JSON bridge \u03c6: each vector is KYAML text and either the JCS bytes it must produce or the located diagnostic that refuses it.",
+  "vectors": [
+    {
+      "name": "scalar-types",
+      "yaml": "a: 1\nb: 1.5\nc: true\nd: null\ne: str\nf: \"3\"\n",
+      "jcs": "{\"a\":1,\"b\":1.5,\"c\":true,\"d\":null,\"e\":\"str\",\"f\":\"3\"}"
+    },
+    {
+      "name": "yaml-1.2-core-bools",
+      "yaml": "a: on\nb: yes\nc: off\nd: no\n",
+      "jcs": "{\"a\":\"on\",\"b\":\"yes\",\"c\":\"off\",\"d\":\"no\"}"
+    },
+    {
+      "name": "block-scalar-literal",
+      "yaml": "script: |\n  line one\n  line two\n",
+      "jcs": "{\"script\":\"line one\\nline two\\n\"}"
+    },
+    {
+      "name": "block-scalar-strip",
+      "yaml": "script: |-\n  no newline\n",
+      "jcs": "{\"script\":\"no newline\"}"
+    },
+    {
+      "name": "block-scalar-folded",
+      "yaml": "text: >\n  one\n  two\n\n  three\n",
+      "jcs": "{\"text\":\"one two\\nthree\\n\"}"
+    },
+    {
+      "name": "flow-collections",
+      "yaml": "a: [1, {b: [true, null]}]\n",
+      "jcs": "{\"a\":[1,{\"b\":[true,null]}]}"
+    },
+    {
+      "name": "anchor-expansion",
+      "yaml": "base: &b\n  x: 1\ncopy: *b\n",
+      "jcs": "{\"base\":{\"x\":1},\"copy\":{\"x\":1}}"
+    },
+    {
+      "name": "explicit-core-tag",
+      "yaml": "a: !!str 3\nb: !!int \"4\"\n",
+      "jcs": "{\"a\":\"3\",\"b\":4}"
+    },
+    {
+      "name": "quoted-escapes",
+      "yaml": "a: \"tab\\tnl\\nq\\\"u\\u00e9\"\n",
+      "jcs": "{\"a\":\"tab\\tnl\\nq\\\"u\u00e9\"}"
+    },
+    {
+      "name": "keys-need-quoting",
+      "yaml": "\"true\": 1\n\"3\": 2\na b: 3\n",
+      "jcs": "{\"3\":2,\"a b\":3,\"true\":1}"
+    },
+    {
+      "name": "comments-dropped",
+      "yaml": "# top\na: 1 # trailing\n",
+      "jcs": "{\"a\":1}"
+    },
+    {
+      "name": "empty-collections",
+      "yaml": "a: {}\nb: []\n",
+      "jcs": "{\"a\":{},\"b\":[]}"
+    },
+    {
+      "name": "multi-doc-array",
+      "yaml": "a: 1\n---\nb: 2\n",
+      "array": true,
+      "jcs": "[{\"a\":1},{\"b\":2}]"
+    },
+    {
+      "name": "multi-doc-refused",
+      "yaml": "a: 1\n---\nb: 2\n",
+      "error": {
+        "code": "MULTI_DOC_STREAM"
+      }
+    },
+    {
+      "name": "empty-stream-refused",
+      "yaml": "# only a comment\n",
+      "error": {
+        "code": "EMPTY_STREAM"
+      }
+    },
+    {
+      "name": "non-string-key",
+      "yaml": "1: one\n",
+      "error": {
+        "code": "NON_STRING_KEY",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "bool-key",
+      "yaml": "true: one\n",
+      "error": {
+        "code": "NON_STRING_KEY",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "null-key",
+      "yaml": "~: one\n",
+      "error": {
+        "code": "NON_STRING_KEY",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "unsafe-integer",
+      "yaml": "uid: 9007199254740993\n",
+      "error": {
+        "code": "UNSAFE_INTEGER",
+        "line": 1,
+        "column": 6,
+        "path": "uid"
+      }
+    },
+    {
+      "name": "huge-integer",
+      "yaml": "uid: 18446744073709551616\n",
+      "error": {
+        "code": "UNSAFE_INTEGER",
+        "line": 1,
+        "column": 6,
+        "path": "uid"
+      }
+    },
+    {
+      "name": "non-finite-float",
+      "yaml": "limit: .inf\n",
+      "error": {
+        "code": "NON_FINITE_NUMBER",
+        "line": 1,
+        "column": 8,
+        "path": "limit"
+      }
+    },
+    {
+      "name": "nan-float",
+      "yaml": "ratio: .nan\n",
+      "error": {
+        "code": "NON_FINITE_NUMBER",
+        "line": 1,
+        "column": 8,
+        "path": "ratio"
+      }
+    },
+    {
+      "name": "nested-unsafe-integer-path",
+      "yaml": "spec:\n  containers:\n    - uid: 9007199254740993\n",
+      "error": {
+        "code": "UNSAFE_INTEGER",
+        "line": 3,
+        "column": 12,
+        "path": "spec/containers/0/uid"
+      }
+    },
+    {
+      "name": "merge-key-refused",
+      "yaml": "base: &b\n  a: 1\ncopy:\n  <<: *b\n",
+      "error": {
+        "code": "UNSUPPORTED_MERGE_KEY",
+        "line": 4,
+        "column": 3,
+        "path": "copy"
+      }
+    },
+    {
+      "name": "noncharacter",
+      "yaml": "label: \"\\uFFFF\"\n",
+      "error": {
+        "code": "NONCHARACTER",
+        "line": 1,
+        "column": 8,
+        "path": ""
+      }
+    },
+    {
+      "name": "lone-surrogate",
+      "yaml": "label: \"\\uD800\"\n",
+      "error": {
+        "code": "LONE_SURROGATE",
+        "line": 1,
+        "column": 10,
+        "path": ""
+      }
+    }
+  ]
+}

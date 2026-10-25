@@ -1,0 +1,206 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# conformance.yml — the KYAML / I-JSON / JCS conformance gate, run on itself.
+#
+# Three jobs, three claims:
+#   selftest  the gate's own corpus and CLI contract tests pass, and the gate
+#             accepts the repository's own manifests (dogfood, not a mock)
+#   oracle    byte equality with the pinned hyperpolymath/ijson-jcs commit,
+#             re-derived by building that commit, not transcribed by hand
+#   package   the pinned release tarball exists and is reproducible; on a
+#             kyq-conformance-v* tag it is attached to the release
+#
+# Documentation: docs/CONFORMANCE_GATE.adoc. The gate is a verification
+# harness; it is not the kyq implementation (docs/IJSON_JCS_INTEGRATION.adoc
+# §"The gate and the AffineScript-only invariant").
+name: Conformance Gate
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'kyq-conformance-v*' ]
+    paths-ignore:
+      - '**.md'
+      - '**.adoc'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: Gate self-test and dogfood
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node version
+        run: node --version
+
+      # The gate has no dependencies and no build step; this is the whole
+      # install story. `node --test` is the runner, so there is no test
+      # framework to pin.
+      - name: Run the gate's test suite
+        run: node --test conformance/test/*.test.js
+
+      - name: Gate the repository's own manifests
+        run: |
+          set -euo pipefail
+          cli=conformance/bin/kyq-conformance.mjs
+          node "$cli" --version
+          # templates/ uses kyq's {{VAR}} template syntax, which is not KYAML
+          # data (Phase 1 command surface); conformance/fixtures/kyaml/invalid
+          # is the negative corpus and is exercised by the test suite instead.
+          mapfile -t manifests < <(git ls-files '*.yaml' '*.yml' \
+            | grep -v -E '^(templates/|conformance/fixtures/kyaml/invalid/)' || true)
+          echo "validating ${#manifests[@]} tracked YAML files as KYAML"
+          if [ "${#manifests[@]}" -eq 0 ]; then
+            echo "::error::no manifests found; the dogfood step would be vacuous"
+            exit 1
+          fi
+          node "$cli" validate "${manifests[@]}"
+
+      - name: The canonical fixture is canonical and fmt changes nothing
+        run: |
+          set -euo pipefail
+          cli=conformance/bin/kyq-conformance.mjs
+          node "$cli" check conformance/fixtures/kyaml/valid/canonical.yaml
+          cp conformance/fixtures/kyaml/valid/canonical.yaml "$RUNNER_TEMP/canonical.yaml"
+          node "$cli" fix "$RUNNER_TEMP/canonical.yaml"
+          cmp conformance/fixtures/kyaml/valid/canonical.yaml "$RUNNER_TEMP/canonical.yaml"
+
+      # The RFC 8785 §3.2.3 sample is the one vector whose bytes are quoted in
+      # the RFC itself. It is checked through the CLI, not the library, so the
+      # packaged binary is what is being pinned.
+      - name: RFC 8785 sample bytes through the CLI
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'JS'
+          import { readFileSync } from "node:fs";
+          import { spawnSync } from "node:child_process";
+
+          const corpus = JSON.parse(
+            readFileSync("conformance/fixtures/oracle/ijson-jcs.json", "utf8"),
+          );
+          const vector = corpus.canonVectors.find((entry) => entry.name === "rfc8785-sample");
+          const cli = "conformance/bin/kyq-conformance.mjs";
+          const run = spawnSync(process.execPath, [cli, "canon", "--format=json"], {
+            input: vector.input,
+          });
+          if (run.status !== 0) {
+            console.error(run.stderr.toString());
+            process.exit(1);
+          }
+          const actual = run.stdout.toString();
+          if (actual !== vector.jcs) {
+            console.error("RFC 8785 sample mismatch");
+            console.error("expected:", JSON.stringify(vector.jcs));
+            console.error("actual:  ", JSON.stringify(actual));
+            process.exit(1);
+          }
+          console.log("RFC 8785 §3.2.3 sample matches byte-for-byte");
+          JS
+
+  oracle:
+    name: Differential against pinned ijson-jcs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install a Rust toolchain for the oracle
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup run stable cargo --version
+
+      - name: Build the pinned oracle and diff both CLIs
+        env:
+          IJSON_JCS_COMMIT: 2c880594c8b1f823a7ab2a8a830c894975a1792e
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          set +e
+          output=$(node conformance/tools/ijson-jcs-diff.mjs --commit "$IJSON_JCS_COMMIT" 2>&1)
+          status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            # Job logs need a signed-in reader; annotations do not. Surface the
+            # head of the report here so a failure is diagnosable from the PR
+            # check itself instead of requiring the raw log.
+            detail=$(printf '%s' "$output" | head -c 2000 \
+              | sed -e 's/%/%25/g' -e 's/\r/%0D/g' \
+              | awk '{printf "%s%%0A", $0}')
+            echo "::error title=ijson-jcs differential failed (exit $status)::$detail"
+            exit "$status"
+          fi
+
+  package:
+    name: Package the pinned release
+    needs: [ selftest ]
+    if: startsWith(github.ref, 'refs/tags/kyq-conformance-v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the tarball and its digest
+        run: |
+          set -euo pipefail
+          bash conformance/tools/package.sh
+          cat dist/SHA256SUMS
+
+      - name: Smoke-test the packaged gate
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < conformance/VERSION)
+          work="$RUNNER_TEMP/unpack"
+          mkdir -p "$work"
+          tar -xzf "dist/kyq-conformance-${version}.tar.gz" -C "$work"
+          cd "$work/kyq-conformance-${version}"
+          node bin/kyq-conformance.mjs --version
+          node --test test/*.test.js
+          printf 'a: 1\nb: [2, 3]\n' | node bin/kyq-conformance.mjs canon
+
+      - name: Upload the release artifact
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: kyq-conformance-release
+          path: dist/*
+          if-no-files-found: error
+
+      # `gh` is preinstalled on the runner, so attaching the release needs no
+      # third-party action: one fewer ref to keep pinned and reviewed.
+      - name: Attach the artifact to the release
+        if: startsWith(github.ref, 'refs/tags/kyq-conformance-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "kyq-conformance $TAG" \
+              --notes "Conformance gate release. Verify with: sha256sum -c SHA256SUMS"
+          fi

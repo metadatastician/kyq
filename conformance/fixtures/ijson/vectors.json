@@ -1,0 +1,241 @@
+{
+  "schema": "kyq-conformance-corpus-v1",
+  "kind": "ijson-vectors",
+  "note": "Strict I-JSON / JCS byte vectors. `input` is JSON text; `input_hex` is the hex of the bytes when the input is not valid UTF-8. An `error` entry pins the diagnostic code (and the JSON Pointer path the CLI appends for validation errors). `reflexive: false` marks a vector whose canonical output is not valid strict input again: JCS prints 1e20 as the integer token 100000000000000000000, which is outside \u00b1(2^53-1) and is therefore refused by strict parsing. This is ijson-jcs's own behaviour; see docs/IJSON_JCS_INTEGRATION.adoc \"Known upstream interaction\".",
+  "vectors": [
+    {
+      "name": "object-key-sort-recursive",
+      "input": "{\"b\":1,\"a\":{\"z\":true,\"m\":[1,2,\"x\"]},\"c\":null}",
+      "jcs": "{\"a\":{\"m\":[1,2,\"x\"],\"z\":true},\"b\":1,\"c\":null}"
+    },
+    {
+      "name": "insertion-order-irrelevant",
+      "input": "{\"y\":2,\"x\":1}",
+      "jcs": "{\"x\":1,\"y\":2}"
+    },
+    {
+      "name": "rfc8785-3.2.3-sample",
+      "input": "{\n  \"numbers\": [333333333.33333329, 1E30, 4.50, 2e-3, 0.000000000000000000000000001],\n  \"string\": \"\\u20ac$\\u000F\\u000aA'\\u0042\\u0022\\u005c\\\\\\\"\\/\",\n  \"literals\": [null, true, false]\n}",
+      "jcs": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"\u20ac$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}"
+    },
+    {
+      "name": "rfc8785-3.2.3-key-sorting",
+      "input": "{\n  \"\\u20ac\": \"Euro Sign\",\n  \"\\r\": \"Carriage Return\",\n  \"\\ufb33\": \"Hebrew Letter Dalet With Dagesh\",\n  \"1\": \"One\",\n  \"\\ud83d\\ude00\": \"Emoji: Grinning Face\",\n  \"\\u0080\": \"Control\",\n  \"\\u00f6\": \"Latin Small Letter O With Diaeresis\"\n}",
+      "jcs": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u0080\":\"Control\",\"\u00f6\":\"Latin Small Letter O With Diaeresis\",\"\u20ac\":\"Euro Sign\",\"\ud83d\ude00\":\"Emoji: Grinning Face\",\"\ufb33\":\"Hebrew Letter Dalet With Dagesh\"}"
+    },
+    {
+      "name": "arrays-keep-order",
+      "input": "{\"arr\":[3,1,2]}",
+      "jcs": "{\"arr\":[3,1,2]}"
+    },
+    {
+      "name": "string-escapes",
+      "input": "{\"s\":\"a\\\"b\\\\c\\nd\\t\\u0000\\u001f\"}",
+      "jcs": "{\"s\":\"a\\\"b\\\\c\\nd\\t\\u0000\\u001f\"}"
+    },
+    {
+      "name": "solidus-and-quote-not-escaped",
+      "input": "{\"s\":\"\\/'\"}",
+      "jcs": "{\"s\":\"/'\"}"
+    },
+    {
+      "name": "number-formatting",
+      "input": "[1e30,4.50,0.002,-0,-0.0,1.0,1e21,1e20,1e-7,2e-3]",
+      "jcs": "[1e+30,4.5,0.002,0,0,1,1e+21,100000000000000000000,1e-7,0.002]",
+      "reflexive": false
+    },
+    {
+      "name": "empty-containers",
+      "input": "{\"a\":[],\"b\":{},\"c\":\"\",\"d\":null,\"e\":true,\"f\":false}",
+      "jcs": "{\"a\":[],\"b\":{},\"c\":\"\",\"d\":null,\"e\":true,\"f\":false}"
+    },
+    {
+      "name": "escaped-controls-allowed",
+      "input": "{\"text\":\"\\u0000\\u000f\\u001f\"}",
+      "jcs": "{\"text\":\"\\u0000\\u000f\\u001f\"}"
+    },
+    {
+      "name": "float-token-beyond-u64",
+      "input": "[18446744073709551616.0]",
+      "jcs": "[18446744073709552000]",
+      "reflexive": false
+    },
+    {
+      "name": "safe-integer-boundaries",
+      "input": "[9007199254740991,-9007199254740991]",
+      "jcs": "[9007199254740991,-9007199254740991]"
+    },
+    {
+      "name": "sibling-duplicate-key-is-fine",
+      "input": "[{\"k\":1},{\"k\":2}]",
+      "jcs": "[{\"k\":1},{\"k\":2}]"
+    },
+    {
+      "name": "numeric-string-stays-string",
+      "input": "{\"s\":\"18446744073709551616\"}",
+      "jcs": "{\"s\":\"18446744073709551616\"}"
+    },
+    {
+      "name": "non-ascii-keys-stay-raw",
+      "input": "{\"caf\u00e9\":1,\"cafe\":2}",
+      "jcs": "{\"cafe\":2,\"caf\u00e9\":1}"
+    },
+    {
+      "name": "nested-arrays-and-objects",
+      "input": "{\"o\":{\"b\":[{},[],{\"z\":[[1]],\"a\":null}]}}",
+      "jcs": "{\"o\":{\"b\":[{},[],{\"a\":null,\"z\":[[1]]}]}}"
+    },
+    {
+      "name": "duplicate-key",
+      "input": "{\"a\":1,\"a\":2}",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "duplicate-key-nested",
+      "input": "[{\"x\":{\"k\":1,\"k\":1}}]",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "duplicate-key-same-text-different-escape",
+      "input": "{\"a\":1,\"\\u0061\":2}",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "unsafe-integer",
+      "input": "[9007199254740993]",
+      "error": {
+        "code": "UNSAFE_INTEGER",
+        "path": "0"
+      }
+    },
+    {
+      "name": "integer-beyond-u64",
+      "input": "{\"ttl\":18446744073709551616}",
+      "error": {
+        "code": "UNSAFE_INTEGER",
+        "path": "ttl"
+      }
+    },
+    {
+      "name": "unsafe-integer-path-escaped",
+      "input": "{\"a\":[1,{\"b~/c\":[2,9007199254740993]}]}",
+      "error": {
+        "code": "UNSAFE_INTEGER",
+        "path": "a/1/b~0~1c/1"
+      }
+    },
+    {
+      "name": "lone-high-surrogate",
+      "input": "[\"\\ud800\"]",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "lone-low-surrogate",
+      "input": "\"\\udc00\"",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "noncharacter",
+      "input": "[\"\\uffff\"]",
+      "error": {
+        "code": "NONCHARACTER",
+        "path": "0"
+      }
+    },
+    {
+      "name": "noncharacter-in-key",
+      "input": "{\"\\ufffe\":1}",
+      "error": {
+        "code": "NONCHARACTER",
+        "path": ""
+      }
+    },
+    {
+      "name": "number-out-of-double-range",
+      "input": "[1e400]",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "trailing-garbage",
+      "input": "{\"a\":1} trailing",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "empty-input",
+      "input": "",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "invalid-utf8",
+      "input_hex": "5b22ff225d",
+      "error": {
+        "code": "INVALID_UTF8"
+      }
+    },
+    {
+      "name": "bom-is-not-whitespace",
+      "input": "\ufeff{\"a\":1}",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "leading-zero",
+      "input": "01",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "single-quoted-string",
+      "input": "['a']",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "trailing-comma",
+      "input": "[1,]",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "raw-control-in-string",
+      "input_hex": "2261016222",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "nan-literal",
+      "input": "NaN",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    },
+    {
+      "name": "comment-not-allowed",
+      "input": "{\"a\":1} // no",
+      "error": {
+        "code": "JSON_PARSE_ERROR"
+      }
+    }
+  ]
+}

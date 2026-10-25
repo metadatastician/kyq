@@ -159,6 +159,7 @@
     (directory :ply 1 :path "benches" :description "Performance benchmarks")
     (directory :ply 1 :path "templates" :description "Kubernetes template files")
     (directory :ply 1 :path "gradings" :description "Grading configurations for compliance tracking")
+    (directory :ply 1 :path "conformance" :description "Executable KYAML / I-JSON / JCS conformance gate; verification harness, not the implementation (docs/CONFORMANCE_GATE.adoc)")
     (directory :ply 0 :path "docs" :description "Documentation")
   )
 )
