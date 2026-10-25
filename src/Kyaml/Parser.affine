@@ -177,7 +177,7 @@ type BlockResult =
   | BlockError(ParseErrorDetail)
 
 fn line_error(line: String, index: Int, message: String) -> ParseErrorDetail {
-  #{
+  ParseErrorDetail #{
     message: message,
     line: Some(index + 1),
     column: Some(get_indent(line) + 1),
@@ -379,7 +379,7 @@ pub fn parse_yaml(input: String) -> ParseResult {
     start = start + 1;
   }
   if start >= len(lines) {
-    let empty_doc: AstDocument = #{
+    let empty_doc: AstDocument = AstDocument #{
       version: None,
       tags: None,
       root: YamlMapping([]),
@@ -415,7 +415,7 @@ pub fn parse_yaml(input: String) -> ParseResult {
     },
     _ => ()
   };
-  let doc: AstDocument = #{
+  let doc: AstDocument = AstDocument #{
     version: None,
     tags: None,
     root: root,
