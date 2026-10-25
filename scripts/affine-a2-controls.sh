@@ -104,6 +104,10 @@ control() {
     "$name" "$expectation" "$rc" "${diagnostic:--}"
   control_evidence+="$name expect=$expectation rc=$rc ${diagnostic:--}"$'\n'
   control_count=$((control_count + 1))
+  # Emit before the fail-closed assertions so a failing control remains
+  # visible even when the GitHub job-log blob cannot be retrieved.
+  emit_notice "A2 control: $name" \
+    "expect=$expectation rc=$rc ${diagnostic:--} (check-only; not build/test/runtime PASS)"
 
   if { [ "$expectation" = pass ] && [ "$rc" -ne 0 ]; } ||
      { [ "$expectation" = fail ] && [ "$rc" -eq 0 ]; }; then
