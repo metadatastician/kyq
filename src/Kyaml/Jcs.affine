@@ -8,6 +8,7 @@
 module Kyaml.Jcs;
 
 use Kyaml.Ast;
+use Kyaml.Parser::{ parse_yaml };
 use prelude::{ Option, Some, None };
 use json::{ Json, JNull, JBool, JInt, JFloat, JString, JArray, JObject };
 
@@ -128,11 +129,11 @@ pub fn to_jcs_bytes(value: YamlValue) -> String {
 }
 
 pub fn is_canonical(yaml: String) -> Bool {
-  match Kyaml.Parser::parse_yaml(yaml) {
+  match parse_yaml(yaml) {
     ParseSuccess(doc) => {
       let canon = to_jcs(doc.root);
       yaml == canon || yaml == canon ++ "\n"
     },
-    ParseError(_e) => false
+    ParseError(_) => false
   }
 }
