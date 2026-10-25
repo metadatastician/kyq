@@ -4,114 +4,431 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-10-23
-:status: DRAFT (Phase 0 stub; normative from Phase 1)
+:revdate: 2026-10-25
+:revnumber: 0.1.0
+:status: NORMATIVE — executable gate in `conformance/` (v0.1.0)
 
 This is the normative home for "kyaml". A YAML document is kyaml iff it
-conforms to this spec. The spec is a *subset* of YAML 1.2; anything outside
-the subset is rejected or normalised as the spec states — never silently
-mis-parsed. This stub records the shape; Phase 1 fills the grammar.
+conforms to this spec. The spec is a *subset* of YAML 1.2; anything outside the
+subset MUST be rejected with a source-located diagnostic — never silently
+mis-parsed. Every normative rule below is exercised by the executable gate in
+`conformance/`; the mapping from rule to test is in §9.
 
 toc::[]
 
-== Purpose and non-goals
+== Status, scope and how to read this document
 
-* Purpose: a well-defined input language for `kyq` that is exactly "the YAML
-  that Kubernetes actually emits and accepts, with K8s conventions". All `kyq`
-  guarantees (§ guarantees) are stated with respect to this language.
-* Non-goal: handling every YAML 1.2 feature. YAML is large; kyaml is small.
+* *Normative from v0.1.0.* The gate (`conformance/bin/kyq-conformance.mjs`,
+  pinned by `conformance/VERSION` and the release tag
+  `kyq-conformance-v<version>`) implements §2–§7. `docs/CONFORMANCE_GATE.adoc`
+  is the operational manual: install, CLI contract, fixtures, CI invocation.
+* The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
+* Version `0.1.0` is the *contract* version. It changes when a document that
+  used to conform stops conforming, or the other way round. The corpus in
+  `conformance/fixtures/` is the arbiter: a change of verdict is a version
+  change, not a test tweak.
+* Out of scope for this document: lint rules (§ "Lint rules" below),
+  `kyq get/set/del`, templates (`{{VAR}}`), K8s schema validation and
+  performance targets. They are tracked in `docs/status/ROADMAP.adoc` and are
+  *not* claimed by the gate.
 
-== Base standard
+== Base standard and data model
 
-* Syntax: YAML 1.2, https://yaml.org/spec/1.2/spec.html.
-* Data model on top of syntax: YAML 1.2 "Core Schema"
-  (null/bool/int/float/string/sequence/mapping resolved from plain scalars).
-* Kubernetes conventions: `apiVersion` (string), `kind` (string),
-  `metadata` (mapping with `name`, `namespace`, `labels`, `annotations`),
-  `spec` shapes per K8s OpenAPI. Multi-document streams split on `---`/`...`.
+* Syntax: YAML 1.2, https://yaml.org/spec/1.2/spec.html — restricted to the
+  productions in §4.
+* Scalar resolution: the YAML 1.2 *Core Schema*, exactly as tabulated in §4.3.
+  No other schema is accepted; `!!timestamp` implicit typing is not part of it.
+* Data model: JSON. Every conforming document MUST have a lossless image in the
+  JSON data model (RFC 8259) as constrained by I-JSON (RFC 7493). §6 defines
+  that image and enumerates the YAML values it cannot hold. This is why
+  `kyq to-json` never has to guess.
+* Streams: a file is a *stream* of one or more documents, split on `---` and
+  terminated by `...`. A KYAML *document* is one element of that stream.
+* Kubernetes conventions (`apiVersion`, `kind`, `metadata`, `spec`) are lint
+  concerns, not grammar: `kyq validate` accepts any document that satisfies §2.
+  K8s version range for lint: v1.25 → v1.30 (`kyq_chora.deed`, `ecosystem`).
 
-References: Kubernetes API reference (`v1.25` → `v1.30`) — the K8s version range
-in `kyq_chora.deed` `(ecosystem (related :name "kubernetes" ...))`.
+== Conformance (what "this is KYAML" means)
 
-== What counts as kyaml (informative until Phase 1)
+A byte string is KYAML iff *all* of the following hold:
 
-* Streams of one or more documents; each document is a mapping that is either a
-  K8s resource (has `apiVersion` + `kind`) or a plain mapping/sequence (for
-  helpers like `Kustomization`, List types).
-* Scalars: plain, single-quoted, double-quoted; block scalars (`|`, `>`) with
-  chomping/indent indicators.
-* Collections: block mappings/sequences and flow mappings/sequences.
-* Anchors (`&`) and aliases (`*`): allowed, acyclic, resolved before linting.
-* Tags (`!`, `!!`, `!mytag`): allowed; unknown tags preserved as
-  `Tag(handle,suffix)` or rejected as stated — never dropped.
-* Directives (`%YAML`, `%TAG`): optional, honoured when present.
-* Excluded (rejected or explicitly normalised — Phase 1 will enumerate):
-  complex mapping keys, `!!timestamp` implicit typing, duplicate keys (always
-  rejected; see JCS §), and any construct that introduces ambiguity about the
-  data model.
+. it is valid UTF-8; one U+FEFF byte order mark MAY appear at the very start and
+  nowhere else (§4.1);
+. line breaks are LF, or CRLF throughout; a bare CR is rejected (§4.1);
+. it parses under §4 into one or more documents, with no diagnostic;
+. no mapping — block or flow, at any depth — contains the same key twice (§5);
+. every document has a lossless JSON image under §6, within the resource limits
+  of §6.4;
+. formatting the stream with §7 produces text that re-parses to the same JSON
+  image (this is a consequence, not an extra rule; it is tested as a property).
+
+There is *one* conformance level. A document that parses but cannot be bridged
+(for example `1: x`, a non-string key) is **not** KYAML: `validate`, `check`,
+`fix` and `canon` all refuse it with the same diagnostic. There is deliberately
+no "parse-only" tier, because a tier that accepts documents the JSON bridge must
+reject would let a consumer claim KYAML conformance it cannot use.
+
+== Grammar (the accepted subset)
+
+=== Streams, directives and markers
+
+* Optional directive lines, before the first document only. `%YAML 1.2` is
+  accepted; any other version, and every `%TAG` directive, is rejected
+  (`UNSUPPORTED_VERSION`, `UNSUPPORTED_DIRECTIVE`). A directive MUST be followed
+  by a `---` marker (`MISSING_DOC_START`).
+* `---` starts a document; `...` ends one. Both MUST occupy their own line:
+  content after `---` on the same line is rejected (`DOC_MARKER_CONTENT`).
+* A document with no content (for example `---` immediately followed by another
+  marker or by end of input) is the `null` document. A *trailing* empty
+  document, produced by a final `---`, is dropped — this is the one place where
+  the stream, not the document, decides.
+* A stream with no documents at all (empty file, or comments only) is legal in
+  the sense that `check`/`fix` accept it; it formats to zero bytes. It has no
+  JSON image, so `canon` refuses it with `EMPTY_STREAM`.
+* Comments run from `#` to end of line, where `#` starts a comment only at the
+  beginning of a token or after whitespace. Comments are not data: `fmt` drops
+  them (§7.3).
+* Blank lines are insignificant between nodes.
+
+=== Block structure
+
+* Indentation is spaces only. A tab in indentation is `TAB_INDENT`. Tab inside a
+  scalar's content is data.
+* Sibling entries of one block collection share one indentation. A deeper line
+  after a complete node is `UNEXPECTED_INDENT`; there is no implicit
+  multi-line plain-scalar folding (§4.3).
+* A block mapping entry is `key: value`, `key:` (value on following lines) or
+  `key: # comment` (null value). A colon only separates a key when followed by
+  space, tab, newline or end of input — so `image: nginx:1.25.3` is one value.
+* A block sequence entry is `- ` followed by a value, or `-` alone with the
+  value on following lines. `- key: value` (compact mapping) and `- - value`
+  (compact sequence) are supported.
+* A mapping value that is a sequence MAY sit at the mapping key's own
+  indentation:
++
+[source,yaml]
+----
+containers:
+- name: nginx    # legal: the sequence is the value of `containers`
+- name: sidecar
+nextKey: 1        # the mapping resumes at the same indentation
+----
+* A sequence entry at mapping indentation, or a mapping key at sequence
+  indentation, is `MIXED_COLLECTION` unless it terminates the collection as
+  above.
+* Complex (`? `) keys are rejected: `UNSUPPORTED_COMPLEX_KEY`. The YAML merge
+  key `<<` is rejected: `UNSUPPORTED_MERGE_KEY` — treating it as an ordinary
+  string key would silently change the document's meaning.
+
+=== Scalars
+
+Styles: plain, single-quoted, double-quoted and block (`|`, `>`), each with the
+YAML 1.2 chomping (`-`, `+`) and explicit-indent (`1`–`9`) indicators.
+
+* Plain and quoted scalars are single-line. A scalar continued on a following
+  line is rejected (`UNEXPECTED_INDENT` for plain, `UNTERMINATED_QUOTE` for
+  quoted); write it in a block scalar or with explicit escapes instead.
+* Block scalars fold and chomp per YAML 1.2 §8.1.3, including more-indented
+  lines inside `>` and leading blank lines.
+* Double-quoted escapes: the YAML 1.2 set (`\0 \a \b \t \n \v \f \r \e \" \\ \/
+  \N \_ \L \P \xXX \uXXXX \UXXXXXXXX`, space). An unknown escape is
+  `BAD_ESCAPE`; `\uD800`-style lone surrogates are `LONE_SURROGATE`.
+* Raw C0 control characters (other than TAB) are `CONTROL_CHARACTER`.
+
+.Core Schema resolution of a plain scalar (normative)
+|===
+| Text matching | Resolved type
+
+| `null`, `Null`, `NULL`, `~`, empty | null
+| `true`, `True`, `TRUE` / `false`, `False`, `FALSE` | bool
+| `[-+]?[0-9]+` | int (decimal)
+| `0o[0-7]+` | int (octal)
+| `0x[0-9a-fA-F]+` | int (hex)
+| `[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?` | float
+| `[-+]?\.(inf|Inf|INF)`, `\.(nan|NaN|NAN)` | float (non-finite)
+| anything else | string
+|===
+
+Consequences that MUST be relied on, because they differ from YAML 1.1 habits:
+
+* `yes`, `no`, `on`, `off`, `y`, `n` are **strings**, not booleans. This is the
+  YAML 1.2 Core Schema. To keep the *output* unambiguous for a YAML 1.1 reader,
+  `fmt` double-quotes them (§7.3).
+* `2026-10-25` is a **string**; there is no timestamp type.
+* `1_000` is a **string**; underscores in numbers are YAML 1.1 only.
+* `.inf`/`.nan` parse as floats but have no JSON image, so they fail conformance
+  at the bridge (`NON_FINITE_NUMBER`).
+
+=== Flow collections
+
+`[...]` and `{...}` are accepted, may span lines, and nest. Trailing commas are
+rejected (`FLOW_TRAILING_COMMA`); an unterminated collection is
+`UNTERMINATED_FLOW`. Inside a flow collection a plain scalar ends at `,`, `]`,
+`}`, a `:` that separates a key, or end of line.
+
+=== Anchors, aliases and tags
+
+* `&name` defines an anchor, `*name` refers to it. An alias MUST name an anchor
+  already defined *at the point of use*; a forward or self reference is
+  `UNKNOWN_ANCHOR`. Cycles are therefore inexpressible rather than merely
+  detected; the diagnostic says so.
+* Anchors may be redefined (the later definition wins), as in YAML.
+* Alias expansion is bounded: a document whose expanded tree exceeds
+  `NODE_BUDGET` (100 000 nodes, `conformance/src/kyaml.js`) is
+  `NODE_BUDGET_EXCEEDED`. This is the anchor-bomb limit required by SEC-1.
+* Tags: the YAML 1.2 core tags `!!null !!bool !!int !!float !!str !!map !!seq`
+  and the non-specific `!` (which forces a plain scalar to string). A tag is
+  applied to the node and then forgotten — the canonical form carries no tags.
+  Anything else, including `!!timestamp` and application tags such as `!Ref`, is
+  `UNSUPPORTED_TAG`. A tag whose value does not resolve to its type is
+  `TAG_VALUE_MISMATCH`; a tag on the wrong node kind is `TAG_KIND_MISMATCH`.
+
+=== Rejected constructs (summary)
+
+[cols="2,1",options="header"]
+|===
+| Construct | Code
+
+| Duplicate mapping key (any depth, block or flow) | `DUPLICATE_KEY`
+| Non-string mapping key | `NON_STRING_KEY`
+| Integer outside ±(2^53−1) | `UNSAFE_INTEGER`
+| `.inf` / `.nan` | `NON_FINITE_NUMBER`
+| Unpaired surrogate in a string | `LONE_SURROGATE`
+| Unicode noncharacter in a string | `NONCHARACTER`
+| Complex `? ` key | `UNSUPPORTED_COMPLEX_KEY`
+| Merge key `<<` | `UNSUPPORTED_MERGE_KEY`
+| `%TAG`, `%YAML` other than 1.2 | `UNSUPPORTED_DIRECTIVE`, `UNSUPPORTED_VERSION`
+| Application or `!!timestamp` tag | `UNSUPPORTED_TAG`
+| Multi-line plain or quoted scalar | `UNEXPECTED_INDENT`, `UNTERMINATED_QUOTE`
+| Flow trailing comma / unterminated flow | `FLOW_TRAILING_COMMA`, `UNTERMINATED_FLOW`
+| Tab indentation | `TAB_INDENT`
+| Bare CR line break | `INVALID_NEWLINE`
+| Content on a `---` line | `DOC_MARKER_CONTENT`
+| Unknown, forward or self alias | `UNKNOWN_ANCHOR`
+| Alias expansion over budget | `NODE_BUDGET_EXCEEDED`
+|===
+
+== Duplicate keys (normative)
+
+Within one mapping, at any depth, in block or flow syntax, a key MUST NOT occur
+twice. Duplicates are detected in the parser, on the *resolved* key identity:
+
+* `a:`, `"a":`, `'a':` and `!!str a:` are one key;
+* `1:` and `"1":` are different keys (they are refused separately, as
+  `NON_STRING_KEY`, because neither can become a JSON member);
+* `true:` and `"true":` are different keys, for the same reason.
+
+The diagnostic is `DUPLICATE_KEY`, located at the second occurrence, and its
+path is the pointer to the repeated key; the message names the first
+definition's line and column:
+
+[source,text]
+----
+DUPLICATE_KEY: duplicate mapping key "name"; first defined at line 4, column 3 (line 5, column 3) (path metadata/name)
+----
+
+This is checked at the text boundary, not after conversion, so YAML that a JSON
+reader would silently collapse is never accepted. `docs/IJSON_JCS_INTEGRATION.adoc`
+§"No bypass" states the same rule for the JSON side.
+
+== The JSON bridge φ (normative)
+
+φ maps a document to the JSON data model:
+
+[cols="1,1,1",options="header"]
+|===
+| KYAML node | JSON image | Failure mode
+
+| null | `null` |
+| bool | `true` / `false` |
+| int (fits ±(2^53−1)) | number (integer) | outside range: `UNSAFE_INTEGER`
+| float (finite) | number (double) | `.inf`/`.nan`: `NON_FINITE_NUMBER`
+| string | string | surrogate/noncharacter: `LONE_SURROGATE`/`NONCHARACTER`
+| sequence | array, order preserved |
+| mapping with string keys | object, key order insignificant |
+| mapping with any other key | — | `NON_STRING_KEY`
+|===
+
+* Integers are range-checked in arbitrary precision (`BigInt`) *before* any
+  double conversion, so an over-range integer is refused, never rounded.
+* A float token is always accepted as a double, even when its value exceeds the
+  safe-integer range — the token, not the value, is what I-JSON constrains.
+  `1e18` is legal; the integer token `1000000000000000000` is not.
+* Aliases are expanded: two aliases of one anchor become two equal but
+  independent JSON values. Sharing is a syntax feature and is not preserved.
+* A stream of one document bridges to that document's value. A stream of more
+  documents has no single JSON image: `canon` refuses it (`MULTI_DOC_STREAM`)
+  unless `--array` is given, which produces one JSON array of the documents.
+* Resource limits: `NODE_BUDGET` nodes per document after alias expansion (§4.6).
+
+== Canonical form (`fmt` / `fix`) (normative)
+
+`fmt` (alias of `fix`) rewrites a stream into a normal form. The normal form is
+defined by these rules and nothing else; it is not a style preference.
+
+. Indentation is two spaces per level; block collections only. A flow collection
+  always becomes a block collection. Empty collections are `{}` / `[]`.
+. Mapping entries are `key: value` with one space after the colon. A nested
+  non-empty collection goes on the following lines, indented by two more.
+. Sequence entries are `- value`. A non-empty collection item puts its first
+  entry on the dash line (`- name: nginx`) and the rest at the item's indent.
+. Scalars are written as: `null`, `true`/`false`, decimal integers, and numbers
+  using the same ECMAScript text as JCS (`1e+21`, `0.002`, `-0` → `0`). A string
+  is plain only if re-resolution as a plain scalar yields the same string *and*
+  it is not a YAML 1.1 boolean word; otherwise it is double-quoted with
+  JSON-compatible escapes. Empty string is `""`.
+. Comments, anchors, aliases and tags are not preserved: they are syntax, and
+  the canonical form is the normal form of the *value*. Aliases are expanded.
+. Documents are separated by a line containing exactly `---`, with no marker
+  before the first document and no `...` terminator.
+. The output ends with exactly one `\n`. An empty stream produces zero bytes.
+. `fmt` is idempotent: `fmt(fmt(x))` is byte-equal to `fmt(x)`, and
+  `parse(fmt(x))` has the same JSON image as `parse(x)`. Both are tested for
+  every fixture and for generated documents (`conformance/test/formatter.test.js`).
+
+A file is *canonical* iff its bytes are exactly the output of `fmt`, optionally
+with the final newline removed. Anything else — extra blank lines, flow
+collections, double quotes around a plain-safe string, reordered documents — is
+`NOT CANONICAL`.
+
+== Diagnostics, reports and exit codes
+
+Every refusal is a typed diagnostic with a stable `code`, an optional 1-based
+`line`/`column`, and an optional JSON Pointer `path`. The text form is one line
+per file:
+
+[source,text]
+----
+INVALID <file>: DUPLICATE_KEY: duplicate mapping key "name"; first defined at line 4, column 3 (line 5, column 3) (path metadata/name)
+----
+
+JSON diagnostics deliberately omit the code prefix, so the line is
+byte-identical to `ijson-jcs check` for the same input:
+
+[source,text]
+----
+INVALID bad.json: JSON parse error: duplicate object key "a" (forbidden by RFC 7493 §2.3) at line 1 column 10
+----
+
+`--report json` prints one object per file:
+`{file, format, status, error: {code, kind, message, reason, line, column, path}}`,
+where `status` is `ok`, `not-canonical`, `fixed` or `invalid`, and `kind` is
+`kyaml`, `bridge`, `json` or `jcs`. Consumer CI SHOULD assert on `code`, `line`
+and `column` rather than on prose.
+
+[cols="1,1,1,1",options="header"]
+|===
+| Exit | `check` | `fix`/`fmt` | `canon`, `validate`
+
+| 0 | every file canonical | every file valid (fixed or already OK) | success
+| 1 | some file valid but not canonical, none invalid | — | —
+| 2 | some file invalid or unreadable | some file invalid/unreadable/unwritable | invalid input, or usage error
+|===
 
 == Fixtures (ground truth)
 
-[cols="1,2,1",options="header"]
+`conformance/fixtures/kyaml/` holds the corpus. `cases.json` gives each file
+exactly one expectation, and `conformance/test/corpus.test.js` fails if a
+fixture has no expectation or an expectation names no fixture.
+
+[cols="2,2,1",options="header"]
 |===
-| File | Meaning | Expected verdict
+| Path | Meaning | Verdict
 
-| `examples/deployment.yaml`
-| Well-formed Deployment + Service, `apps/v1` / `v1`, correct types, selector
-  matches pod-template labels, explicit `imagePullPolicy`, probes, resources.
-| `kyq lint` → pass; `kyq validate` → pass; `kyq fmt` idempotent.
+| `valid/canonical.yaml`
+| A Deployment already in canonical form.
+| `check` → OK (0); `validate` → OK; `fmt` changes nothing.
 
-| `tests/fixtures/invalid-deployment.yaml`
-| Intentionally broken Deployment: `apiVersion: apps/v1beta2` (deprecated),
-  `spec.replicas: "3"` (type mismatch: string vs int), selector `app: nginx`
-  ≠ pod-template `app: apache` (selector mismatch), `image: nginx:latest`
-  (`latest-tag` warning).
-| `kyq lint` → at least 4 issues (deprecated-api, type-check, latest-tag,
-  selector-mismatch); each with `line`/`column`/`path`.
+| `valid/deployment.yaml`
+| Copy of `examples/deployment.yaml`: two documents, quoted strings where the
+  plain form is already unambiguous.
+| `validate` → OK; `check` → NOT CANONICAL (1); `fmt` is idempotent.
 
-| `templates/deployment-template.yaml`, `templates/service-template.yaml`
-| Parameterised templates with `{{VAR}}` / `{{#PORTS}}` blocks — kyq template
-  parameters, not repo placeholders.
-| `kyq envsubst` / `kyq inject` targets (Phase 1+).
+| `valid/multidoc.yaml`, `valid/empty-docs.yaml`, `valid/empty.yaml`
+| Stream shapes: two documents with `...`; a marker-only document (`null`); a
+  zero-byte file.
+| `validate` → OK; document counts 2, 1, 0.
+
+| `valid/anchors.yaml`, `valid/block-scalars.yaml`, `valid/flow.yaml`,
+  `valid/scalars.yaml`, `valid/comments.yaml`
+| The subset's interesting corners: alias reuse, literal/folded/chomping,
+  flow nesting, scalar resolution, comment handling.
+| `validate` → OK; `fmt` idempotent; the JSON image is stable.
+
+| `invalid/*.yaml` (32 files)
+| One failure per file: duplicate keys (block, nested, quoted, flow, resolved),
+  non-string keys, unsafe integers, non-finite floats, surrogates,
+  noncharacters, merge key, complex key, tags, indentation, tabs, flow errors,
+  `---` content, directives, alias errors, multi-line scalars.
+| `validate` → INVALID (2) with the code, line, column and path pinned in
+  `cases.json`; `check`/`fix`/`canon` refuse it identically.
 |===
 
-== Guarantees (normative — what "guaranteed works for kyaml" means)
+`tests/fixtures/invalid-deployment.yaml` is *not* in this corpus: it is valid
+KYAML with wrong Kubernetes content, and belongs to the lint rules.
 
-These paraphrase the theorems in `docs/PROOF_OBLIGATIONS.adoc` §§ 1–4 and will be
-proven against the final grammar in Phase 3. Phase 1 already makes them
-testable:
+== Guarantees and their evidence
 
-* Lexing is total + deterministic; diagnostics point at the causing byte.
-* Parsing is total + unique (one `Success` or one `Error`, never a crash);
-  AST well-formedness (Thm KYAML-5) holds for every `Success`.
-* `fmt` is idempotent (Thm Q-5); `fmt(fmt(doc))` is byte-equal to `fmt(doc)`.
-* `get`/`set`/`del` are well-defined on the path grammar (dot + `[n]` + `[]`
-  + quoted keys) and preserve document well-formedness.
-* Required-fields, type-check, deprecated-api, latest-tag, selector-mismatch,
-  resource-name, label-key rules are sound (no false positives) and, within the
-  listed kinds, complete.
-* YAML→JSON bridge is lossless on the intersection of the two languages; lossy
-  cases (e.g. non-string keys, unsafe integers) are rejected, not coerced.
+[cols="2,3",options="header"]
+|===
+| Guarantee | Evidence in this repository
 
-== Open questions for Phase 1 (tracked, not decided here)
+| Lexing/parsing is total and deterministic; every failure is located.
+| 42 YAML fixtures, all with pinned codes/locations; `corpus.test.js` also
+  asserts that *every* negative fixture produces a line and column.
 
-* Exact scalar-type coercion table for the KYAML subset (which plain scalars
-  resolve to int/float/bool/null vs stay string).
-* Comment/whitespace preservation policy for `fmt` and `set -i` (preserve vs
-  normalise).
-* Whether `!!` tag shorthands are preserved or canonicalised.
-* Maximum document/stream size and anchor-expansion limits (ties to SEC-1).
+| Duplicate keys are impossible to miss.
+| Parser-level detection on resolved key identity, including flow mappings;
+  5 negative fixtures; `bridge.test.js` re-reads every bridged document as
+  strict JSON to prove the duplicate cannot survive into the JSON image.
+
+| `fmt` is idempotent and value-preserving.
+| `formatter.test.js`: VALUE, FIXED and newline hygiene for every valid fixture
+  and a generated document set, plus a quoting table.
+
+| The JSON image is lossless, and lossy cases are refused.
+| `bridge/vectors.json` (26 vectors) plus "every bridged fixture re-reads as
+  valid strict I-JSON".
+
+| JCS bytes agree with `hyperpolymath/ijson-jcs`.
+| RFC 8785 §3.2.2.3/§3.2.3 vectors, the gate's own corpus, vectors transcribed
+  from the pinned `ijson-jcs` sources (`fixtures/oracle/ijson-jcs.json`), and a
+  differential run against the pinned binary in CI
+  (`conformance/tools/ijson-jcs-diff.mjs`).
+
+| Exit codes and printed lines match `ijson-jcs` for JSON inputs.
+| `cli.test.js`, including the transcribed `ijson-jcs` CLI tests.
+|===
+
+What is *not* claimed here: no mechanised proof, no proof that the UTF-16 sort
+is a total order, and no claim that the AffineScript implementation in `src/`
+(which does not yet compile) satisfies this spec. The gate is a reference
+implementation and a conformance oracle; `docs/status/ROADMAP.adoc` keeps that
+distinction explicit. Formal obligations stay in `docs/PROOF_OBLIGATIONS.adoc`.
+
+== Open questions (tracked, not decided)
+
+* Whether canonical form SHOULD preserve comments (currently: no).
+* Whether a future revision SHOULD accept multi-line quoted scalars, and if so
+  with which folding rule.
+* Maximum document size (node budget is the only limit today).
+* Whether `fmt` should also be able to emit flow style for small collections
+  (`--style=flow`); the gate intentionally has one normal form.
+* Whether the 1.1-boolean quoting rule should extend to further 1.1 words
+  (`y/n` are covered; nothing else is claimed).
 
 == Relation to ijson-jcs
 
 Kyaml is the *input* language; JSON canonical (JCS) is the *output* form used
 when kyq needs to hash, sign, or store content-addressably. The bridge is
-specified in `docs/IJSON_JCS_INTEGRATION.adoc`. In short:
+specified in `docs/IJSON_JCS_INTEGRATION.adoc` and implemented once, in the gate:
 
-* `kyq to-json` produces JSON that `ijson-jcs` in `JsonMode::Strict` accepts.
-* That JSON's canonical bytes (`to_jcs`) are then exactly what `ijson-jcs`
-  would produce for the same logical Value (Thm JCS-8). No second canonical form
-  is invented.
+* `kyq-conformance canon` on KYAML produces JSON that `ijson-jcs` in
+  `JsonMode::Strict`-or-stricter terms accepts, and whose canonical bytes are
+  byte-equal to what `ijson-jcs canon` produces for the same logical value
+  (Thm JCS-8, tested).
 * Duplicate keys are caught at the text boundary in *both* YAML and JSON, so
   `kyq` never hides a YAML duplicate that JSON would collapse.
-
+* No second canonical form is invented: the gate calls the same JCS algorithm
+  for both formats and the differential CI job compares bytes with the pinned
+  Rust binary.

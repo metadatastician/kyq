@@ -1,0 +1,302 @@
+{
+  "schema": "kyq-conformance-corpus-v1",
+  "kind": "oracle-vectors",
+  "oracle": {
+    "repo": "hyperpolymath/ijson-jcs",
+    "commit": "2c880594c8b1f823a7ab2a8a830c894975a1792e",
+    "commit_subject": "Clarify kyq's four-format estate route and kyX boundary (#6)",
+    "crate": "ijson-jcs 0.1.0",
+    "edition": "2024",
+    "license": "MPL-2.0",
+    "transcribed": "2026-10-25"
+  },
+  "provenance": "Expected values transcribed by hand from the pinned ijson-jcs sources: src/jcs.rs (test_es_number_formatting, test_keys_sorted_minimal_separators, test_special_characters, test_empty_values, test_canonicalize_json, test_invalid_i_json_rejected), src/lib.rs (test_validation_helpers, test_over_range_integer_tokens_refused, test_over_range_path_matches_validate_i_json, test_integer_token_check_accepts), src/strict.rs (duplicate_keys_rejected_at_any_depth, same_key_in_sibling_objects_is_fine, matches_serde_json_on_valid_input, trailing_garbage_rejected) and tests/cli.rs (rfc8785_sample_canonicalises, number_serialisation, keys_sorted_by_utf16_code_units_including_non_bmp, canon_rejects_invalid_input_with_exit_2, check_exit_codes, single_trailing_newline_rule, fix_rewrites_and_is_idempotent, fix_adds_newline_to_bare_canonical_form, fix_leaves_invalid_files_untouched, canon_has_no_trailing_newline). Re-derive them with conformance/tools/ijson-jcs-diff.mjs, which builds the pinned commit and diffs both CLIs.",
+  "esNumberVectors": [
+    {
+      "value": "0.0",
+      "jcs": "0"
+    },
+    {
+      "value": "-0.0",
+      "jcs": "0"
+    },
+    {
+      "value": "1e30",
+      "jcs": "1e+30"
+    },
+    {
+      "value": "4.50",
+      "jcs": "4.5"
+    },
+    {
+      "value": "0.002",
+      "jcs": "0.002"
+    },
+    {
+      "value": "1e-7",
+      "jcs": "1e-7"
+    },
+    {
+      "value": "0.000001",
+      "jcs": "0.000001"
+    },
+    {
+      "value": "1e21",
+      "jcs": "1e+21"
+    },
+    {
+      "value": "1e20",
+      "jcs": "100000000000000000000"
+    },
+    {
+      "value": "123456789012345680000.0",
+      "jcs": "123456789012345680000"
+    },
+    {
+      "value": "-1.5e-9",
+      "jcs": "-1.5e-9"
+    },
+    {
+      "value": "9007199254740992.0",
+      "jcs": "9007199254740992"
+    },
+    {
+      "value": "5e-324",
+      "jcs": "5e-324"
+    },
+    {
+      "value": "-5e-324",
+      "jcs": "-5e-324"
+    },
+    {
+      "value": "1.7976931348623157e308",
+      "jcs": "1.7976931348623157e+308"
+    },
+    {
+      "value": "333333333.3333333",
+      "jcs": "333333333.3333333"
+    },
+    {
+      "value": "1.0",
+      "jcs": "1"
+    },
+    {
+      "value": "-1.25",
+      "jcs": "-1.25"
+    }
+  ],
+  "canonVectors": [
+    {
+      "name": "rfc8785-sample",
+      "input": "{\n  \"numbers\": [333333333.33333329, 1E30, 4.50, 2e-3, 0.000000000000000000000000001],\n  \"string\": \"\\u20ac$\\u000F\\u000aA'\\u0042\\u0022\\u005c\\\\\\\"\\/\",\n  \"literals\": [null, true, false]\n}",
+      "jcs": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"\u20ac$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}",
+      "source": "tests/cli.rs:rfc8785_sample_canonicalises"
+    },
+    {
+      "name": "number-serialisation",
+      "input": "[1e30, 4.50, 0.002, -0, -0.0, 1.0, 1e21, 1e20, 1e-7]",
+      "jcs": "[1e+30,4.5,0.002,0,0,1,1e+21,100000000000000000000,1e-7]",
+      "source": "tests/cli.rs:number_serialisation"
+    },
+    {
+      "name": "keys-sorted-by-utf16",
+      "input": "{\n  \"\\u20ac\": \"Euro Sign\",\n  \"\\r\": \"Carriage Return\",\n  \"\\ufb33\": \"Hebrew Letter Dalet With Dagesh\",\n  \"1\": \"One\",\n  \"\\ud83d\\ude00\": \"Emoji: Grinning Face\",\n  \"\\u0080\": \"Control\",\n  \"\\u00f6\": \"Latin Small Letter O With Diaeresis\"\n}",
+      "jcs": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u0080\":\"Control\",\"\u00f6\":\"Latin Small Letter O With Diaeresis\",\"\u20ac\":\"Euro Sign\",\"\ud83d\ude00\":\"Emoji: Grinning Face\",\"\ufb33\":\"Hebrew Letter Dalet With Dagesh\"}",
+      "source": "tests/cli.rs:keys_sorted_by_utf16_code_units_including_non_bmp"
+    },
+    {
+      "name": "keys-sorted-minimal-separators",
+      "input": "{\"b\": 1, \"a\": {\"z\": true, \"m\": [1, 2, \"x\"]}, \"c\": null}",
+      "jcs": "{\"a\":{\"m\":[1,2,\"x\"],\"z\":true},\"b\":1,\"c\":null}",
+      "source": "src/jcs.rs:test_keys_sorted_minimal_separators"
+    },
+    {
+      "name": "special-characters",
+      "input": "{\"s\": \"a\\\"b\\\\c\\nd\"}",
+      "jcs": "{\"s\":\"a\\\"b\\\\c\\nd\"}",
+      "source": "src/jcs.rs:test_special_characters"
+    },
+    {
+      "name": "empty-values",
+      "input": "[null,true,false,[],{},\"\"]",
+      "jcs": "[null,true,false,[],{},\"\"]",
+      "source": "src/jcs.rs:test_empty_values"
+    },
+    {
+      "name": "canonicalize-json",
+      "input": "{\"b\": 1, \"a\": 2}",
+      "jcs": "{\"a\":2,\"b\":1}",
+      "source": "src/jcs.rs:test_canonicalize_json"
+    }
+  ],
+  "rejectVectors": [
+    {
+      "name": "duplicate-key",
+      "input": "{\"a\":1,\"a\":2}",
+      "code": "JSON_PARSE_ERROR",
+      "source": "tests/cli.rs:canon_rejects_invalid_input_with_exit_2"
+    },
+    {
+      "name": "lone-surrogate",
+      "input": "[\"\\ud800\"]",
+      "code": "JSON_PARSE_ERROR",
+      "source": "tests/cli.rs:canon_rejects_invalid_input_with_exit_2"
+    },
+    {
+      "name": "outside-double-range",
+      "input": "[1e400]",
+      "code": "JSON_PARSE_ERROR",
+      "source": "tests/cli.rs:canon_rejects_invalid_input_with_exit_2"
+    },
+    {
+      "name": "integer-outside-safe-range",
+      "input": "[9007199254740993]",
+      "code": "UNSAFE_INTEGER",
+      "path": "0",
+      "source": "tests/cli.rs:canon_rejects_invalid_input_with_exit_2"
+    },
+    {
+      "name": "integer-beyond-u64",
+      "input": "[18446744073709551616]",
+      "code": "UNSAFE_INTEGER",
+      "path": "0",
+      "source": "src/lib.rs:test_over_range_integer_tokens_refused"
+    },
+    {
+      "name": "trailing-garbage",
+      "input": "{\"a\":1} trailing",
+      "code": "JSON_PARSE_ERROR",
+      "source": "src/strict.rs:trailing_garbage_rejected"
+    },
+    {
+      "name": "noncharacter",
+      "input": "[\"\\uffff\"]",
+      "code": "NONCHARACTER",
+      "path": "0",
+      "source": "tests/cli.rs:canon_rejects_invalid_input_with_exit_2"
+    },
+    {
+      "name": "unsafe-integer-path-escaped",
+      "input": "{\"a\":[1,{\"b~/c\":[2,9007199254740993]}]}",
+      "code": "UNSAFE_INTEGER",
+      "path": "a/1/b~0~1c/1",
+      "source": "src/lib.rs:test_over_range_path_matches_validate_i_json"
+    }
+  ],
+  "acceptVectors": [
+    {
+      "name": "over-range-digit-string",
+      "input": "{\"s\":\"18446744073709551616\"}",
+      "jcs": "{\"s\":\"18446744073709551616\"}",
+      "source": "src/lib.rs:test_integer_token_check_accepts"
+    },
+    {
+      "name": "float-token-beyond-u64",
+      "input": "[18446744073709551616.0]",
+      "jcs": "[18446744073709552000]",
+      "source": "src/lib.rs:test_integer_token_check_accepts"
+    },
+    {
+      "name": "float-tokens",
+      "input": "[1e30,1.5,-0.0,-0,0,1e+20,2E-3]",
+      "jcs": "[1e+30,1.5,0,0,0,100000000000000000000,0.002]",
+      "source": "src/lib.rs:test_integer_token_check_accepts"
+    },
+    {
+      "name": "escaped-controls",
+      "input": "{\"text\": \"\\u0000\\u000f\\u001f\"}",
+      "jcs": "{\"text\":\"\\u0000\\u000f\\u001f\"}",
+      "source": "src/ijson.rs:test_control_characters"
+    },
+    {
+      "name": "same-key-sibling-objects",
+      "input": "[{\"k\": 1}, {\"k\": 2}]",
+      "jcs": "[{\"k\":1},{\"k\":2}]",
+      "source": "src/strict.rs:same_key_in_sibling_objects_is_fine"
+    },
+    {
+      "name": "escaped-key-duplicate-free",
+      "input": "{\"s\":\"a\\\"18446744073709551616\",\"18446744073709551617\":\"\\\\\"}",
+      "jcs": "{\"18446744073709551617\":\"\\\\\",\"s\":\"a\\\"18446744073709551616\"}",
+      "source": "src/lib.rs:test_integer_token_check_accepts"
+    }
+  ],
+  "cliVectors": [
+    {
+      "name": "canon-no-trailing-newline",
+      "input": "{\"a\" : [ 1 ] }\n",
+      "stdout": "{\"a\":[1]}",
+      "exit": 0,
+      "source": "tests/cli.rs:canon_has_no_trailing_newline"
+    },
+    {
+      "name": "canon-invalid-exits-2",
+      "input": "{\"a\":1,\"a\":2}",
+      "exit": 2,
+      "stderr_prefix": "INVALID <stdin>:",
+      "source": "tests/cli.rs:canon_rejects_invalid_input_with_exit_2"
+    },
+    {
+      "name": "check-bare-and-newline-both-ok",
+      "checkBytes": [
+        "{\"a\":1}",
+        "{\"a\":1}\n"
+      ],
+      "exit": 0,
+      "source": "tests/cli.rs:check_exit_codes"
+    },
+    {
+      "name": "check-not-canonical-exits-1",
+      "checkBytes": [
+        "{ \"b\": 1, \"a\": 2 }"
+      ],
+      "exit": 1,
+      "source": "tests/cli.rs:check_exit_codes"
+    },
+    {
+      "name": "check-invalid-exits-2",
+      "checkBytes": [
+        "{\"a\":1,\"a\":2}"
+      ],
+      "exit": 2,
+      "source": "tests/cli.rs:check_exit_codes"
+    },
+    {
+      "name": "fix-idempotent",
+      "fixInput": "{\n  \"numbers\": [333333333.33333329, 1E30, 4.50, 2e-3, 0.000000000000000000000000001],\n  \"string\": \"\\u20ac$\\u000F\\u000aA'\\u0042\\u0022\\u005c\\\\\\\"\\/\",\n  \"literals\": [null, true, false]\n}",
+      "fixOutput": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"\u20ac$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}\n",
+      "source": "tests/cli.rs:fix_rewrites_and_is_idempotent"
+    },
+    {
+      "name": "fix-adds-newline-to-bare-form",
+      "fixInput": "[1,2]",
+      "fixOutput": "[1,2]\n",
+      "source": "tests/cli.rs:fix_adds_newline_to_bare_canonical_form"
+    },
+    {
+      "name": "usage-errors-exit-2",
+      "usageArgv": [
+        [],
+        [
+          "bogus"
+        ],
+        [
+          "check"
+        ],
+        [
+          "fix"
+        ],
+        [
+          "canon",
+          "x.json"
+        ],
+        [
+          "check",
+          "--nope"
+        ]
+      ],
+      "exit": 2,
+      "source": "tests/cli.rs:help_and_usage_errors"
+    }
+  ]
+}

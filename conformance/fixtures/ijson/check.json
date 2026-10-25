@@ -1,0 +1,72 @@
+{
+  "schema": "kyq-conformance-corpus-v1",
+  "kind": "ijson-check-vectors",
+  "note": "File-level `check` vectors: the exact bytes on disk and the exit status the CLI must return. Exit 0 = canonical (optionally one trailing newline), 1 = valid but not canonical, 2 = invalid.",
+  "vectors": [
+    {
+      "name": "bare-canonical",
+      "bytes": "{\"a\":1}",
+      "exit": 0
+    },
+    {
+      "name": "one-trailing-newline",
+      "bytes": "{\"a\":1}\n",
+      "exit": 0
+    },
+    {
+      "name": "two-trailing-newlines",
+      "bytes": "{\"a\":1}\n\n",
+      "exit": 1
+    },
+    {
+      "name": "crlf",
+      "bytes": "{\"a\":1}\r\n",
+      "exit": 1
+    },
+    {
+      "name": "trailing-space",
+      "bytes": "{\"a\":1} ",
+      "exit": 1
+    },
+    {
+      "name": "leading-newline",
+      "bytes": "\n{\"a\":1}",
+      "exit": 1
+    },
+    {
+      "name": "spaced-out",
+      "bytes": "{ \"b\": 1, \"a\": 2 }",
+      "exit": 1
+    },
+    {
+      "name": "unsorted-keys",
+      "bytes": "{\"b\":1,\"a\":2}",
+      "exit": 1
+    },
+    {
+      "name": "duplicate-key",
+      "bytes": "{\"a\":1,\"a\":2}",
+      "exit": 2
+    },
+    {
+      "name": "empty-file",
+      "bytes": "",
+      "exit": 2
+    },
+    {
+      "name": "array-canonical",
+      "bytes": "[1,2]",
+      "exit": 0
+    },
+    {
+      "name": "array-with-newline",
+      "bytes": "[1,2]\n",
+      "exit": 0
+    },
+    {
+      "name": "bom-prefixed",
+      "bytes": "\ufeff{\"a\":1}",
+      "exit": 2
+    }
+  ]
+}
