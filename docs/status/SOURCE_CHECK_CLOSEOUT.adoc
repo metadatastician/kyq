@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= AffineScript source-check closeout — 2026-10-25
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-25
+
+This is the current source-check checkpoint for the strict port in
+`docs/AFFINESCRIPT_STRICT_PORT.adoc`. It supersedes the A1 3/8 and A3 5/6
+*ratchet numbers*, not their historical evidence. It is not a build, test-run,
+WASM, release, conformance, or CLI attestation.
+
+toc::[]
+
+== Current result
+
+All **11 of 11** tracked `.affine` files pass the pinned v0.1.1
+`affinescript check` from their module search roots:
+
+* `src/Kyaml/Ast.affine`, `Ijson.affine`, `Lexer.affine`, `Parser.affine`,
+  `Jcs.affine`, and `Lint/RequiredFields.affine`;
+* `src/Kyaml.affine` and `src/Main.affine`;
+* `benches/kyaml_parsing_bench.affine`;
+* `tests/kyaml_parser_test.affine` and `tests/lint_rules_test.affine`.
+
+Three additional A2 controls pass their expected outcomes: an imported positive
+module checks, the same module shape with a planted imported type error is
+rejected, and a consumer of the released association-list `dict` API checks.
+No previously passing source regressed during the A3→A7 source ports.
+
+== Authoritative final run
+
+[cols="1,3",options="header"]
+|===
+| Item | Value
+
+| Source commit
+| `a8b5bacf17f59960c6709d594a29afb6c901d531`
+
+| CI
+| Run https://github.com/metadatastician/kyq/actions/runs/40232759790[40232759790],
+  job https://github.com/metadatastician/kyq/actions/runs/40232759790/job/121287799857[121287799857]
+
+| Toolchain
+| A1's digest-pinned `hyperpolymath/affinescript` v0.1.1 Linux asset,
+  SHA-256 `b8f2cab7380306ca07b9599d7fe2470328236e7287a51c78c3bbb5e973fef5dc`,
+  with source/stdlib at `26cdb43e141a5fdce5408e00b8baca7df6862cb8`.
+  The asset still self-reports `0.1.0`.
+
+| Result
+| `A1_CENSUS_COMPLETE sources=11 source_failures=0` and
+  `A2_CONTROLS_COMPLETE controls=3`, both explicitly marked check-only.
+
+| Evidence channel
+| `A1 source census` and `A2 compiler controls` check-run annotations. The job
+  keeps its historical A1 name while also running `scripts/affine-a2-controls.sh`.
+|===
+
+== Gate progression
+
+Each row is a separate source gate with its own pushed commit and CI result.
+The count includes all tracked source, test, and bench files.
+
+[cols="1,2,2,2,4",options="header"]
+|===
+| Gate | Commit | CI run / job | Passing / failing | Evidence
+
+| A1 baseline
+| `fbc4e3f`
+| 40092388430 / 120867562881
+| 3 / 8
+| Ast, Ijson, and Lexer pass. Original grammar census and diagnostics are in
+  `docs/status/A1_GRAMMAR_CENSUS.adoc`.
+
+| A3 parser
+| `960ec64`
+| 40232018985 / 121285568489
+| 5 / 6
+| Parser and its importing bench pass. Details:
+  `docs/status/A3_PARSER_PORT.adoc`.
+
+| A4 API/query
+| `8f29682`
+| 40232337259 / 121286525873
+| 7 / 4
+| `Kyaml.affine` and `Main.affine` pass after explicit function imports,
+  structured matches, numeric character ordering, and scoped structural lint
+  aliases. The still-stubbed A5 lint dependency was temporarily decoupled, not
+  implemented early.
+
+| A5 required-fields boundary
+| `33ce463`
+| 40232398436 / 121286715159
+| 8 / 3
+| RequiredFields passes and `lint_k8s` calls it again with structurally
+  compatible record layouts. The rule itself remains a stub returning no
+  issues.
+
+| A6 I-JSON/JCS source
+| `484f843`
+| 40232550680 / 121287170235
+| 9 / 2
+| Jcs joins Ijson in passing. An explicit numeric code-unit loop replaces the
+  type-rejected `String < String` expression. Runtime Unicode/canonicalisation
+  conformance is not established.
+
+| A2 controls + A7 test sources
+| `a8b5bac`
+| 40232759790 / 121287799857
+| 11 / 0
+| Both test files pass without changing their fixtures/assertions. The three
+  A2 controls have their expected results. A7's WASI CLI is not complete.
+|===
+
+== A2 control details
+
+`scripts/affine-a2-controls.sh` is fail-closed for control violations and uses
+the same pinned compiler and stdlib as the census:
+
+. `imported_positive`: a consumer calling an imported `Int -> Int` dependency
+  passes.
+. `imported_type_error`: the identical module layout, with only the dependency
+  body changed to a string, exits 124 with
+  `ImportError("Type checking failed: ... TypeMismatch (Int, String)")`.
+  v0.1.1 omits the dependency filename from this wrapped diagnostic; the
+  positive/negative twin is the coverage control. The script does not invent a
+  filename assertion.
+. `dict_association_list`: a consumer typed as `[(String, Int)]` checks calls
+  to the released `dict::{empty,set,contains,get}` functions. This demonstrates
+  the existing representation and typed API, not runtime map behaviour.
+
+The first control-diagnostic run (40232709967) exposed the wrapped-error shape;
+the assertion was corrected to the evidence rather than bypassing the negative
+control. The final run above is the accepted result.
+
+== Source-port decisions
+
+* All implementation remains AffineScript. No JavaScript/Python replacement was
+  added.
+* Function expressions use explicit imports and unqualified calls; v0.1.1's
+  `Type::Variant` expression production does not make `Module::function` valid.
+* Association lists and the released `dict` API are sufficient; no Map request
+  is needed.
+* Structured loops/matches and `char_to_int` replace unsupported or
+  type-rejected constructs locally.
+* Imported struct declarations still do not populate v0.1.1's importer
+  `type_env`. Scoped structural aliases preserve exact field layouts in Parser,
+  Kyaml, and RequiredFields. The upstream fix/removal path is in
+  `docs/UPSTREAM_HANDOFFS.adoc`.
+* A6's explicit key comparison is a source port, not proof of UTF-16 ordering
+  across every runtime. The pinned I-JSON/JCS large-float interaction remains a
+  later contract task.
+
+== What remains open
+
+. **A7 CLI:** no released, digest-pinnable toolchain has yet demonstrated the
+  required multi-module WASI CLI contract for argv, complete stdin, stdout,
+  stderr, and exit statuses. `Main.affine` still prints usage text only.
+. **Execution:** the 19 parser fixtures and one lint fixture have been checked,
+  not run. No `affinescript eval`, Deno-ESM, or WASM execution PASS is claimed.
+  Source inspection shows that eval does not flatten imports and Deno's
+  flattener is not a proven transitive type/helper linker; an actual released
+  multi-module execution fixture is required before choosing a test path.
+. **A8:** full build, test execution, WASM smoke tests, and their inverse
+  controls remain open. The JavaScript conformance gate is only an oracle.
+. **Semantics:** the lexer and required-fields rule are stubs; the parser is
+  minimal and still has known contract gaps (including duplicate-key panic and
+  rejected document streams). JCS/I-JSON validation is incomplete.
+. **Governance:** the standards owner repair allows called workflows to run,
+  but the pinned upstream allowlist still needs its narrow
+  `metadatastician/standards@*` correction. See PR #18 and the first handoff
+  prompt.
+. **Dependencies:** PyYAML is not removed by this source-check milestone, and
+  no kyq release artifact or CLI is claimed.

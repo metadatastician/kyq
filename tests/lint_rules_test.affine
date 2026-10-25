@@ -5,9 +5,9 @@
 
 module Kyaml.Lint.Test;
 
-use Kyaml;
+use Kyaml::{lint_k8s};
 use Kyaml.Ast;
-use Kyaml.Parser;
+use Kyaml.Parser::{parse_yaml};
 use prelude::{ Option, Some, None };
 
 pub type TestResult =
@@ -16,9 +16,9 @@ pub type TestResult =
 
 pub fn test_required_fields_rule_valid() -> TestResult {
   let yaml: String = "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: test-deployment\n";
-  match Parser::parse_yaml(yaml) {
-    ParseSuccess(_doc) => {
-      let issues = Kyaml::lint_k8s(yaml);
+  match parse_yaml(yaml) {
+    ParseSuccess(_) => {
+      let issues = lint_k8s(yaml);
       if len(issues) == 0 {
         TestPass
       } else {

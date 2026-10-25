@@ -5,9 +5,9 @@
 
 module Kyaml.Parser.Test;
 
-use Kyaml.Parser;
+use Kyaml.Parser::{parse_yaml};
 use Kyaml.Ast;
-use Kyaml.Jcs;
+use Kyaml.Jcs::{to_jcs};
 use prelude::{ Option, Some, None };
 
 pub type TestResult =
@@ -16,8 +16,8 @@ pub type TestResult =
 
 pub fn test_basic_yaml_parsing() -> TestResult {
   let yaml: String = "name: test-deployment\napiVersion: apps/v1\nkind: Deployment";
-  match Parser::parse_yaml(yaml) {
-    ParseSuccess(_doc) => TestPass,
+  match parse_yaml(yaml) {
+    ParseSuccess(_) => TestPass,
     ParseError(err) => TestFail("Parse failed: " ++ err.message)
   }
 }
@@ -25,9 +25,9 @@ pub fn test_basic_yaml_parsing() -> TestResult {
 // Compare complete scalar/collection trees using the existing JSON serializer.
 // The fixtures use ASCII keys and integers, independent of the pending JCS port.
 fn expect_root(yaml: String, expected_json: String) -> TestResult {
-  match Parser::parse_yaml(yaml) {
+  match parse_yaml(yaml) {
     ParseSuccess(doc) => {
-      let actual = Jcs::to_jcs(doc.root);
+      let actual = to_jcs(doc.root);
       if actual == expected_json { TestPass }
       else { TestFail("Unexpected AST: " ++ actual) }
     },
@@ -36,8 +36,8 @@ fn expect_root(yaml: String, expected_json: String) -> TestResult {
 }
 
 fn expect_error(yaml: String, line: Int, column: Int, context: String) -> TestResult {
-  match Parser::parse_yaml(yaml) {
-    ParseSuccess(_doc) => TestFail("Expected a parse error"),
+  match parse_yaml(yaml) {
+    ParseSuccess(_) => TestFail("Expected a parse error"),
     ParseError(err) => {
       match (err.line, err.column, err.context) {
         (Some(actual_line), Some(actual_column), Some(actual_context)) => {

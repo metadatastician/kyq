@@ -326,7 +326,7 @@ jobs:
   # Job 6 (Canon lockstep) removed from this repo, 2026-10-06.
   #
   # That job asks "does the TEMPLATE still implement the canon?" — the
-  # canon<->spine binding between hyperpolymath/standards canon.lock and
+  # canon<->spine binding between metadatastician/standards canon.lock and
   # rsr-template-repo's deed. It was inherited verbatim at instantiation and
   # demanded .machine_readable/rsr-profile.a2ml, a retired A2ML file (A2ML is
   # dead; the template itself moved the pin into its deed's (canon …) clause).
@@ -426,14 +426,17 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/checkout@v7.0.1
         with:
-          repository: hyperpolymath/standards
+          repository: metadatastician/standards
           path: _standards
+          persist-credentials: false
       - uses: actions/checkout@v7.0.1
         with:
           repository: hyperpolymath/hypatia
           path: _hypatia
+          persist-credentials: false
       - name: Setup Elixir for the oracle
         uses: erlef/setup-beam@v1.24.1
         with:

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # Runtime and package-manager policy check.
 #
-# Authority: hyperpolymath/standards LANGUAGE-POLICY.adoc §1.
+# Authority: metadatastician/standards LANGUAGE-POLICY.adoc §1.
 # Ordering:  Bun (1st) > Deno (2nd) > pnpm (3rd) > npm (last resort).
 #
 # REPLACES npm-bun-blocker.yml, which failed any build carrying `bun.lockb` with
