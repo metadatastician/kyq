@@ -124,10 +124,13 @@ control() {
   done
 }
 
-# The bad consumer must fail inside the imported dependency, not merely at its
-# own callsite. This proves check follows imports and rejects the planted type.
+# The positive/negative twins differ only in the dependency body. v0.1.1 wraps
+# the dependency failure as ImportError without its filename, so require the
+# type mismatch itself rather than inventing a path assertion the compiler
+# does not provide. The consumer's Int-typed call would pass if the dependency
+# body were skipped, as the positive twin demonstrates.
 control imported_positive pass A2GoodConsumer.affine 'Type checking passed'
-control imported_type_error fail A2Consumer.affine 'A2Dependency.affine' 'TypeMismatch'
+control imported_type_error fail A2Consumer.affine 'TypeMismatch'
 control dict_association_list pass A2Dict.affine 'Type checking passed'
 
 printf 'A2_CONTROLS_COMPLETE controls=%d (check-only; not build/test/runtime PASS)\n' \
