@@ -13,6 +13,13 @@
 #
 # The ignore is scoped to the corpus directory, so scanning of the gate's own
 # source, tests and tooling is unchanged.
+#
+# Scope limit, measured on PR #17: this file configures the ggshield CLI, and the
+# GitGuardian GitHub App reads it from the *default branch*, not from the pull
+# request. A PR that introduces the first flagged fixture therefore stays red
+# even with this file present; once it is merged, the app has the config and the
+# finding stops being raised. The alternative — rewriting a byte vector so it no
+# longer trips a heuristic — would damage the test and is rejected.
 version: 2
 secret:
   ignored_paths:
