@@ -172,12 +172,29 @@ fn split_lines(s: String) -> [String] {
 // Core block parser: parses a mapping or sequence at a given indent
 // ---------------------------------------------------------------------------
 
+// v0.1.1 does not carry imported struct definitions into the importer's
+// type environment. These internal structural aliases have exactly the AST
+// layouts, so values still unify with ParseErrorDetail and AstDocument.
+type ErrorDetail = {
+  message: String,
+  line: Option[Int],
+  column: Option[Int],
+  context: Option[String]
+}
+
+type Document = {
+  version: Option[String],
+  tags: Option[[(String, String)]],
+  root: YamlValue,
+  resources: [K8sResource]
+}
+
 type BlockResult =
     BlockSuccess(YamlValue, Int)
-  | BlockError(ParseErrorDetail)
+  | BlockError(ErrorDetail)
 
-fn line_error(line: String, index: Int, message: String) -> ParseErrorDetail {
-  ParseErrorDetail #{
+fn line_error(line: String, index: Int, message: String) -> ErrorDetail {
+  #{
     message: message,
     line: Some(index + 1),
     column: Some(get_indent(line) + 1),
@@ -379,7 +396,7 @@ pub fn parse_yaml(input: String) -> ParseResult {
     start = start + 1;
   }
   if start >= len(lines) {
-    let empty_doc: AstDocument = AstDocument #{
+    let empty_doc: Document = #{
       version: None,
       tags: None,
       root: YamlMapping([]),
@@ -415,7 +432,7 @@ pub fn parse_yaml(input: String) -> ParseResult {
     },
     _ => ()
   };
-  let doc: AstDocument = AstDocument #{
+  let doc: Document = #{
     version: None,
     tags: None,
     root: root,
