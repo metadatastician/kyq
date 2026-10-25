@@ -51,13 +51,28 @@ pub fn yaml_to_json(v: YamlValue) -> Json {
   }
 }
 
+// v0.1.1 ordering operators are numeric. Compare the code units exposed by
+// string_get explicitly; non-BMP/runtime conformance remains oracle work.
+fn string_less(a: String, b: String) -> Bool {
+  let mut i: Int = 0;
+  while i < len(a) && i < len(b) {
+    let ac = char_to_int(string_get(a, i));
+    let bc = char_to_int(string_get(b, i));
+    if ac != bc {
+      return ac < bc;
+    }
+    i = i + 1;
+  }
+  len(a) < len(b)
+}
+
 fn sort_keys_utf16(keys: [(String, Json)]) -> [(String, Json)] {
   let mut sorted: [(String, Json)] = [];
   for (k, v) in keys {
     let mut inserted: Bool = false;
     let mut next: [(String, Json)] = [];
     for (sk, sv) in sorted {
-      if !inserted && k < sk {
+      if !inserted && string_less(k, sk) {
         next = next ++ [(k, v)];
         inserted = true;
       }
