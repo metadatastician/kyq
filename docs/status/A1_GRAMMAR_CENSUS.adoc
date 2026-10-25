@@ -10,11 +10,11 @@ This is the executable evidence for task A1 in
 `docs/AFFINESCRIPT_STRICT_PORT.adoc`. It is a grammar/source census, not a
 build, test, WASM, release, or CLI attestation.
 
-*Current-state update (2026-10-25):* this file preserves the A1 baseline. A3
-subsequently raised the ratchet to 5 passing / 6 failing; see
-`docs/status/A3_PARSER_PORT.adoc` and CI run 40232018985. The A1 diagnostics
-below remain the evidence for the original 3/8 baseline, not a claim that the
-parser still fails.
+*Current-state update (2026-10-25):* this file preserves the A1 baseline. Later
+A2–A7 source work raised the ratchet to 11 passing / 0 failing, with three A2
+controls; see `docs/status/SOURCE_CHECK_CLOSEOUT.adoc` and CI run 40232759790.
+The A1 diagnostics below remain evidence for the original 3/8 baseline, not a
+claim that those sources still fail or that build/test execution has passed.
 
 toc::[]
 

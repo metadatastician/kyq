@@ -4,7 +4,7 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-10-24
+:revdate: 2026-10-25
 
 This note details the work implied by the owner's ruling *strict AffineScript
 only* (2026-10-23). No Rust/Cargo code is added; `coordination.k9`
@@ -18,14 +18,13 @@ toc::[]
 `docs/status/ROADMAP.adoc` Blockers records the original 2026-10-07 result:
 AffineScript 0.1.1 did not parse any of the then-9 tracked `.affine` files.
 The 2026-10-24 A1 rerun established the minimal slice and a 3-passing/8-failing
-baseline. The 2026-10-25 A3 source-check port improves that to **5 passing / 6
-failing**: Ast, Ijson, Lexer, Parser, and the parsing benchmark now pass. There
-is still no full build/test/WASM PASS. Until the whole tree compiles,
-`just build`/`test`/`wasm` still fail by design
-(`no-fabricated-artefacts`). A Rust bootstrap would clear the blocker sooner,
-but the owner explicitly rejected it — so we fix the AffineScript side. See
-`docs/status/A1_GRAMMAR_CENSUS.adoc` for the run, exact diagnostics, and
-ratchet.
+baseline. The 2026-10-25 A2–A7 source ports now pass **11 / 11 tracked files**,
+with three fail-closed A2 controls. This is still not a full build, test-run,
+WASM, conformance, or CLI PASS. `just build`/`test`/`wasm` must not fabricate
+artefacts (`no-fabricated-artefacts`). A Rust bootstrap would clear the blocker
+sooner, but the owner explicitly rejected it — so we fix the AffineScript side.
+See `docs/status/A1_GRAMMAR_CENSUS.adoc` for the baseline and
+`docs/status/SOURCE_CHECK_CLOSEOUT.adoc` for every later gate run.
 
 == What the compiler gap is (from ROADMAP)
 
@@ -37,9 +36,9 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
   A1 disproved the earlier “two-segment paths only” claim: multi-segment paths
   and `#{…}` record literals both passed their probes.
 * Rewrite: the probes reject legacy map-type syntax, `break`/`continue`, and
-  working `if let` binding. The AST now uses association lists and passes
-  `check`; parser/query control flow still needs structured equivalents.
-  Generic `if let` tokens can parse as an `if` containing a let expression, so
+  working `if let` binding. The sources now use association lists and
+  structured equivalents and pass `check`; runtime semantics remain a separate
+  gate. Generic `if let` tokens can parse as an `if` containing a let expression, so
   a parse-only result is not evidence of pattern-binding support.
 
 == In-repo tasks (kyq side)
@@ -49,7 +48,7 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
 | Task | Description
 
 | A1 — Minimal compilable slice
-| *Minimum cleared 2026-10-24; full-tree work continues in A2–A6.* Zero-byte,
+| *Baseline minimum cleared 2026-10-24; later gates are in the closeout.* Zero-byte,
   module-only, and minimal-function files pass parse and check. One-construct
   probes and all 11 sources ran under the digest-pinned release asset with its
   matching stdlib. Exact result: 3 files pass, 6 have direct parse failures,
@@ -58,10 +57,11 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
   test, or CLI pass.
 
 | A2 — Port `Ast.affine`
-| Replace legacy maps with the AffineScript 0.1.1 container type (or a
-  list-of-pairs representation with helper functions). Current evidence:
-  `Ast.affine` already uses `[(String, JsonValue)]` and passes `check`; query
-  and mutation helpers still need the same representation discipline.
+| *Source-check minimum cleared.* The AST uses association lists and passes
+  `check`. At final run 40232759790, positive/negative twins prove imported
+  type errors are rejected, and the released `dict` association-list consumer
+  checks. Mutation helpers remain unimplemented; runtime container behaviour
+  is not claimed. Evidence: `docs/status/SOURCE_CHECK_CLOSEOUT.adoc`.
 
 | A3 — Port `Lexer.affine` + `Parser.affine`
 | *Source-check minimum cleared 2026-10-25.* Both files pass the pinned v0.1.1
@@ -72,30 +72,37 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
   and no parser execution/conformance PASS is claimed.
 
 | A4 — Port `Kyaml.affine` + `Main.affine` query helpers
-| `split_path`, `query_value`, `set_value` and friends — same control-flow
-  rewrites as A3.
+| *Source-check minimum cleared 2026-10-25* (CI 40232337259). Explicit function
+  imports and structured query control flow pass. `set_yaml`/`del_yaml` still
+  return `None`, and `Main` still prints usage only; no CLI or mutation PASS.
 
 | A5 — Port `Lint/RequiredFields.affine` and add the remaining 6 lint rules
-| Type-check, deprecated-api, latest-tag, selector-mismatch, resource-names,
-  label-keys — each as a pure `LintRule = Doc -> [LintIssue]`.
+| *RequiredFields source-check minimum cleared 2026-10-25* (CI 40232398436),
+  with its `lint_k8s` call restored. It remains a no-issue stub. Type-check,
+  deprecated-api, latest-tag, selector-mismatch, resource-names, and label-keys
+  rules are still semantic work, not completed by this gate.
 
 | A6 — Port JCS/I-JSON to AffineScript (`src/Kyaml/Jcs.affine`, `Ijson.affine`)
-| UTF-16 code-unit sort, safe-integer `±(2^53−1)`, float finite check,
+| *Source-check minimum cleared 2026-10-25* (CI 40232550680); this does not
+  clear the semantic contract. Still required: executed validation of UTF-16
+  code-unit sort, safe-integer `±(2^53−1)`, float finite check,
   surrogate/noncharacter rejection, ES number rules, trailing-newline handling.
   Spec is `hyperpolymath/ijson-jcs` README + `src/*.rs`; tests are byte-equal
   to its corpus.
 
 | A7 — WASM host I/O
-| Blocker 3: the 0.1.1 WASM target gives a module no argv/stdin. Upstream fix
+| *Open.* Both tracked test files pass `check` at run 40232759790, but their
+  fixtures have not executed. Blocker 3: the 0.1.1 WASM target gives a module
+  no usable kyq argv/stdin CLI contract. Upstream fix
   or a minimal host that passes `args`/`stdin`/`stdout`/`stderr` as imports
-  so `kyq lint`/`check`/`canon` can run. Until then, `just build` produces a
-  module that can be unit-tested in-process but not invoked as a CLI.
+  so `kyq lint`/`check`/`canon` can run. Until then there is no CLI claim, and
+  any in-process test path must be demonstrated separately on multi-module code.
 
 | A8 — CI build/test jobs
-| Replace `ci.yml`'s two-job stub with `build` (affinescript compile) +
-  `test` (affine tests on `kyaml_parser_test.affine`/`lint_rules_test.affine`)
-  after A2–A6 make their tracked sources compile. A1's minimal-slice result is
-  not sufficient to start claiming those gates. Keep
+| *Open.* Replace the census-only job with `build` (affinescript compile) +
+  `test` (executed AffineScript fixtures) after A7 establishes a real
+  multi-module host/execution path. The 11/11 `check` result is not sufficient
+  to claim those gates. Keep
   `no-fabricated-artefacts`: a failing compile is a failing job, never a fake
   pass.
 
@@ -119,9 +126,10 @@ are:
   already provides association-list `contains`/`get`/`set` operations.
 * Control flow: `break`/`continue` or structured loop alternative, `if let`
   (or `match` desugaring). A3's structured equivalents are sufficient locally.
-* WASM I/O: argv/stdin/stdout/stderr imports for the WASM target (blocker 3).
-* Verify `affinescript check` covers imports: plant a type error in an
-  imported module and confirm it is rejected.
+* WASM I/O: argv/stdin/stdout/stderr imports for the WASM target (blocker 3),
+  demonstrated through a multi-module consumer rather than a root-only fixture.
+* `affinescript check` import coverage is now controlled by A2's planted
+  positive/negative modules; keep that control when repinning.
 
 == How KYAML guarantee is shown before proofs
 
@@ -130,15 +138,17 @@ are:
   tests.
 * Property harness (AffineScript test module, not Rust proptest yet): parse
   totality/determinism, `fmt` idempotence, `get`/`set` round-trip, selector
-  soundness — each as an AffineScript test that runs via `affinescript test`
-  once A1 clears.
+  soundness — each as an AffineScript test that runs only after A7 establishes
+  the real execution path. Checking the source is not running the property.
 * Shared corpus with `ijson-jcs`: valid/invalid/canonical JSON triples; `kyq
   canon` (AffineScript) and `ijson-jcs canon` (Rust oracle) must be byte-equal
   (Thm JCS-8). The oracle is external — no Rust code is added to kyq.
 
 == Ordering
 
-A1 → A2 → A3/A4 (parallel) → A5 → A6 (needs A2's `JsonValue`) → A7 → A8.
-Phase 1 gate (KYAML working) is A1..A5 + `ci.yml` build/test green. Phase 2 gate
-(JCS canonical) is A6 + corpus byte-equality. Proofs (Phase 3) are after both.
+Execute the gates in A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8 order; later
+semantic work does not retroactively turn an earlier source-check minimum into
+a runtime PASS. Phase 1 gate (KYAML working) is A1..A5 plus real build/test
+green. Phase 2 gate (JCS canonical) is A6 plus corpus byte-equality. Proofs
+(Phase 3) are after both.
 

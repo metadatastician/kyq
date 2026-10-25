@@ -147,9 +147,12 @@ Tasks:
 1. Finish the release pipeline and publish linux-x64 plus SHA256SUMS (and the
    other supported platform assets) for v0.2.1 or the appropriate newer tag.
    Make --version agree with the release identity.
-2. Add one small consumer fixture that reads ALL stdin (not merely one line),
-   reads argv, writes distinct stdout/stderr, and returns a non-zero status for
-   invalid input. Use only the documented AffineScript/WASI surface.
+2. Add one small MULTI-MODULE consumer fixture that reads ALL stdin (not
+   merely one line), reads argv, writes distinct stdout/stderr, and returns a
+   non-zero status for invalid input. Include an imported struct/enum and a
+   transitive helper so the run proves imported code is really linked/executed,
+   not merely checked or skipped by root-only evaluation. Use only the
+   documented AffineScript/WASI surface.
 3. Compile it for the actual WASI command/component target and run it under a
    pinned wasmtime. Assert exact stdout bytes, stderr bytes, argv behaviour,
    stdin including embedded newlines and EOF, and exit 0/2. If stdin is still

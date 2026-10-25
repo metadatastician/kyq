@@ -10,6 +10,10 @@ This records the A3 source port in `docs/AFFINESCRIPT_STRICT_PORT.adoc`.
 It is a compiler parse/check result, not a build, execution, test, conformance,
 WASM, release, or CLI attestation.
 
+*Current-state update:* later A4–A7 source gates raised the ratchet to 11/11;
+see `docs/status/SOURCE_CHECK_CLOSEOUT.adoc`. This file preserves the A3
+checkpoint and its imported-struct diagnosis.
+
 toc::[]
 
 == Outcome
