@@ -1,10 +1,10 @@
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 #
-# CI for kyq. It runs only the checks that can run today. There is no build,
-# test or release job: AffineScript 0.1.1 does not parse the sources, so any
-# such job could only upload a placeholder (docs/status/ROADMAP.adoc,
-# Blockers). Add them back when `affinescript compile` produces a module.
+# CI for kyq. It runs only the checks that can run today. The source census
+# and compiler controls are not build, test, runtime, or release gates. A7 host
+# I/O and an end-to-end compiled CLI are not established, so no placeholder
+# artifact is uploaded (docs/status/ROADMAP.adoc, Blockers).
 name: CI
 
 on:
@@ -121,7 +121,7 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/affinescript-src" rev-parse HEAD)" = "$AFFINE_COMMIT"
           test -f "$RUNNER_TEMP/affinescript-src/stdlib/prelude.affine"
 
-      - name: Record A1 grammar and current-source census
+      - name: Record A1 grammar, A2 controls, and current-source census
         env:
           A1_ANNOTATIONS: '1'
         run: |
@@ -130,3 +130,4 @@ jobs:
           export AFFINESCRIPT_STDLIB="$RUNNER_TEMP/affinescript-src/stdlib"
           test -x "$AFFINESCRIPT"
           bash scripts/affine-a1-probe.sh
+          bash scripts/affine-a2-controls.sh
