@@ -233,7 +233,7 @@ fn parse_mapping(lines: [String], start: Int, base_indent: Int) -> BlockResult {
         match split_first_colon(line) {
           Some((k, v)) => {
             if mapping_has_key(pairs, k) {
-              panic("Duplicate mapping key '" ++ k ++ "' at line " ++ to_string(i));
+              panic("Duplicate mapping key '" ++ k ++ "' at line " ++ int_to_string(i));
             }
             if v != "" {
               let scalar = parse_scalar(v);
