@@ -9,6 +9,7 @@ module Kyaml;
 use Kyaml.Ast::*;
 use Kyaml.Lexer::{ new as new_lexer, tokenize, TokError };
 use Kyaml.Parser::{ parse_yaml as parse_yaml_impl, parse_k8s_resources };
+use Kyaml.Lint.RequiredFields::{ lint_required_fields };
 use prelude::{ Option, Some, None };
 
 // Imported struct definitions are absent from v0.1.1's importer type
@@ -50,9 +51,9 @@ pub fn validate_yaml_syntax(input: String) -> Bool {
 pub fn lint_k8s(yaml: String) -> [LintIssueValue] {
   let mut issues: [LintIssueValue] = [];
   match parse_yaml(yaml) {
-    // A5 will add the required-fields rule; its current implementation is a
-    // stub, so a successful parse contributes no issues in A4.
-    ParseSuccess(_) => (),
+    ParseSuccess(doc) => {
+      issues = issues ++ lint_required_fields(doc);
+    },
     ParseError(err) => {
       let issue: LintIssueValue = #{
         rule: "syntax-error",

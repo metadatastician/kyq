@@ -8,7 +8,29 @@ module Kyaml.Lint.RequiredFields;
 use Kyaml.Ast;
 use prelude::{ Option, Some, None };
 
-pub fn lint_required_fields(doc: AstDocument) -> [LintIssue] {
+// Keep the AST layouts structural in this importing module under v0.1.1;
+// imported struct declarations do not reach its local type environment.
+type Document = {
+  version: Option[String],
+  tags: Option[[(String, String)]],
+  root: YamlValue,
+  resources: [K8sResource]
+}
+
+type Location = {
+  line: Option[Int],
+  column: Option[Int],
+  path: Option[String]
+}
+
+type Issue = {
+  rule: String,
+  message: String,
+  severity: LintSeverity,
+  location: Location
+}
+
+pub fn lint_required_fields(doc: Document) -> [Issue] {
   // stub: no issues until the K8s schema table lands
   []
 }
@@ -19,7 +41,7 @@ fn is_k8s_resource(value: YamlValue) -> Bool {
     YamlMapping(pairs) => {
       let mut has_api: Bool = false;
       let mut has_kind: Bool = false;
-      for (k, _v) in pairs {
+      for (k, _) in pairs {
         if k == "apiVersion" { has_api = true; }
         if k == "kind" { has_kind = true; }
       }
