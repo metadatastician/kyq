@@ -427,6 +427,6 @@ pub fn parse_yaml(input: String) -> ParseResult {
 pub fn parse_k8s_resources(input: String) -> [K8sResource] {
   match parse_yaml(input) {
     ParseSuccess(doc) => doc.resources,
-    ParseError(_e) => []
+    ParseError(_) => []
   }
 }
