@@ -426,14 +426,17 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/checkout@v7.0.1
         with:
           repository: metadatastician/standards
           path: _standards
+          persist-credentials: false
       - uses: actions/checkout@v7.0.1
         with:
           repository: hyperpolymath/hypatia
           path: _hypatia
+          persist-credentials: false
       - name: Setup Elixir for the oracle
         uses: erlef/setup-beam@v1.24.1
         with:
