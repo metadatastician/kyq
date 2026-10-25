@@ -1,0 +1,217 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= kyq — Upstream blocker handoff prompts
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-25
+
+These prompts are ready to paste into an agent session in the named repository.
+They are ordered by the current kyq A1→A8 dependency order. Each prompt asks for
+evidence and forbids a fabricated PASS. They do not authorise replacing
+AffineScript in kyq, weakening action pinning, or claiming a CLI before real
+host I/O works.
+
+toc::[]
+
+== 1. `metadatastician/standards` — transfer and allowlist repair (current CI blocker)
+
+Why this is first: kyq's old-owner reusable calls now fail workflow parsing.
+After kyq corrected its caller owner, Secret Scanner and Rust CI passed and 20
+of 21 Governance jobs ran successfully. The remaining Governance job is the
+allowlist preflight: the pinned policy still allows `hyperpolymath/*` but not
+`metadatastician/standards@*`.
+
+.Paste into `metadatastician/standards`
+[source,text]
+----
+Repair the standards repository's owner-transfer fallout, with the smallest
+allowlist change first and executable self-reference cleanup as separate gated
+commits. Do not disable the preflight, broaden the policy to an unrelated
+owner, remove SHA pinning, or claim downstream success from local tests alone.
+
+Context and evidence:
+- This repository was formerly hyperpolymath/standards and is now canonically
+  metadatastician/standards (repo id 1116521501, owner id 297579217).
+- kyq main runs 40228306989, 40228307007, and 40228306992 created zero jobs:
+  GitHub said the called hyperpolymath/standards workflow was not found.
+- With kyq callers corrected to metadatastician/standards at the SAME pinned
+  commit cf8f91219d80da55cf8cbbfcd587d00c2d8798ed, Secret Scanner run
+  40231397027 and Rust CI run 40231397107 passed. Governance run 40231396992
+  ran 21 jobs; only Allowlist Preflight failed.
+- Running scripts/check-allowed-actions.sh with the pinned
+  rhodium-standard-repositories/actions-allowlist/allowed-actions.json against
+  kyq reports exactly six GAPs: governance, hypatia-scan, mirror, rust-ci,
+  scorecard, and secret-scanner reusable workflows under
+  metadatastician/standards. The current list has hyperpolymath/* but no
+  metadatastician/standards entry.
+
+Tasks:
+1. Add the narrow pattern metadatastician/standards@* to the canonical
+   allowlist and any generated copies through the repository's normal tooling.
+   Retain hyperpolymath/* until an estate-wide consumer census proves it is
+   unused; do not break callers that have not migrated.
+2. Add a regression fixture for an EXTERNAL consumer calling
+   metadatastician/standards reusable workflows after the transfer. Prove that
+   check-allowed-actions.sh accepts the six kyq caller shapes and still rejects
+   an unrelated unapproved owner.
+3. In a separate commit, inventory executable self-references (uses:,
+   actions/checkout repository:, lock keys/owner ids, and scripts that clone
+   the repo). Repoint those that must be canonical, preserving immutable SHAs,
+   symbolic lock refs, and the complete dependency closure. Leave historical
+   comments alone unless they are misleading.
+4. Run the focused allowlist/lock tests and the relevant self-CI. Record exact
+   commands, exit codes, commit SHA, and run IDs.
+
+Acceptance: the updated allowlist makes the six kyq GAPs disappear without a
+new gap; lock/closure tests pass; a real external consumer starts its reusable
+jobs. Report the standards commit kyq should pin. Do not close kyq #4/#5 or
+claim kyq Governance is green until kyq reruns with that commit.
+----
+
+== 2. `hyperpolymath/affinescript` — imported struct metadata (A3/A4 correctness)
+
+This is a real compiler defect found by A3. kyq has a scoped structural-alias
+workaround, so this does not stop the next source port, but the workaround
+should not become permanent architecture.
+
+.Paste into `hyperpolymath/affinescript`
+[source,text]
+----
+Fix imported struct type metadata and add a two-module regression. Preserve
+normal type checking and collision behaviour; do not silence the failure with
+Any, an unchecked cast, or by skipping imported-module checks.
+
+Observed with the v0.1.1 asset (source commit
+26cdb43e141a5fdce5408e00b8baca7df6862cb8):
+- A same-module struct and #{ ... } literal pass kyq's A1 record_literal probe.
+- In an importing module, both #{ ... } and Type #{ ... } fail with
+  Unify.TypeMismatch (ParseErrorDetail, {message: String, ...}).
+- kyq evidence: CI 40231861263/job 121285095979 and the unchanged result at
+  40231916406/job 121285264404. The passing structural-alias control is
+  40232018985/job 121285568489.
+- Source inspection shows imported value schemes are copied, but imported
+  struct definitions do not reach the importer's Typecheck.type_env.
+
+First minimise and confirm the reproducer with files shaped like:
+  module A;
+  pub struct ParseErrorDetail { message: String }
+
+  module B;
+  use A::*;
+  pub fn make(message: String) -> ParseErrorDetail {
+    #{ message: message }
+  }
+
+Run check from the module search root with the matching stdlib. Keep a
+same-module positive control. Cover glob and explicit-list imports, qualified
+names, and a negative control with a wrong field type. Investigate all import
+paths, including type_env and constructor metadata, rather than special-casing
+ParseErrorDetail. Respect the existing glob-collision issue #743; do not make
+its binding order less deterministic.
+
+Acceptance: the same struct definition checks identically in-module and from
+both supported import forms; wrong field types remain rejected; existing
+module/type tests pass; a planted error in an imported module is still
+reported. Record the fixed commit and provide a digest-pinnable release path so
+kyq can remove its internal ErrorDetail/Document aliases deliberately.
+----
+
+== 3. `hyperpolymath/affinescript` — released WASI CLI contract (A7 blocker)
+
+Do not write a prompt claiming upstream has no WASI work: argv and component
+support exist on newer source. The blockers for kyq are a usable released
+binary and demonstrated stdin/stdout/stderr/exit behaviour on the actual WASI
+target.
+
+.Paste into `hyperpolymath/affinescript`
+[source,text]
+----
+Complete and publish a digest-pinnable AffineScript release that a small CLI
+consumer can use end to end on WASI. Coordinate with existing #646 (v0.2.1
+binaries) instead of opening a duplicate release issue. Also inspect #180's
+shipped argv/component work and the read_line/stdin residual before changing
+code; do not re-request features already present on current main.
+
+Consumer evidence:
+- kyq pins v0.1.1 because its Linux asset and SHA256SUMS exist. That target has
+  no usable kyq argv/stdin CLI contract.
+- v0.2.0 is source-only through the release API (no assets). Issue #646 says
+  the binary pipeline was repaired and a new tag remains.
+- Current source has arg_count/arg_at and component work, while the stdlib
+  audit still identifies read_line on non-interpreter targets as a residual.
+  Verify current behaviour rather than trusting either old kyq text or stale
+  upstream notes.
+
+Tasks:
+1. Finish the release pipeline and publish linux-x64 plus SHA256SUMS (and the
+   other supported platform assets) for v0.2.1 or the appropriate newer tag.
+   Make --version agree with the release identity.
+2. Add one small consumer fixture that reads ALL stdin (not merely one line),
+   reads argv, writes distinct stdout/stderr, and returns a non-zero status for
+   invalid input. Use only the documented AffineScript/WASI surface.
+3. Compile it for the actual WASI command/component target and run it under a
+   pinned wasmtime. Assert exact stdout bytes, stderr bytes, argv behaviour,
+   stdin including embedded newlines and EOF, and exit 0/2. If stdin is still
+   stub-only, implement the smallest fd_read-based path needed and test it;
+   do not substitute Deno/Bun/Node or a JavaScript implementation as evidence.
+4. Document the exact compile/componentize/run commands, host/tool versions,
+   source commit, asset SHA-256, and any remaining filesystem limitations.
+
+Acceptance: a fresh downloader can verify the published digest and reproduce
+the wasmtime transcript. Supply the tag, peeled source commit, and Linux asset
+digest for kyq's A7 repin. Do not call file-I/O, preview2-default, or every CLI
+feature complete unless those were separately executed.
+----
+
+== 4. `hyperpolymath/ijson-jcs` — canonical-output re-read contract (later A6)
+
+This is not a reason to pause A4/A5. kyq already pins the upstream behaviour,
+including the large-float interaction, and will not invent a divergent
+canonical form.
+
+.Paste into `hyperpolymath/ijson-jcs`
+[source,text]
+----
+Resolve the documented large-float canonical-output/re-read interaction as an
+explicit, versioned contract decision with regression tests. Do not silently
+change RFC 8785 bytes or weaken safe-integer validation to make tests green.
+
+At kyq's pinned oracle commit 2c880594c8b1f823a7ab2a8a830c894975a1792e:
+- float token 1e20 is accepted;
+- canon emits 100000000000000000000, as required by the ECMAScript number
+  rules used for JCS;
+- strict re-reading rejects that integer-looking token as outside the safe
+  integer range;
+- fix can therefore write a file that check subsequently calls INVALID.
+
+First add tests that pin canon bytes, strict re-read behaviour, check/fix exit
+codes, -0, 1e21, and the safe-integer boundaries. Then decide explicitly which
+CLI/domain contract is correct without pretending provenance survives in the
+output bytes. If the behaviour is intentionally non-reflexive, make that
+machine-readable and prevent fix from claiming it produced a checkable
+canonical file; if the validation or CLI domain changes, version and document
+it and assess downstream compatibility. Keep JCS byte compatibility tests
+independent from the policy decision.
+
+Acceptance: maintainers record the chosen invariant, every CLI path agrees
+with it, tests cover the edge cases, and kyq receives a commit plus migration
+notes. Do not ask kyq to fork the JCS algorithm or hide the existing gap.
+----
+
+== Explicit non-prompts
+
+No upstream request is currently needed for these items:
+
+* `Map<K,V>`: v0.1.1 already ships `stdlib/dict.affine` over association lists,
+  and kyq's AST passes with that representation.
+* `break`/`continue`, working `if let`, or `Char` ordering for kyq: A3 uses
+  structured loops, `match`, and `char_to_int`; the parser now passes `check`.
+* Multi-segment paths, record syntax in one module, or Option constructors:
+  A1's positive controls cover them; imported Option constructors pass.
+* `github/gh-actions-lock`: its earlier own-SHA metadata issue is not the new
+  standards transfer/allowlist failure. Do not conflate the two.
+
+`MetaManifold-WebUI` is a downstream integration consumer, not a blocker for
+the current A4 source port. Its boundary inventory/adapter work should follow
+the existing ultraplan rather than masquerade as an upstream kyq blocker.

@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= AffineScript A3 parser source-check port — 2026-10-25
+:toc: macro
+:toclevels: 3
+:icons: font
+:revdate: 2026-10-25
+
+This records the A3 source port in `docs/AFFINESCRIPT_STRICT_PORT.adoc`.
+It is a compiler parse/check result, not a build, execution, test, conformance,
+WASM, release, or CLI attestation.
+
+toc::[]
+
+== Outcome
+
+The pinned v0.1.1 compiler now accepts both A3 source files:
+
+* `src/Kyaml/Lexer.affine` (already accepted at the A1 baseline);
+* `src/Kyaml/Parser.affine` (ported by this work).
+
+`benches/kyaml_parsing_bench.affine`, which imports the parser, also passes.
+The tracked-source ratchet is therefore **5 passing / 6 failing of 11**, improved
+from A1's **3 / 8**. The ratchet did not regress any previously passing file.
+
+The parser is still a minimal block-YAML implementation. The lexer remains a
+stub. Passing `check` does not execute the parser against the KYAML corpus and
+does not establish the normative contract in `docs/KYAML_SPEC.adoc`.
+
+== Authoritative evidence
+
+[cols="1,3",options="header"]
+|===
+| Item | Value
+
+| Source commit
+| `960ec643c422e4b41c79f6d5a90a3d2b91427e63`
+
+| CI
+| Run https://github.com/metadatastician/kyq/actions/runs/40232018985[40232018985],
+  job https://github.com/metadatastician/kyq/actions/runs/40232018985/job/121285568489[121285568489]
+
+| Toolchain
+| The A1 digest-pinned `hyperpolymath/affinescript` v0.1.1 Linux asset and its
+  matching stdlib. The asset's `--version` output remains the already-recorded
+  `0.1.0` upstream version-reporting mismatch.
+
+| Evidence channel
+| The job's `A1 source census` annotation. The job name remains A1 because it is
+  the reusable census harness; this row is an A3 result, not a new toolchain or
+  build gate.
+|===
+
+.Final source census
+[cols="3,1,4",options="header"]
+|===
+| Tracked file | Check rc | Result
+
+| `benches/kyaml_parsing_bench.affine`
+| 0
+| `Type checking passed`; this also exercises parser import resolution.
+
+| `src/Kyaml/Ast.affine`
+| 0
+| `Type checking passed`.
+
+| `src/Kyaml/Ijson.affine`
+| 0
+| `Type checking passed`.
+
+| `src/Kyaml/Lexer.affine`
+| 0
+| `Type checking passed`.
+
+| `src/Kyaml/Parser.affine`
+| 0
+| `Type checking passed`.
+
+| `src/Kyaml.affine`
+| 124
+| Direct parse error at 16:9; A4 is next.
+
+| `src/Kyaml/Jcs.affine`
+| 124
+| Direct parse error at 131:15; A6 remains pending.
+
+| `src/Kyaml/Lint/RequiredFields.affine`
+| 124
+| Direct parse error at 22:15; A5 remains pending.
+
+| `src/Main.affine`
+| 124
+| Import reaches the A4 `src/Kyaml.affine` parse error.
+
+| `tests/kyaml_parser_test.affine`
+| 124
+| Direct parse error at 19:15; no test execution is claimed.
+
+| `tests/lint_rules_test.affine`
+| 124
+| Direct parse error at 19:15; no test execution is claimed.
+|===
+
+== Accepted port deltas
+
+The source changes were made in small commits, each followed by the same pinned
+compiler census:
+
+. Replaced `break`/`continue` with structured loop conditions and explicit
+  `parsing`/`scanning` booleans. Run 40231554414 moved the first parser error
+  from 23:12 to 124:67.
+. Split binary minus from numeric literals (`len(t) - 1`, not `len(t)-1`).
+  Without whitespace, v0.1.1 can lex `-1` as a negative literal. Run 40231646231
+  moved the first error to 407:15.
+. Replaced underscore-prefixed names such as `_v`/`_e` with the wildcard `_`.
+. Replaced unresolved `to_string(i)` with `int_to_string(i)` and terminated an
+  intermediate `match` statement with `;`.
+. Converted character ordering checks to ASCII code-point comparisons with
+  `char_to_int`; v0.1.1's ordering operators are numeric. Run 40231861263 reached
+  record type checking.
+. Kept the public AST records unchanged but added parser-internal structural
+  aliases with identical layouts. This works around the imported-struct defect
+  described below. Run 40232018985 is the passing result above.
+
+== Imported-struct upstream defect
+
+A same-module struct literal passes A1's `record_literal` probe. In the parser,
+however, both `#{ ... }` and `ParseErrorDetail #{ ... }` produced:
+
+[source,text]
+----
+Unification error: (Unify.TypeMismatch
+  (ParseErrorDetail,
+   {context: Option[String], column: Option[Int], line: Option[Int], message: String}))
+----
+
+The v0.1.1 resolver copies imported value schemes but not the imported struct
+definitions into the importer's `type_env`. The importer therefore treats the
+struct name as an opaque constructor while the literal has a record type. The
+parser's private `ErrorDetail` and `Document` aliases retain exactly the public
+AST layouts and unify with `ParseError`/`ParseSuccess`. This is a scoped local
+workaround, not evidence that imported structs work upstream. The upstream
+handoff prompt is in `docs/UPSTREAM_HANDOFFS.adoc`.
+
+== Remaining limits
+
+* A4–A8 remain open. The current six source failures are listed above.
+* No `affinescript compile`, `affinescript test`, WASM invocation, or CLI run has
+  been performed.
+* The executable JavaScript conformance harness remains an oracle, not the
+  AffineScript implementation or a substitute for it.
+* The parser's duplicate-key `panic`, minimal scalar support, rejected document
+  streams, and stub lexer still require semantic/conformance work; source-check
+  acceptance does not make them spec-compliant.
+* A7 still needs a released toolchain with demonstrated argv/stdin/stdout/
+  stderr and exit-code behaviour. No PyYAML-removal claim is made.

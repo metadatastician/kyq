@@ -10,14 +10,20 @@ This is the executable evidence for task A1 in
 `docs/AFFINESCRIPT_STRICT_PORT.adoc`. It is a grammar/source census, not a
 build, test, WASM, release, or CLI attestation.
 
+*Current-state update (2026-10-25):* this file preserves the A1 baseline. A3
+subsequently raised the ratchet to 5 passing / 6 failing; see
+`docs/status/A3_PARSER_PORT.adoc` and CI run 40232018985. The A1 diagnostics
+below remain the evidence for the original 3/8 baseline, not a claim that the
+parser still fails.
+
 toc::[]
 
 == Outcome
 
 *A1's minimal slice clears.* The zero-byte file, `module A1;`, and a minimal
-typed function all have `parse` and `check` exit code 0. The full port does not
-clear: the current ratchet is **3 passing / 8 failing across 11 tracked
-`.affine` files**. The three passing files are `src/Kyaml/Ast.affine`,
+typed function all have `parse` and `check` exit code 0. The full port did not
+clear in this run: the baseline ratchet was **3 passing / 8 failing across 11
+tracked `.affine` files**. The three passing files were `src/Kyaml/Ast.affine`,
 `src/Kyaml/Ijson.affine`, and `src/Kyaml/Lexer.affine`.
 
 No `MISSING_TOOLCHAIN` occurred in the authoritative run. A local negative
@@ -199,7 +205,7 @@ it does not imply resolution or type correctness.
 | The corresponding simple `match value { x => x }` accepted and checked.
 |===
 
-== Current source ratchet
+== A1 source-ratchet baseline
 
 All rows below ran with the pinned compiler and stdlib from `src/`. An
 `ImportError` row means the named entry point reached module loading but an

@@ -20,7 +20,7 @@ STATE completion percentage (5%) was dropped.
 | Milestone | Done
 
 | Phase 0: Project scaffolding | 100%
-| Phase 1: Core KYAML parser (11 files drafted; 3 pass `check`, 8 fail, see Blockers) | 5%
+| Phase 1: Core KYAML parser (11 files drafted; 5 pass `check`, 6 fail, see Blockers) | 5%
 | Phase 1b: Basic lint rules | 0%
 | Phase 1c: Basic query commands | 0%
 | Phase 1d: Pretty-print and format | 0%
@@ -60,6 +60,12 @@ have direct parse failures, and 2 entry points fail through those imports.
 This supersedes “none of them compiles” as the current state, not as a report
 of the original measurement. It is not a full build/test/WASM/CLI PASS. Exact
 probes and diagnostics: `docs/status/A1_GRAMMAR_CENSUS.adoc`, CI run 40092388430.
++
+*Update 2026-10-25 (A3 source check):* `Parser.affine` now also passes, and the
+parsing benchmark passes through that import. The current ratchet is **5 passing
+/ 6 failing of 11**. This is a source-check improvement only; no parser test,
+build, WASM, conformance, or CLI execution is claimed. Evidence and the scoped
+imported-struct workaround: `docs/status/A3_PARSER_PORT.adoc`, CI run 40232018985.
 . **The gap is a port, not a fix.** Read against the v0.1.1 grammar
   (`lib/parser.mly`), not yet confirmed by the compiler past line 7: about
   half of the 2456 lines need touching. Roughly 5% is mechanical (`module X;`
@@ -68,8 +74,8 @@ probes and diagnostics: `docs/status/A1_GRAMMAR_CENSUS.adoc`, CI run 40092388430
   A1 is no variant named after a builtin type such as `String` or `Int`;
   record literals and multi-segment paths passed their probes. The rest is a
   rewrite: legacy map types, `break`/`continue` and working `if let` binding
-  are rejected. The AST now uses association lists and passes `check`, while
-  parser/query control flow still needs structured equivalents.
+  are rejected. The AST and parser now pass `check` with association lists and
+  structured loop equivalents; query control flow still needs the same treatment.
 . **No program input in the WebAssembly target.** The 0.1.1 toolchain gives
   a compiled module no access to argv or stdin, so even a parsing build
   could not read a manifest from the command line.
@@ -120,8 +126,8 @@ Durations are the original plan's and start once blocker 1 clears.
 
 == Next actions
 
-. Preserve the 2026-10-24 ratchet of 3 passing files and reduce the 8 failures
-  through A2–A6; re-run all 11 tracked `.affine` files against each pinned
+. Preserve the 2026-10-25 A3 ratchet of 5 passing files and reduce the 6 failures
+  through A4–A6; re-run all 11 tracked `.affine` files against each pinned
   AffineScript release and record the first full-tree `check` pass.
 . Plant a type error in an imported module and confirm `affinescript check`
   rejects it, so a "passed" result is known to cover imports.

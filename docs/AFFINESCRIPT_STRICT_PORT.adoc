@@ -17,10 +17,11 @@ toc::[]
 
 `docs/status/ROADMAP.adoc` Blockers records the original 2026-10-07 result:
 AffineScript 0.1.1 did not parse any of the then-9 tracked `.affine` files.
-The 2026-10-24 A1 rerun supersedes that as the *current* state: the minimal
-slice passes and 3 of the now-11 files pass standalone `check`, but 8 tracked
-files still fail and there is no full build/test/WASM PASS. Until the whole
-tree compiles, `just build`/`test`/`wasm` still fail by design
+The 2026-10-24 A1 rerun established the minimal slice and a 3-passing/8-failing
+baseline. The 2026-10-25 A3 source-check port improves that to **5 passing / 6
+failing**: Ast, Ijson, Lexer, Parser, and the parsing benchmark now pass. There
+is still no full build/test/WASM PASS. Until the whole tree compiles,
+`just build`/`test`/`wasm` still fail by design
 (`no-fabricated-artefacts`). A Rust bootstrap would clear the blocker sooner,
 but the owner explicitly rejected it — so we fix the AffineScript side. See
 `docs/status/A1_GRAMMAR_CENSUS.adoc` for the run, exact diagnostics, and
@@ -63,8 +64,12 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
   and mutation helpers still need the same representation discipline.
 
 | A3 — Port `Lexer.affine` + `Parser.affine`
-| `while`, `break`/`continue`, `if let` → structured equivalents; `&mut T`
-  → `mut T`; enum commas; import syntax. Keep the YAML 1.2 lex rules.
+| *Source-check minimum cleared 2026-10-25.* Both files pass the pinned v0.1.1
+  `check`, and the parsing benchmark passes through the parser import. The port
+  uses structured loop conditions, numeric character ordering, wildcards, and
+  scoped structural aliases for the imported-struct defect. Evidence:
+  `docs/status/A3_PARSER_PORT.adoc` (CI 40232018985). The lexer is still a stub
+  and no parser execution/conformance PASS is claimed.
 
 | A4 — Port `Kyaml.affine` + `Main.affine` query helpers
 | `split_path`, `query_value`, `set_value` and friends — same control-flow
@@ -98,15 +103,22 @@ Roughly 5% mechanical, 25% semi-mechanical, rest rewrite:
 
 == Upstream tasks (affinescript side)
 
+Ready-to-paste, evidence-scoped handoffs for the current standards, compiler,
+WASI-release, and later I-JSON/JCS blockers are in
+`docs/UPSTREAM_HANDOFFS.adoc`.
+
 A1 did not file upstream issues. Do not file the disproved path/record/use
 claims as grammar gaps. Remaining candidates, each with a minimal reproducer,
 are:
 
+* Imported struct definitions must survive module imports in `type_env`; A3
+  confirmed this defect and used scoped structural aliases until it is fixed.
 * Variant names that collide with builtin types, if upstream wants to support
   them; the in-repo `YamlString`/`YamlInt` spellings already avoid the issue.
-* Container type: `Map<K,V>` or equivalent, with `contains`/`get`/`set`.
+* No `Map<K,V>` request is needed for the port: v0.1.1 `stdlib/dict.affine`
+  already provides association-list `contains`/`get`/`set` operations.
 * Control flow: `break`/`continue` or structured loop alternative, `if let`
-  (or `match` desugaring).
+  (or `match` desugaring). A3's structured equivalents are sufficient locally.
 * WASM I/O: argv/stdin/stdout/stderr imports for the WASM target (blocker 3).
 * Verify `affinescript check` covers imports: plant a type error in an
   imported module and confirm it is rejected.
