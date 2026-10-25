@@ -404,7 +404,7 @@ pub fn parse_yaml(input: String) -> ParseResult {
     YamlMapping(pairs) => {
       let mut has_api: Bool = false;
       let mut has_kind: Bool = false;
-      for (k, _v) in pairs {
+      for (k, _) in pairs {
         if k == "apiVersion" { has_api = true; }
         if k == "kind" { has_kind = true; }
       }
