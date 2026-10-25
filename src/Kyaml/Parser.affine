@@ -414,7 +414,7 @@ pub fn parse_yaml(input: String) -> ParseResult {
       }
     },
     _ => ()
-  }
+  };
   let doc: AstDocument = #{
     version: None,
     tags: None,
