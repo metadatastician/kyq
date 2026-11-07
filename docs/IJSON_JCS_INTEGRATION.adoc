@@ -196,7 +196,7 @@ compile yet), or that any of this is formally proved.
 `coordination.k9` requires implementation code to be AffineScript. The gate in
 `conformance/` is a *verification harness*, not the kyq implementation: it is
 plain ESM JavaScript with no dependencies, in the same spirit and the same role
-as `scripts/check-action-pinning.js` and the other repo-owned tooling under
+as `scripts/check-action-pinning.sh` and the other repo-owned tooling under
 `scripts/`. It exists so the contracts in this document can be executed at all,
 since `src/*.affine` does not compile under AffineScript 0.1.1
 (`docs/status/A1_GRAMMAR_CENSUS.adoc`).

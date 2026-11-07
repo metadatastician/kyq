@@ -99,6 +99,18 @@ reporting a false pinning PASS:
 
 This local check does not replace GitHub's resolver or the lock-sync gate.
 
+The 2026-11-07 adoption follow-up replaces that historical JavaScript checker
+with `scripts/check-action-pinning.sh` (Bash, yq and jq). The earlier blanket
+own-SHA rejection also rejected a canonical job-level reusable record generated
+by standards' relocker. The replacement permits that shape only when a parsed
+workflow actually calls the repository/ref as a reusable job and the record has
+a non-empty closure list and matching immutable identity. Leaf actions and
+unused records cannot claim the exemption. Twelve controls include quoted flow
+keys, case-sensitive tags, uppercase commit identities and a planted leaf pretending to
+be a reusable. They run in the active Conformance Gate, independently of the
+manually disabled legacy Workflow Security Linter. Canonical closure/sync checks
+and GitHub execution remain separate evidence requirements.
+
 === Called-side pin and closure — `009cbcd`
 
 All six standards callers moved from `0b1898e…` to `cf8f9121…`: Governance,

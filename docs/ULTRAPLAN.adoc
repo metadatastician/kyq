@@ -89,7 +89,7 @@ real detection job with Cargo jobs correctly skipped. See
 evidence; no Scorecard/Hypatia/Mirror runtime PASS is claimed.
 
 * Current: `actions.lock` is transitively closed and SHA-pinned for the
-  `hyperpolymath/standards` `cf8f9121...` closure. `check-action-pinning.js`
+  `hyperpolymath/standards` `cf8f9121...` closure. `check-action-pinning.sh`
   reports *all action refs are pinned* and rejects backend-invalid own-SHA
   `ref` metadata.
 * Historical 2026-10-14: PR #8 pinned the four callers to `0b1898e...`, and
@@ -238,7 +238,7 @@ signal is left acknowledged-but-unhandled.
   `Governance: failure` (non-startup) with logs. Link siblings.
 * *Lockfile contract*: run `scripts/check-lock-sync.sh` in CI already via
   `lock-sync-gate.yml` (lockless, immune to self-stall). No change needed, but
-  add a `Justfile` recipe `lock-check` that calls both `check-action-pinning.js`
+  add a `Justfile` recipe `lock-check` that calls both `check-action-pinning.sh`
   and `check-lock-sync.sh` so contributors can reproduce locally.
 * *Permissions audit*: verify each workflow's `permissions:` block is minimal
   (most are `contents: read`). `scorecard.yml` needs `security-events: write`
