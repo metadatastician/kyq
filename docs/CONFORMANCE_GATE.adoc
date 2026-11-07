@@ -43,7 +43,7 @@ part of the contract.
 The gate is **not** the kyq implementation. `coordination.k9` requires all
 implementation code to be AffineScript, and the AffineScript implementation
 under `src/` does not yet compile (see `docs/status/A1_GRAMMAR_CENSUS.adoc`). The
-gate is repo-owned tooling in the same role as `scripts/check-action-pinning.js`:
+gate is repo-owned tooling in the same role as `scripts/check-action-pinning.sh`:
 it is the oracle the implementation must satisfy. Two rules keep that honest,
 and both are binding:
 

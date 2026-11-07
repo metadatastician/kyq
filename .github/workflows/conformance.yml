@@ -55,6 +55,11 @@ jobs:
       - name: Run the gate's test suite
         run: node --test conformance/test/*.test.js
 
+      - name: Workflow pinning contracts and repository check
+        run: |
+          bash tests/workflows/check_action_pinning_test.sh
+          bash scripts/check-action-pinning.sh
+
       - name: Gate the repository's own manifests
         run: |
           set -euo pipefail

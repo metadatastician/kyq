@@ -171,7 +171,7 @@ lock-check:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Checking action pinning..."
-    node scripts/check-action-pinning.js
+    bash scripts/check-action-pinning.sh
     if command -v gawk >/dev/null 2>&1; then \
       bash scripts/check-lock-sync.sh; \
     else \
