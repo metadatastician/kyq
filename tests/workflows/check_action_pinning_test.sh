@@ -46,6 +46,18 @@ yq -i '.dependencies[].uses = []' "$tmp/wf/actions.lock"
 check fail 'empty reusable closure cannot claim exemption'
 yq -i '.dependencies[].ref = "v1" | .dependencies[].commit = "sha1-2222222222222222222222222222222222222222"' "$tmp/wf/actions.lock"
 check fail 'lock digest must match immutable key'
+upper=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+cat > "$tmp/wf/actions.lock" <<EOF
+dependencies:
+  'example/action@$upper':
+    ref: '$upper'
+    commit: sha1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    uses: ['actions/checkout@$sha']
+EOF
+printf 'jobs: {test: {uses: "example/action/.github/workflows/test.yml@%s"}}\n' "$upper" > "$tmp/wf/test.yml"
+check fail 'uppercase immutable key cannot bypass digest comparison'
+yq -i '.dependencies[].commit = "sha1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$tmp/wf/actions.lock"
+check pass 'uppercase immutable key normalizes to the recorded digest'
 printf 'jobs: []\n' > "$tmp/wf/test.yml"
 check fail 'malformed job collection blocks'
 echo "PASS: $passed parsed workflow pin controls"

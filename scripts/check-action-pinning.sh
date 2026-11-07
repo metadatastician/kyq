@@ -38,7 +38,8 @@ fi
 jq -e -s --slurpfile dependencies "$tmp/dependencies" '
   def key:
     capture("^(?<owner>[^/]+)/(?<repo>[^/@]+)(?:/[^@]+)?@(?<ref>[^@]+)$")
-    | (.owner | ascii_downcase) + "/" + (.repo | ascii_downcase) + "@" + .ref;
+    | (.owner | ascii_downcase) + "/" + (.repo | ascii_downcase) + "@" +
+      (.ref | if test("^[0-9a-fA-F]{40}$") then ascii_downcase else . end);
   add as $refs |
   ($dependencies[0] | to_entries | map({key:(.key | key),value:.value}) | from_entries) as $deps |
   ([$refs[] | select(.kind == "job" and (.ref | test("^[^./][^@]*/\\.github/workflows/[^@]+@[^@]+$"))) | .ref | key]) as $callers |
@@ -50,14 +51,14 @@ jq -e -s --slurpfile dependencies "$tmp/dependencies" '
     then "invalid lock identity: " + $key
     elif ($record.ref | type) != "string" or $record.ref == "" then "missing ref: " + $key
     elif ($record.ref | test("^[0-9a-fA-F]{40}$")) then
-      if $record.ref == $pin and ($callers | index($key)) != null and
+      if ($record.ref | ascii_downcase) == $pin and ($callers | index($key)) != null and
          ($record.uses | type) == "array" and ($record.uses | length) > 0 and
          all($record.uses[]; type == "string")
       then empty else "own-SHA ref outside a declared reusable edge: " + $key end
     else empty end] +
    [$refs[] | . as $site | .ref as $ref |
     if ($ref | startswith("./") or startswith("$/") or startswith("docker://")) then empty
-    elif ($ref | test("^[^/]+/[^@]+@[0-9a-f]{40}$")) then empty
+    elif ($ref | test("^[^/]+/[^@]+@[0-9a-fA-F]{40}$")) then empty
     else ($ref | key) as $key |
       if $deps | has($key) then empty else "unlocked ref in " + $site.file + ": " + $ref end
     end]) as $errors |
