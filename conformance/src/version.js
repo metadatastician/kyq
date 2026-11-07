@@ -5,8 +5,8 @@
 // repeats it for humans and for the packaging script; `conformance/test/
 // version.test.js` asserts the two agree, so a release cannot drift.
 
-/** Gate version. Bump with `conformance/VERSION` and the corpus schema. */
-export const VERSION = "0.1.0";
+/** Contract version. Bump with `conformance/VERSION` and package metadata. */
+export const VERSION = "0.2.0";
 
 /** Schema URI of the fixture/vector files under `conformance/fixtures`. */
 export const CORPUS_SCHEMA = "kyq-conformance-corpus-v1";

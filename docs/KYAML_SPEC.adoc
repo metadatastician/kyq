@@ -4,9 +4,9 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-10-25
-:revnumber: 0.1.0
-:status: NORMATIVE — executable gate in `conformance/` (v0.1.0)
+:revdate: 2026-11-07
+:revnumber: 0.2.0
+:status: NORMATIVE — executable gate in `conformance/` (v0.2.0)
 
 This is the normative home for "kyaml". A YAML document is kyaml iff it
 conforms to this spec. The spec is a *subset* of YAML 1.2; anything outside the
@@ -23,10 +23,14 @@ toc::[]
   `kyq-conformance-v<version>`) implements §2–§7. `docs/CONFORMANCE_GATE.adoc`
   is the operational manual: install, CLI contract, fixtures, CI invocation.
 * The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
-* Version `0.1.0` is the *contract* version. It changes when a document that
+* Version `0.2.0` is the *contract* version. It changes when a document that
   used to conform stops conforming, or the other way round. The corpus in
   `conformance/fixtures/` is the arbiter: a change of verdict is a version
   change, not a test tweak.
+  Version `0.2.0` accepts legal flow trailing commas and a single leading BOM,
+  and rejects the full YAML 1.2 non-printable character set. The fixture file
+  structure is unchanged (`kyq-conformance-corpus-v1`). This source revision
+  does not itself establish that a release tag or artifact has been published.
 * Out of scope for this document: lint rules (§ "Lint rules" below),
   `kyq get/set/del`, templates (`{{VAR}}`), K8s schema validation and
   performance targets. They are tracked in `docs/status/ROADMAP.adoc` and are
@@ -133,7 +137,10 @@ YAML 1.2 chomping (`-`, `+`) and explicit-indent (`1`–`9`) indicators.
 * Double-quoted escapes: the YAML 1.2 set (`\0 \a \b \t \n \v \f \r \e \" \\ \/
   \N \_ \L \P \xXX \uXXXX \UXXXXXXXX`, space). An unknown escape is
   `BAD_ESCAPE`; `\uD800`-style lone surrogates are `LONE_SURROGATE`.
-* Raw C0 control characters (other than TAB) are `CONTROL_CHARACTER`.
+* YAML 1.2 §5.1's `c-printable` restriction applies throughout the stream,
+  including comments, directives and anchor names. Excluded C0/C1 characters
+  and DEL are `CONTROL_CHARACTER`; U+FFFE/U+FFFF are `NONCHARACTER`.
+  Escaped controls remain legal string content, subject to the I-JSON bridge.
 
 .Core Schema resolution of a plain scalar (normative)
 |===
@@ -161,8 +168,9 @@ Consequences that MUST be relied on, because they differ from YAML 1.1 habits:
 
 === Flow collections
 
-`[...]` and `{...}` are accepted, may span lines, and nest. Trailing commas are
-rejected (`FLOW_TRAILING_COMMA`); an unterminated collection is
+`[...]` and `{...}` are accepted, may span lines, and nest. A single trailing
+comma after an entry is accepted, as in YAML 1.2 §7.4 and Kubernetes KYAML
+(KEP-5295). Empty entries and consecutive commas are refused. An unterminated collection is
 `UNTERMINATED_FLOW`. Inside a flow collection a plain scalar ends at `,`, `]`,
 `}`, a `:` that separates a key, or end of line.
 
@@ -200,7 +208,7 @@ rejected (`FLOW_TRAILING_COMMA`); an unterminated collection is
 | `%TAG`, `%YAML` other than 1.2 | `UNSUPPORTED_DIRECTIVE`, `UNSUPPORTED_VERSION`
 | Application or `!!timestamp` tag | `UNSUPPORTED_TAG`
 | Multi-line plain or quoted scalar | `UNEXPECTED_INDENT`, `UNTERMINATED_QUOTE`
-| Flow trailing comma / unterminated flow | `FLOW_TRAILING_COMMA`, `UNTERMINATED_FLOW`
+| Empty flow entry / unterminated flow | `EMPTY_VALUE` (sequence), `EMPTY_KEY` (mapping), `UNTERMINATED_FLOW`
 | Tab indentation | `TAB_INDENT`
 | Bare CR line break | `INVALID_NEWLINE`
 | Content on a `---` line | `DOC_MARKER_CONTENT`

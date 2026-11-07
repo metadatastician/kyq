@@ -9,8 +9,8 @@
 //     identity (`a`, `"a"` and `!!str a` are one key), with line/column and the
 //     pointer path of the offending mapping;
 //   * complex (`? `) keys, `%TAG` directives, `%YAML` versions other than 1.2,
-//     non-core tags, multi-line plain/quoted scalars and trailing commas in flow
-//     collections are refused with a specific code;
+//     non-core tags and multi-line plain/quoted scalars are refused with a
+//     specific code; YAML/KYAML flow trailing commas are accepted;
 //   * anchors and aliases are resolved, alias cycles are impossible because an
 //     alias may only name an already-completed node, and expansion is bounded.
 //
@@ -157,10 +157,15 @@ export class KyamlParser {
   }
 
   /**
-   * Parse the whole stream.
+   * Parse the whole stream, accepting one leading BOM and normalizing CRLF.
+   *
+   * Raw characters must satisfy YAML's printable-character rules even in
+   * comments and directives. A final document start with no content is dropped.
+   * Advances the parser cursor and records anchors as documents are parsed.
    *
    * @returns {Node[]} One node per document; an empty stream yields `[]`.
-   * @throws {ConformanceError}
+   * @throws {ConformanceError} For a bare CR, a later BOM, non-printable input,
+   *   or invalid KYAML; errors from document parsing propagate to the caller.
    */
   parseStream() {
     this.normaliseNewlines();
@@ -168,14 +173,31 @@ export class KyamlParser {
       // A single leading BOM is legal and does not move the first column.
       this.i = 1;
     }
-    if (this.text.includes("\uFEFF")) {
-      const at = this.text.indexOf("\uFEFF", 1);
+    const at = this.text.indexOf("\uFEFF", this.i);
+    if (at !== -1) {
       const loc = this.locationOf(at);
       throw this.error(
         "BOM_MIDSTREAM",
         "a byte order mark is only allowed at the start of a stream",
         loc,
       );
+    }
+
+    // YAML 1.2 §5.1 c-printable applies to the entire stream, including
+    // comments, directives and property names, before syntax can discard them.
+    for (let index = this.i; index < this.text.length;) {
+      const point = this.text.codePointAt(index);
+      if (!(point === 9 || point === 10 || point === 13 || point === 0x85 ||
+            (point >= 0x20 && point <= 0x7e) ||
+            (point >= 0xa0 && point <= 0xd7ff) ||
+            (point >= 0xe000 && point <= 0xfffd) || point >= 0x10000)) {
+        throw this.error(
+          point === 0xfffe || point === 0xffff ? "NONCHARACTER" : "CONTROL_CHARACTER",
+          `non-printable YAML character U+${point.toString(16).toUpperCase().padStart(4, "0")}`,
+          this.locationOf(index),
+        );
+      }
+      index += point > 0xffff ? 2 : 1;
     }
 
     /** @type {Node[]} */
@@ -267,19 +289,23 @@ export class KyamlParser {
   /**
    * Location of an absolute offset (used only for whole-input checks).
    *
-   * @param {number} offset
-   * @returns {Loc}
+   * A leading BOM has zero width; columns count Unicode code points and only
+   * LF advances the line. The parser cursor is unchanged.
+   *
+   * @param {number} offset  UTF-16 code-unit offset into the current text.
+   * @returns {Loc} One-based line and column.
    */
   locationOf(offset) {
     let line = 1;
     let column = 1;
-    for (let index = 0; index < offset; index += 1) {
+    for (let index = this.text.startsWith("\uFEFF") ? 1 : 0; index < offset;) {
       if (this.text[index] === "\n") {
         line += 1;
         column = 1;
       } else {
         column += 1;
       }
+      index += this.text.codePointAt(index) > 0xffff ? 2 : 1;
     }
     return { line, column };
   }
@@ -1160,9 +1186,17 @@ export class KyamlParser {
   /**
    * Parse a `|` / `>` block scalar, including chomping and indent indicators.
    *
-   * @param {number} parentIndent
-   * @param {Loc} loc
+   * Consumes the header (including an optional comment) and content lines,
+   * stopping before a document marker or a nonblank line below content indent.
+   * Literal style preserves line breaks; folded style folds ordinary text lines.
+   * Chomping controls trailing newlines in the returned string.
+   *
+   * @param {number} parentIndent  Indentation of the indicator's line, in spaces;
+   *   explicit indent indicators are relative to this value.
+   * @param {Loc} loc  Source location assigned to the scalar.
    * @returns {ScalarNode}
+   * @throws {ConformanceError} For an invalid header or tab indentation, or
+   *   when the resulting string fails I-JSON Unicode validation.
    */
   parseBlockScalar(parentIndent, loc) {
     const style = this.bump() === "|" ? "literal" : "folded";
@@ -1175,15 +1209,18 @@ export class KyamlParser {
       explicitIndent = Number(this.bump());
     }
     while (this.peek() === " " || this.peek() === "\t") this.bump();
-    if (this.peek() === "#") this.skipToEndOfLine();
-    else if (!this.eof && this.peek() !== "\n") {
+    if (this.peek() === "#") {
+      // skipToEndOfLine consumes the newline too.
+      this.skipToEndOfLine();
+    } else if (!this.eof && this.peek() !== "\n") {
       throw this.error(
         "BAD_BLOCK_SCALAR",
         "unexpected character in a block scalar header",
         loc,
       );
+    } else if (!this.eof) {
+      this.bump(); // header line break without a comment
     }
-    if (!this.eof) this.bump(); // header line break
 
     /** @type {{text: string, moreIndented: boolean, blank: boolean}[]} */
     const lines = [];
@@ -1283,10 +1320,16 @@ export class KyamlParser {
   }
 
   /**
-   * Parse a flow collection (may span lines).
+   * Parse a flow collection (may span lines), consuming its closing delimiter.
    *
-   * @param {string} path
-   * @returns {Node}
+   * Accepts empty collections and a single trailing comma after an entry.
+   * Leading or consecutive commas are errors; omitted mapping values are null.
+   *
+   * @param {string} path  Pointer path of the collection for diagnostics.
+   * @returns {Node} A sequence or mapping node.
+   * @throws {ConformanceError} For empty entries (`EMPTY_VALUE` in sequences,
+   *   `EMPTY_KEY` in mappings), missing separators, unterminated collections,
+   *   duplicate or merge keys; errors from parsing keys and items propagate.
    */
   parseFlowNode(path) {
     const loc = this.loc();
@@ -1304,17 +1347,14 @@ export class KyamlParser {
         if (this.eof) {
           throw this.error("UNTERMINATED_FLOW", "unterminated flow sequence", loc, path);
         }
+        if (this.peek() === ",") {
+          throw this.error("EMPTY_VALUE", "empty flow sequence entry", this.loc(), path);
+        }
         items.push(this.parseFlowItem(joinPath(path, String(items.length))));
         this.skipFlowGap();
         if (this.peek() === ",") {
           this.bump();
           this.skipFlowGap();
-          if (this.peek() === "]") {
-            throw this.error(
-              "FLOW_TRAILING_COMMA",
-              "a trailing comma in a flow collection is outside the KYAML subset",
-            );
-          }
           continue;
         }
         if (this.peek() === "]") {
@@ -1378,12 +1418,6 @@ export class KyamlParser {
       if (this.peek() === ",") {
         this.bump();
         this.skipFlowGap();
-        if (this.peek() === "}") {
-          throw this.error(
-            "FLOW_TRAILING_COMMA",
-            "a trailing comma in a flow collection is outside the KYAML subset",
-          );
-        }
         continue;
       }
       if (this.peek() === "}") {
