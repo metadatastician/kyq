@@ -157,10 +157,15 @@ export class KyamlParser {
   }
 
   /**
-   * Parse the whole stream.
+   * Parse the whole stream, accepting one leading BOM and normalizing CRLF.
+   *
+   * Raw characters must satisfy YAML's printable-character rules even in
+   * comments and directives. A final document start with no content is dropped.
+   * Advances the parser cursor and records anchors as documents are parsed.
    *
    * @returns {Node[]} One node per document; an empty stream yields `[]`.
-   * @throws {ConformanceError}
+   * @throws {ConformanceError} For a bare CR, a later BOM, non-printable input,
+   *   or invalid KYAML; errors from document parsing propagate to the caller.
    */
   parseStream() {
     this.normaliseNewlines();
@@ -284,8 +289,11 @@ export class KyamlParser {
   /**
    * Location of an absolute offset (used only for whole-input checks).
    *
-   * @param {number} offset
-   * @returns {Loc}
+   * A leading BOM has zero width; columns count Unicode code points and only
+   * LF advances the line. The parser cursor is unchanged.
+   *
+   * @param {number} offset  UTF-16 code-unit offset into the current text.
+   * @returns {Loc} One-based line and column.
    */
   locationOf(offset) {
     let line = 1;
@@ -1178,9 +1186,17 @@ export class KyamlParser {
   /**
    * Parse a `|` / `>` block scalar, including chomping and indent indicators.
    *
-   * @param {number} parentIndent
-   * @param {Loc} loc
+   * Consumes the header (including an optional comment) and content lines,
+   * stopping before a document marker or a nonblank line below content indent.
+   * Literal style preserves line breaks; folded style folds ordinary text lines.
+   * Chomping controls trailing newlines in the returned string.
+   *
+   * @param {number} parentIndent  Indentation of the indicator's line, in spaces;
+   *   explicit indent indicators are relative to this value.
+   * @param {Loc} loc  Source location assigned to the scalar.
    * @returns {ScalarNode}
+   * @throws {ConformanceError} For an invalid header or tab indentation, or
+   *   when the resulting string fails I-JSON Unicode validation.
    */
   parseBlockScalar(parentIndent, loc) {
     const style = this.bump() === "|" ? "literal" : "folded";
@@ -1304,10 +1320,16 @@ export class KyamlParser {
   }
 
   /**
-   * Parse a flow collection (may span lines).
+   * Parse a flow collection (may span lines), consuming its closing delimiter.
    *
-   * @param {string} path
-   * @returns {Node}
+   * Accepts empty collections and a single trailing comma after an entry.
+   * Leading or consecutive commas are errors; omitted mapping values are null.
+   *
+   * @param {string} path  Pointer path of the collection for diagnostics.
+   * @returns {Node} A sequence or mapping node.
+   * @throws {ConformanceError} For empty entries (`EMPTY_VALUE` in sequences,
+   *   `EMPTY_KEY` in mappings), missing separators, unterminated collections,
+   *   duplicate or merge keys; errors from parsing keys and items propagate.
    */
   parseFlowNode(path) {
     const loc = this.loc();
