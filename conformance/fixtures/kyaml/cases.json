@@ -158,12 +158,9 @@
       "path": "metadata/name"
     },
     {
-      "file": "invalid/flow-trailing-comma.yaml",
-      "expect": "invalid",
-      "code": "FLOW_TRAILING_COMMA",
-      "line": 1,
-      "column": 17,
-      "path": ""
+      "file": "valid/flow-trailing-comma.yaml",
+      "expect": "valid",
+      "documents": 1
     },
     {
       "file": "invalid/huge-integer.yaml",

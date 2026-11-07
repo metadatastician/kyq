@@ -133,7 +133,10 @@ YAML 1.2 chomping (`-`, `+`) and explicit-indent (`1`–`9`) indicators.
 * Double-quoted escapes: the YAML 1.2 set (`\0 \a \b \t \n \v \f \r \e \" \\ \/
   \N \_ \L \P \xXX \uXXXX \UXXXXXXXX`, space). An unknown escape is
   `BAD_ESCAPE`; `\uD800`-style lone surrogates are `LONE_SURROGATE`.
-* Raw C0 control characters (other than TAB) are `CONTROL_CHARACTER`.
+* YAML 1.2 §5.1's `c-printable` restriction applies throughout the stream,
+  including comments, directives and anchor names. Excluded C0/C1 characters
+  and DEL are `CONTROL_CHARACTER`; U+FFFE/U+FFFF are `NONCHARACTER`.
+  Escaped controls remain legal string content, subject to the I-JSON bridge.
 
 .Core Schema resolution of a plain scalar (normative)
 |===
@@ -161,8 +164,9 @@ Consequences that MUST be relied on, because they differ from YAML 1.1 habits:
 
 === Flow collections
 
-`[...]` and `{...}` are accepted, may span lines, and nest. Trailing commas are
-rejected (`FLOW_TRAILING_COMMA`); an unterminated collection is
+`[...]` and `{...}` are accepted, may span lines, and nest. A single trailing
+comma after an entry is accepted, as in YAML 1.2 §7.4 and Kubernetes KYAML
+(KEP-5295). Empty entries and consecutive commas are refused. An unterminated collection is
 `UNTERMINATED_FLOW`. Inside a flow collection a plain scalar ends at `,`, `]`,
 `}`, a `:` that separates a key, or end of line.
 
@@ -200,7 +204,7 @@ rejected (`FLOW_TRAILING_COMMA`); an unterminated collection is
 | `%TAG`, `%YAML` other than 1.2 | `UNSUPPORTED_DIRECTIVE`, `UNSUPPORTED_VERSION`
 | Application or `!!timestamp` tag | `UNSUPPORTED_TAG`
 | Multi-line plain or quoted scalar | `UNEXPECTED_INDENT`, `UNTERMINATED_QUOTE`
-| Flow trailing comma / unterminated flow | `FLOW_TRAILING_COMMA`, `UNTERMINATED_FLOW`
+| Empty flow entry / unterminated flow | `EMPTY_VALUE`, `UNTERMINATED_FLOW`
 | Tab indentation | `TAB_INDENT`
 | Bare CR line break | `INVALID_NEWLINE`
 | Content on a `---` line | `DOC_MARKER_CONTENT`
