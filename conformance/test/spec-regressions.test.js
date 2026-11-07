@@ -30,15 +30,19 @@ test("block header comments consume exactly the header newline", () => {
   for (const newline of ["\n", "\r\n"]) {
     assert.equal(json(`a: | # comment${newline}  one${newline}  two${newline}`),
       '{"a":"one\\ntwo\\n"}');
-    assert.equal(json("a: >- # comment\n  one\n  two\n"), '{"a":"one two"}');
+    assert.equal(json(`a: >- # comment${newline}  one${newline}  two${newline}`),
+      '{"a":"one two"}');
   }
 });
 
 test("flow trailing commas are legal; empty entries are not", () => {
   assert.equal(json("{ports: [80, 443,], enabled: true,}"),
     '{"enabled":true,"ports":[80,443]}');
-  for (const text of ["[,]", "[1,,2]", "{,}", "{a: 1,,}"]) {
-    assert.throws(() => parse(text));
+  for (const text of ["[,]", "[1,,2]"]) {
+    assert.throws(() => parse(text), { code: "EMPTY_VALUE" });
+  }
+  for (const text of ["{,}", "{a: 1,,}"]) {
+    assert.throws(() => parse(text), { code: "EMPTY_KEY" });
   }
 });
 

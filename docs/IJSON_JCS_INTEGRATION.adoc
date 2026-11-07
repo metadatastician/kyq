@@ -6,7 +6,7 @@
 :icons: font
 :revdate: 2026-10-25
 :revnumber: 0.1.0
-:status: NORMATIVE — executable gate in `conformance/` (v0.1.0)
+:status: NORMATIVE — executable gate in `conformance/` (v0.2.0; I-JSON/JCS contract unchanged)
 
 This is the normative home for "guaranteed works for the ijson-jcs scheme,
 canonical format". It states the contract `kyq` inherits from
