@@ -4,9 +4,9 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-11-07
-:revnumber: 0.2.0
-:status: NORMATIVE — describes `conformance/` at v0.2.0
+:revdate: 2026-11-09
+:revnumber: 0.3.0
+:status: NORMATIVE — describes `conformance/` at v0.3.0
 
 This document is the manual for the executable gate that enforces
 `docs/KYAML_SPEC.adoc` (KYAML) and `docs/IJSON_JCS_INTEGRATION.adoc`
@@ -80,15 +80,15 @@ The gate is distributed as a **versioned tarball attached to a git tag**, not as
 a floating branch and not (yet) through a package registry. Pinning has three
 parts, and all three are required for a consumer's claim to be honest:
 
-. a **tag** — `kyq-conformance-v0.2.0`;
+. a **tag** — `kyq-conformance-v0.3.0`;
 . a **SHA-256** of the tarball, from that release's `SHA256SUMS`;
-. the gate's own `--version` output (`kyq-conformance 0.2.0`), asserted in CI so
+. the gate's own `--version` output (`kyq-conformance 0.3.0`), asserted in CI so
   a silently different artifact cannot pass as the pinned one.
 
 "Available now" and "available at the first tag" are different claims, so here is
 the boundary. `conformance/VERSION`, the corpus and the tooling are in-tree at
-v0.2.0, and they are what the self-test job exercises on every push. A *release
-artifact* exists once the `kyq-conformance-v0.2.0` tag is pushed. Until then, a
+v0.3.0, and they are what the self-test job exercises on every push. A *release
+artifact* exists once the `kyq-conformance-v0.3.0` tag is pushed. Until then, a
 consumer that vendors the gate pins the **commit** plus the digest it builds
 itself, and MUST NOT describe that as a released version:
 
@@ -106,7 +106,7 @@ installation:
 [source,bash]
 ----
 # 1. fetch the release artifact and verify it against the published digest
-tag=kyq-conformance-v0.2.0
+tag=kyq-conformance-v0.3.0
 gh release download "$tag" \
   --repo metadatastician/kyq \
   --pattern 'kyq-conformance-*.tar.gz' \
@@ -116,7 +116,7 @@ sha256sum --check --strict SHA256SUMS
 # 2. unpack and assert the version the tarball claims
 tar -xzf "kyq-conformance-${tag#kyq-conformance-v}.tar.gz"
 cd "kyq-conformance-${tag#kyq-conformance-v}"
-node bin/kyq-conformance.mjs --version   # kyq-conformance 0.2.0
+node bin/kyq-conformance.mjs --version   # kyq-conformance 0.3.0
 ----
 
 `--check --strict` matters: without `--strict`, `sha256sum` skips files it cannot
@@ -227,8 +227,8 @@ Error codes include `DUPLICATE_KEY`, `NON_STRING_KEY`, `UNSAFE_INTEGER`,
 |===
 | Path | Count | What it pins
 
-| `fixtures/kyaml/valid/*.yaml` | 10 | inputs that must parse, and their canonical form
-| `fixtures/kyaml/invalid/*.yaml` | 32 | inputs that must be refused, and why
+| `fixtures/kyaml/valid/*.yaml` | 14 | inputs that must parse, and their canonical form
+| `fixtures/kyaml/invalid/*.yaml` | 35 | inputs that must be refused, and why
 | `fixtures/kyaml/cases.json` | — | the single expectation per fixture (reason text, code, line/column)
 | `fixtures/ijson/vectors.json` | 37 | strict I-JSON acceptance/refusal and JCS bytes
 | `fixtures/ijson/check.json` | 13 | file bytes → `check` exit status, including BOM, CRLF and double-newline
@@ -259,13 +259,14 @@ the vector tests.
 | Suite | Property
 
 | `test/json.test.js` (104) | I-JSON strictness and JCS bytes: key sorting by UTF-16 code units, ES number formatting, escaping, duplicate keys, surrogates, noncharacters, BOM handling, unsafe integers, the non-reflexive float vectors
-| `test/corpus.test.js` (81) | every KYAML fixture accepts/refuses as declared, with a located reason and the declared code; corpus invariants above
-| `test/formatter.test.js` (37) | for every valid fixture: `parse(fmt(x))` has the same JCS image (VALUE), `fmt(fmt(x)) == fmt(x)` byte-equal (FIXED), and exactly one trailing newline or zero bytes (HYGIENE)
-| `test/bridge.test.js` (48) | φ: integer range checks, finiteness, non-string keys, alias/node budget, multi-document streams, JSON-Pointer paths
+| `test/corpus.test.js` (91) | every KYAML fixture accepts/refuses as declared, with a located reason and the declared code; corpus invariants above
+| `test/formatter.test.js` (41) | for every valid fixture: `parse(fmt(x))` has the same JCS image (VALUE), `fmt(fmt(x)) == fmt(x)` byte-equal (FIXED), and exactly one trailing newline or zero bytes (HYGIENE)
+| `test/bridge.test.js` (144) | φ: integer range checks, finiteness, non-string keys, alias/node budget, multi-document streams, JSON-Pointer paths
 | `test/cli.test.js` (43) | exit codes, printed lines, `--report json`, `fix` rewriting, `canon` newline rule, `--`, usage errors, and the CLI vectors transcribed from `ijson-jcs`
+| `test/spec-regressions.test.js` (6) | the specification cases generated in code rather than committed as bytes: every excluded C0/C1 control in eight lexical contexts, the printable boundary and escaped controls, a single leading BOM, block-header comments, flow trailing commas and empty entries (noncharacters are pinned by `invalid/noncharacter.yaml`)
 |===
 
-313 tests in total. Formatter idempotence (`fmt(fmt(x)) == fmt(x)`, compared as
+429 tests in total. Formatter idempotence (`fmt(fmt(x)) == fmt(x)`, compared as
 bytes) is a property over the whole valid corpus, not one hand-picked example:
 `fixtures/kyaml/valid/canonical.yaml` is a fixed point by construction, and
 `examples/deployment.yaml` is deliberately *not* canonical, so both directions
@@ -302,7 +303,7 @@ jobs:
           persist-credentials: false
       - name: Fetch the pinned gate
         env:
-          TAG: kyq-conformance-v0.2.0
+          TAG: kyq-conformance-v0.3.0
           SHA256SUMS: <sha256 of SHA256SUMS from the release>
         run: |
           set -euo pipefail
@@ -313,7 +314,7 @@ jobs:
           tar -xzf "kyq-conformance-${TAG#kyq-conformance-v}.tar.gz"
           echo "KYQ_CONFORMANCE=$PWD/kyq-conformance-${TAG#kyq-conformance-v}" >> "$GITHUB_ENV"
       - name: Assert the pinned version
-        run: test "$(node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" --version)" = 'kyq-conformance 0.2.0'
+        run: test "$(node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" --version)" = 'kyq-conformance 0.3.0'
       - name: Gate every manifest
         run: |
           set -euo pipefail
@@ -369,7 +370,7 @@ node conformance/tools/ijson-jcs-diff.mjs --bin ./ijson-jcs    # diff against a 
 
 The tool collects every canonicalisation, refusal and `check` case from
 `fixtures/ijson/`, `fixtures/oracle/` and the transcribed `cliVectors` — 76 as of
-v0.2.0 — and fails if the oracle and the gate disagree on bytes, on exit status,
+v0.3.0 — and fails if the oracle and the gate disagree on bytes, on exit status,
 or on the printed line. A pinned-commit mismatch, an unavailable toolchain or an
 unbuildable crate exits **2**; none of them can produce a green run.
 
