@@ -263,7 +263,7 @@ the vector tests.
 | `test/formatter.test.js` (41) | for every valid fixture: `parse(fmt(x))` has the same JCS image (VALUE), `fmt(fmt(x)) == fmt(x)` byte-equal (FIXED), and exactly one trailing newline or zero bytes (HYGIENE)
 | `test/bridge.test.js` (144) | φ: integer range checks, finiteness, non-string keys, alias/node budget, multi-document streams, JSON-Pointer paths
 | `test/cli.test.js` (43) | exit codes, printed lines, `--report json`, `fix` rewriting, `canon` newline rule, `--`, usage errors, and the CLI vectors transcribed from `ijson-jcs`
-| `test/spec-regressions.test.js` (6) | the specification cases generated in code rather than committed as bytes: every excluded C0/C1 control and noncharacter in eight lexical contexts, a single leading BOM, block-header comments, flow trailing commas and empty entries
+| `test/spec-regressions.test.js` (6) | the specification cases generated in code rather than committed as bytes: every excluded C0/C1 control in eight lexical contexts, the printable boundary and escaped controls, a single leading BOM, block-header comments, flow trailing commas and empty entries (noncharacters are pinned by `invalid/noncharacter.yaml`)
 |===
 
 429 tests in total. Formatter idempotence (`fmt(fmt(x)) == fmt(x)`, compared as
