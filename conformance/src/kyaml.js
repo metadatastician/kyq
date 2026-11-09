@@ -9,8 +9,8 @@
 //     identity (`a`, `"a"` and `!!str a` are one key), with line/column and the
 //     pointer path of the offending mapping;
 //   * complex (`? `) keys, `%TAG` directives, `%YAML` versions other than 1.2,
-//     non-core tags and multi-line plain/quoted scalars are refused with a
-//     specific code; YAML/KYAML flow trailing commas are accepted;
+//     non-core tags, multi-line plain/quoted scalars and trailing commas in flow
+//     collections are refused with a specific code;
 //   * anchors and aliases are resolved, alias cycles are impossible because an
 //     alias may only name an already-completed node, and expansion is bounded.
 //
@@ -23,6 +23,9 @@ import { BOM, assertIJsonString, decodeUtf8 } from "./utf8.js";
 
 /** Maximum number of nodes after alias expansion (SEC-1 / anchor bombs). */
 export const NODE_BUDGET = 100000;
+
+/** Longest implicit mapping key, in characters (YAML 1.2 §7.4.2). */
+const MAX_IMPLICIT_KEY = 1024;
 
 /**
  * @typedef {{line: number, column: number}} Loc
@@ -66,8 +69,10 @@ const FLOAT = /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$/;
 const INF = /^[-+]?\.(?:inf|Inf|INF)$/;
 const NAN = /^\.(?:nan|NaN|NAN)$/;
 
-const ANCHOR_NAME = /[^\s,[\]{}]+/y;
-const ALIAS_NAME = /[^\s,[\]{}]+/y;
+// YAML separation is space, tab and line break; a no-break space or other
+// Unicode space is part of a name (ns-anchor-char).
+const ANCHOR_NAME = /[^ \t\n,[\]{}]+/y;
+const ALIAS_NAME = /[^ \t\n,[\]{}]+/y;
 
 /**
  * Resolve a plain scalar with the YAML 1.2 Core Schema.
@@ -152,20 +157,17 @@ export class KyamlParser {
     this.atContent = false;
     /** @type {Map<string, Node>} */
     this.anchors = new Map();
+    /** @type {number|null} The indentation a flow collection's lines must reach. */
+    this.flowMin = null;
     /** @type {string[]} */
     this.tags = [];
   }
 
   /**
-   * Parse the whole stream, accepting one leading BOM and normalizing CRLF.
-   *
-   * Raw characters must satisfy YAML's printable-character rules even in
-   * comments and directives. A final document start with no content is dropped.
-   * Advances the parser cursor and records anchors as documents are parsed.
+   * Parse the whole stream.
    *
    * @returns {Node[]} One node per document; an empty stream yields `[]`.
-   * @throws {ConformanceError} For a bare CR, a later BOM, non-printable input,
-   *   or invalid KYAML; errors from document parsing propagate to the caller.
+   * @throws {ConformanceError}
    */
   parseStream() {
     this.normaliseNewlines();
@@ -173,6 +175,7 @@ export class KyamlParser {
       // A single leading BOM is legal and does not move the first column.
       this.i = 1;
     }
+    // Any BOM after the one just skipped is smuggled in mid-stream.
     const at = this.text.indexOf("\uFEFF", this.i);
     if (at !== -1) {
       const loc = this.locationOf(at);
@@ -183,36 +186,37 @@ export class KyamlParser {
       );
     }
 
-    // YAML 1.2 §5.1 c-printable applies to the entire stream, including
-    // comments, directives and property names, before syntax can discard them.
-    for (let index = this.i; index < this.text.length;) {
-      const point = this.text.codePointAt(index);
-      if (!(point === 9 || point === 10 || point === 13 || point === 0x85 ||
-            (point >= 0x20 && point <= 0x7e) ||
-            (point >= 0xa0 && point <= 0xd7ff) ||
-            (point >= 0xe000 && point <= 0xfffd) || point >= 0x10000)) {
-        throw this.error(
-          point === 0xfffe || point === 0xffff ? "NONCHARACTER" : "CONTROL_CHARACTER",
-          `non-printable YAML character U+${point.toString(16).toUpperCase().padStart(4, "0")}`,
-          this.locationOf(index),
-        );
-      }
-      index += point > 0xffff ? 2 : 1;
-    }
-
     /** @type {Node[]} */
     const documents = [];
     let sawDirective = false;
+    // Whether the stream is between documents: at its start or after a `...`
+    // marker, where directives for the next document may appear (YAML 1.2
+    // §9.1.4). A directive needs a `---` after it.
+    let ended = true;
+    const missingDocStart = () =>
+      this.error(
+        "MISSING_DOC_START",
+        "a `---` document start marker is required after a directive",
+        this.loc(),
+      );
+    this.assertPrintable();
     this.skipGap();
 
-    while (!this.eof) {
+    for (;;) {
+      if (this.eof) {
+        if (sawDirective) throw missingDocStart();
+        break;
+      }
       if (this.atDirective()) {
-        if (documents.length > 0) {
+        if (!ended) {
           throw this.error(
             "UNSUPPORTED_DIRECTIVE",
-            "a directive is only allowed before the first document",
+            "a directive must come before a document, after `...` if one precedes it",
             this.loc(),
           );
+        }
+        if (sawDirective && /^%YAML(?:[ \t\n]|$)/.test(this.text.slice(this.i, this.i + 6))) {
+          throw this.error("DUPLICATE_DIRECTIVE", "a document has at most one `%YAML`", this.loc());
         }
         this.parseDirective();
         sawDirective = true;
@@ -220,17 +224,23 @@ export class KyamlParser {
         continue;
       }
       if (this.atMarker("...")) {
+        if (sawDirective) throw missingDocStart();
         this.consumeMarker();
+        ended = true;
         this.skipGap();
         continue;
       }
       if (this.atMarker("---")) {
         this.consumeMarker();
+        // Anchors are scoped to one document (YAML 1.2 §7.1).
+        this.anchors = new Map();
         sawDirective = false;
+        ended = false;
         this.skipGap();
         if (this.eof) {
-          // A final `---` with no content produces an empty document; YAML
-          // makes it `null`, but a trailing empty document is dropped (spec §4.1).
+          // A final `---` with no content starts an empty document: null, as
+          // YAML reads it (the YAML test suite's 6XDY, PUW8).
+          documents.push(this.nullNode(this.loc()));
           break;
         }
         if (this.atMarker("---") || this.atMarker("...")) {
@@ -254,6 +264,7 @@ export class KyamlParser {
           this.loc(),
         );
       }
+      ended = false;
       documents.push(this.parseContentDocument());
     }
 
@@ -289,23 +300,23 @@ export class KyamlParser {
   /**
    * Location of an absolute offset (used only for whole-input checks).
    *
-   * A leading BOM has zero width; columns count Unicode code points and only
-   * LF advances the line. The parser cursor is unchanged.
-   *
-   * @param {number} offset  UTF-16 code-unit offset into the current text.
-   * @returns {Loc} One-based line and column.
+   * @param {number} offset
+   * @returns {Loc}
    */
   locationOf(offset) {
     let line = 1;
     let column = 1;
-    for (let index = this.text.startsWith("\uFEFF") ? 1 : 0; index < offset;) {
+    // A leading BOM is zero-width, as parse() treats it.
+    const start = offset > 0 && this.text[0] === "﻿" ? 1 : 0;
+    // Columns count code points, as bump() does: a character outside the BMP
+    // is two UTF-16 units but one column.
+    for (let index = start; index < offset; index += this.text.codePointAt(index) > 0xffff ? 2 : 1) {
       if (this.text[index] === "\n") {
         line += 1;
         column = 1;
       } else {
         column += 1;
       }
-      index += this.text.codePointAt(index) > 0xffff ? 2 : 1;
     }
     return { line, column };
   }
@@ -412,7 +423,7 @@ export class KyamlParser {
           continue;
         }
         if (this.peek() === "#") {
-          this.skipToEndOfLine();
+          this.skipComment();
           continue;
         }
         this.atContent = true;
@@ -424,7 +435,7 @@ export class KyamlParser {
         continue;
       }
       if (char === "#") {
-        this.skipToEndOfLine();
+        this.skipComment();
         continue;
       }
       if (char === "\n") {
@@ -439,7 +450,33 @@ export class KyamlParser {
   }
 
   /**
-   * Consume to (and including) the next line break.
+   * Refuse the first character outside YAML's printable set (YAML 1.2 §5.1,
+   * c-printable) anywhere in the stream, at that character: a C0 control
+   * other than tab and line feed, DEL, a C1 control other than NEL (U+0085),
+   * or the noncharacters U+FFFE and U+FFFF. Surrogates cannot occur in a
+   * decoded string. Scalars, comments, directives and properties are all
+   * covered by this one check.
+   *
+   * @returns {void}
+   */
+  assertPrintable() {
+    const bad = /[\u0000-\u0008\u000B-\u001F\u007F-\u0084\u0086-\u009F\uFFFE\uFFFF]/u.exec(this.text);
+    if (bad === null) return;
+    const code = bad[0].codePointAt(0);
+    const hex = code.toString(16).toUpperCase().padStart(4, "0");
+    if (code >= 0xfffe) {
+      throw this.error("NONCHARACTER", `noncharacter U+${hex} is not printable YAML`, this.locationOf(bad.index));
+    }
+    throw this.error(
+      "CONTROL_CHARACTER",
+      `raw control character U+${hex} is not printable YAML`,
+      this.locationOf(bad.index),
+    );
+  }
+
+  /**
+   * Consume to (and including) the next line break. (Comment text was checked
+   * to be printable with the rest of the stream.)
    *
    * @returns {void}
    */
@@ -450,6 +487,23 @@ export class KyamlParser {
   }
 
   /**
+   * A `#` starts a comment only at the start of a line or after white space
+   * (YAML 1.2 §6.6): `"x"#y` and `[1]#y` are not commented.
+   *
+   * @returns {void}
+   */
+  skipComment() {
+    const before = this.i > 0 ? this.text[this.i - 1] : "\n";
+    if (this.column !== 1 && before !== " " && before !== "\t" && before !== "\n") {
+      throw this.error(
+        "BAD_COMMENT",
+        "a comment must be separated from what precedes it by white space",
+      );
+    }
+    this.skipToEndOfLine();
+  }
+
+  /**
    * Consume trailing spaces and an optional comment, then require end of line.
    *
    * @returns {void}
@@ -457,7 +511,7 @@ export class KyamlParser {
   expectEndOfLine() {
     while (this.peek() === " " || this.peek() === "\t") this.bump();
     if (this.peek() === "#") {
-      this.skipToEndOfLine();
+      this.skipComment();
       return;
     }
     if (this.eof || this.peek() === "\n") return;
@@ -487,7 +541,8 @@ export class KyamlParser {
    */
   markerAt(index, marker) {
     const text = this.text.slice(index, index + 3);
-    if (!/^[.-]{3}$/.test(text)) return false;
+    // Only the two marker spellings: `--.` or `-.-` is a plain scalar.
+    if (text !== "---" && text !== "...") return false;
     if (marker !== undefined && text !== marker) return false;
     const after = this.text[index + 3] ?? "";
     return after === "" || after === " " || after === "\t" || after === "\n" || after === "#";
@@ -503,7 +558,7 @@ export class KyamlParser {
     for (let count = 0; count < 3; count += 1) this.bump();
     while (this.peek() === " " || this.peek() === "\t") this.bump();
     if (this.peek() === "#") {
-      this.skipToEndOfLine();
+      this.skipComment();
       return;
     }
     if (!this.eof && this.peek() !== "\n") {
@@ -534,12 +589,18 @@ export class KyamlParser {
     while (!this.eof && this.peek() !== "\n") {
       line += this.bump();
     }
-    const [name, ...args] = line.trim().split(/\s+/);
+    // YAML separates directive fields with spaces and tabs only (s-separate-
+    // in-line): `%YAML` + U+00A0 + `1.2` is one unknown directive name.
+    const fields = line.replace(/^[ \t]+|[ \t]+$/g, "");
+    const [name, ...words] = fields.split(/[ \t]+/);
+    // A comment may follow a directive's arguments (`%YAML 1.2 # note`).
+    const comment = words.findIndex((word) => word.startsWith("#"));
+    const args = comment === -1 ? words : words.slice(0, comment);
     if (name === "%YAML") {
       if (args.length !== 1 || args[0] !== "1.2") {
         throw this.error(
           "UNSUPPORTED_VERSION",
-          `only \`%YAML 1.2\` is supported, got \`${line.trim()}\``,
+          `only \`%YAML 1.2\` is supported, got \`${fields}\``,
           loc,
         );
       }
@@ -561,7 +622,10 @@ export class KyamlParser {
    */
   parseContentDocument() {
     const indent = this.column - 1;
-    const node = this.parseBlock(indent, "");
+    // The document root is a block node at indentation -1 (YAML 1.2 §9.2): a
+    // root flow collection may close at column 1, and a root block scalar's
+    // content may start there.
+    const node = this.parseBlock(indent, "", -1);
     this.skipGap();
     if (!this.eof && !this.atMarker("---") && !this.atMarker("...")) {
       throw this.error(
@@ -579,11 +643,11 @@ export class KyamlParser {
    * @param {string} path    Pointer path of this node.
    * @returns {Node}
    */
-  parseBlock(indent, path, lineIndent = indent) {
+  parseBlock(indent, path, lineIndent = indent, seqAt = null) {
     if (this.eof) return this.nullNode(this.loc());
     if (this.isSeqEntry()) return this.parseSeq(indent, path);
     if (this.isMapEntry()) return this.parseMap(indent, path);
-    return this.parseInlineNode(indent, path, "root", lineIndent);
+    return this.parseInlineNode(indent, path, "root", lineIndent, [null, null], seqAt);
   }
 
   /**
@@ -605,10 +669,15 @@ export class KyamlParser {
    * @returns {boolean}
    */
   isMapEntry() {
-    // A line opening with a flow indicator, anchor, alias, tag or block scalar
-    // indicator is a node, not a `key:` entry — scanning it for a colon would
-    // find one inside the flow collection or the quoted scalar.
-    if ("{[&*!|>".includes(this.peek())) return false;
+    // An anchor, tag or alias that falls on a key is outside the KYAML subset.
+    if ("&*!".includes(this.peek()) && this.peek() !== "") {
+      if (this.isPropertyKey()) this.throwKeyProperty(this.loc());
+      return false;
+    }
+    // A line opening with a flow indicator or block scalar indicator is a
+    // node, not a `key:` entry — scanning it for a colon would find one inside
+    // the flow collection.
+    if ("{[|>".includes(this.peek())) return false;
     if (this.peek() === "?" && /[ \t\n]/.test(this.peek(1) || "\n")) {
       throw this.error(
         "UNSUPPORTED_COMPLEX_KEY",
@@ -626,7 +695,7 @@ export class KyamlParser {
     for (let index = this.i; index < this.text.length; index += 1) {
       const char = this.text[index];
       if (char === "\n") return false;
-      if (char === "#" && (index === this.i || /\s/.test(this.text[index - 1]))) {
+      if (char === "#" && (index === this.i || /[ \t\n]/.test(this.text[index - 1]))) {
         return false;
       }
       if (char === ":" && this.isSeparatorAfter(index + 1)) {
@@ -634,6 +703,63 @@ export class KyamlParser {
       }
     }
     return false;
+  }
+
+  /**
+   * Whether a line that opens with an anchor, tag or alias is a mapping entry,
+   * so that the property would fall on its key (`&a b: 1`, `!!str b: 1`,
+   * `*a : 1`). Read as a plain key, `!!str a` would be a different key from `a`.
+   *
+   * @returns {boolean}
+   */
+  isPropertyKey() {
+    const token = (index) => {
+      while (index < this.text.length && !/[ \t\n,[\]{}]/.test(this.text[index])) index += 1;
+      return index;
+    };
+    const blanks = (index) => {
+      while (this.text[index] === " " || this.text[index] === "\t") index += 1;
+      return index;
+    };
+    let index = this.i;
+    while (this.text[index] === "&" || this.text[index] === "!") {
+      index = blanks(token(index + 1));
+    }
+    const char = this.text[index] ?? "";
+    if (char === "*") {
+      const after = blanks(token(index + 1));
+      return this.text[after] === ":" && this.isSeparatorAfter(after + 1);
+    }
+    if (char === "" || char === "\n" || char === "#") return false;
+    const saved = this.i;
+    this.i = index;
+    try {
+      return this.isMapEntry();
+    } finally {
+      this.i = saved;
+    }
+  }
+
+  /**
+   * @param {Loc} loc
+   * @returns {never}
+   */
+  throwKeyProperty(loc) {
+    throw this.error(
+      "KEY_PROPERTY",
+      "an anchor, tag or alias on a mapping key is outside the KYAML subset",
+      loc,
+    );
+  }
+
+  /**
+   * Whether the character after a `:` ends the key (`: `, `:` EOL, `:` EOF).
+   *
+   * @param {number} index
+   * @returns {boolean}
+   */
+  isFlowSeparatorAfter(index) {
+    return /^[ \t\n,[\]{}]?$/.test(this.text[index] ?? "");
   }
 
   /**
@@ -751,7 +877,11 @@ export class KyamlParser {
 
     for (;;) {
       this.bump(); // `-`
-      while (this.peek() === " " || this.peek() === "\t") this.bump();
+      let tabbed = false;
+      while (this.peek() === " " || this.peek() === "\t") {
+        if (this.peek() === "\t") tabbed = true;
+        this.bump();
+      }
       const itemPath = joinPath(path, String(items.length));
       let item;
       if (this.eof || this.peek() === "\n" || this.peek() === "#") {
@@ -763,6 +893,11 @@ export class KyamlParser {
             "BAD_INDENT",
             "a sequence entry value must be indented past the `-`",
           );
+        }
+        // A compact nested collection is indented by its `- `: with spaces
+        // only, since a tab there is indentation (YAML 1.2 s-indent).
+        if (tabbed && (this.isSeqEntry() || this.isMapEntry())) {
+          throw this.error("TAB_INDENT", "a tab may not indent a nested collection");
         }
         item = this.parseBlock(itemIndent, itemPath, indent);
       }
@@ -803,7 +938,9 @@ export class KyamlParser {
       return this.nullNode(this.loc());
     }
     const nextIndent = this.column - 1;
-    if (nextIndent > parentIndent) return this.parseBlock(nextIndent, path);
+    if (nextIndent > parentIndent) {
+      return this.parseBlock(nextIndent, path, nextIndent, allowSameIndentSeq ? parentIndent : null);
+    }
     if (allowSameIndentSeq && nextIndent === parentIndent && this.isSeqEntry()) {
       return this.parseSeq(parentIndent, path);
     }
@@ -819,8 +956,13 @@ export class KyamlParser {
    */
   parseKey() {
     const loc = this.loc();
+    if ("&*!".includes(this.peek()) && this.peek() !== "" && this.isPropertyKey()) {
+      this.throwKeyProperty(loc);
+    }
     if (this.peek() === "'" || this.peek() === '"') {
+      const start = this.i;
       const node = this.parseQuoted(loc);
+      this.checkKeyLength(this.text.slice(start, this.i), loc);
       while (this.peek() === " " || this.peek() === "\t") this.bump();
       return node;
     }
@@ -829,13 +971,14 @@ export class KyamlParser {
       const char = this.peek();
       if (char === ":" && this.isSeparatorAfter(this.i + 1)) break;
       if (char === "\n") break;
-      if (char === "#" && raw.endsWith(" ")) break;
+      if (char === "#" && /[ \t]$/.test(raw)) break;
       raw += this.bump();
     }
     raw = raw.replace(/[ \t]+$/, "");
     if (raw === "") {
       throw this.error("EMPTY_KEY", "empty mapping key", loc);
     }
+    this.checkKeyLength(raw, loc);
     return this.scalarFromRaw(raw, loc, "plain");
   }
 
@@ -845,17 +988,23 @@ export class KyamlParser {
    * @param {number} indent
    * @param {string} path
    * @param {"root"|"map-value"|"seq-item"} context
+   * @param {number} [lineIndent]
+   * @param {[string|null, string|null]} [props] Anchor and tag already read
+   *   from a line above, for properties continued on the next line.
+   * @param {number|null} [seqAt] The indentation of the mapping whose value
+   *   this is, when a block sequence may sit at that same indentation.
    * @returns {Node}
    */
-  parseInlineNode(indent, path, context, lineIndent = indent) {
+  parseInlineNode(indent, path, context, lineIndent = indent, props = [null, null], seqAt = null) {
     const loc = this.loc();
     /** @type {string|null} */
-    let anchor = null;
+    let anchor = props[0];
     /** @type {string|null} */
-    let tag = null;
+    let tag = props[1];
 
     for (;;) {
       if (this.peek() === "&") {
+        if (anchor !== null) this.throwDuplicateProperty("anchor");
         this.bump();
         ANCHOR_NAME.lastIndex = this.i;
         const match = ANCHOR_NAME.exec(this.text);
@@ -864,17 +1013,38 @@ export class KyamlParser {
         }
         anchor = match[0];
         for (let count = 0; count < anchor.length; count += 1) this.bump();
+        this.assertPropertyEnd();
         if (this.peek() === " " || this.peek() === "\t") {
           while (this.peek() === " " || this.peek() === "\t") this.bump();
         }
         continue;
       }
       if (this.peek() === "!") {
+        if (tag !== null) this.throwDuplicateProperty("tag");
         tag = this.parseTag();
+        this.assertPropertyEnd();
         while (this.peek() === " " || this.peek() === "\t") this.bump();
         continue;
       }
       break;
+    }
+
+    // A bare anchor or tag at the end of a line may be followed by more
+    // properties on the next line (`a: &x` then `  !!str v`): they are the
+    // same node's, so they go through the same one-anchor, one-tag check
+    // rather than starting a fresh node that the outer ones would overwrite.
+    if ((anchor !== null || tag !== null) && (this.eof || this.peek() === "\n" || this.peek() === "#")) {
+      const saved = { i: this.i, line: this.line, column: this.column, atContent: this.atContent };
+      this.skipGap();
+      if (
+        !this.eof &&
+        (this.peek() === "&" || this.peek() === "!") &&
+        !this.isPropertyKey() &&
+        (context === "root" ? !this.isEnclosingLine(indent, lineIndent, seqAt) : this.column - 1 > indent)
+      ) {
+        return this.parseInlineNode(indent, path, context, lineIndent, [anchor, tag], seqAt);
+      }
+      Object.assign(this, saved);
     }
 
     if (this.peek() === "*") {
@@ -912,7 +1082,12 @@ export class KyamlParser {
       // parsed as that block rather than as a nested value.
       if (context === "root") {
         this.skipGap();
-        if (this.eof || this.atMarker("---") || this.atMarker("...")) {
+        if (
+          this.eof ||
+          this.atMarker("---") ||
+          this.atMarker("...") ||
+          this.isEnclosingLine(indent, lineIndent, seqAt)
+        ) {
           node = this.nullNode(this.loc());
         } else {
           node = this.parseBlock(this.column - 1, path);
@@ -925,7 +1100,11 @@ export class KyamlParser {
       // content must be indented past the line that carries the indicator.
       node = this.parseBlockScalar(lineIndent, loc);
     } else if (this.peek() === "{" || this.peek() === "[") {
+      // Each line of a flow collection must be indented past the block node
+      // that holds it (YAML 1.2 s-flow-line-prefix).
+      this.flowMin = lineIndent + 1;
       node = this.parseFlowNode(path);
+      this.flowMin = null;
       this.expectEndOfLine();
     } else if (this.peek() === "'" || this.peek() === '"') {
       node = this.parseQuoted(loc);
@@ -943,6 +1122,17 @@ export class KyamlParser {
   }
 
   /**
+   * A node has at most one anchor and one tag (YAML 1.2 §6.9); a second would
+   * silently replace the first.
+   *
+   * @param {"anchor"|"tag"} what
+   * @returns {never}
+   */
+  throwDuplicateProperty(what) {
+    throw this.error("DUPLICATE_PROPERTY", `a node may carry only one ${what}`, this.loc());
+  }
+
+  /**
    * Parse a tag token (`!!str`, `!`, `!foo`).
    *
    * @returns {string}
@@ -951,7 +1141,7 @@ export class KyamlParser {
     const loc = this.loc();
     let tag = this.bump(); // `!`
     if (this.peek() === "!") tag += this.bump();
-    while (!this.eof && !/[\s,[\]{}]/.test(this.peek())) tag += this.bump();
+    while (!this.eof && !/[ \t\n,[\]{}]/.test(this.peek())) tag += this.bump();
     if (tag === "!") return tag;
     if (!CORE_TAGS.has(tag)) {
       throw this.error(
@@ -1002,8 +1192,13 @@ export class KyamlParser {
     if (tag === "!!str") {
       return { ...node, kind: "string", type: "string", value: node.raw };
     }
-    const resolved = resolvePlainScalar(node.raw);
+    let resolved = resolvePlainScalar(node.raw);
     const expected = tag.slice(2);
+    // The Core Schema's float pattern also matches a decimal integer, so
+    // `!!float 1` is the float 1.
+    if (expected === "float" && resolved.type === "int" && FLOAT.test(node.raw)) {
+      resolved = { type: "float", value: Number(node.raw) };
+    }
     if (resolved.type !== expected) {
       throw this.error(
         "TAG_VALUE_MISMATCH",
@@ -1030,7 +1225,8 @@ export class KyamlParser {
       if (this.eof) break;
       const char = this.peek();
       if (char === "\n") break;
-      if (char === "#" && (raw === "" || raw.endsWith(" "))) break;
+      // A comment is separated by white space: a space or a tab (YAML 1.2 §6.6).
+      if (char === "#" && (raw === "" || /[ \t]$/.test(raw))) break;
       if (char === ":" && this.isSeparatorAfter(this.i + 1)) {
         if (raw !== "" && context !== "root") {
           throw this.error(
@@ -1068,6 +1264,17 @@ export class KyamlParser {
    * @returns {ScalarNode}
    */
   scalarFromRaw(raw, loc, style) {
+    // A plain scalar may not start with an indicator (YAML 1.2 ns-plain-first):
+    // `@`, `` ` `` and `%` ever, and `-`, `?` or `:` unless a safe character
+    // follows, so `a: - item` is not the string "- item" (`-1` and `-x` are
+    // plain scalars).
+    if (/^[@`%,\]}]/.test(raw) || /^[-?:]($|[ \t])/.test(raw)) {
+      throw this.error(
+        "PLAIN_INDICATOR",
+        `a plain scalar cannot start with \`${raw[0]}\` here; quote it`,
+        loc,
+      );
+    }
     const resolved = resolvePlainScalar(raw);
     const node = /** @type {ScalarNode} */ ({
       kind: resolved.type,
@@ -1112,14 +1319,6 @@ export class KyamlParser {
       if (quote === '"' && char === "\\") {
         out += this.parseDoubleQuotedEscape();
         continue;
-      }
-      const codePoint = char.codePointAt(0);
-      if (codePoint < 0x20 && codePoint !== 0x09) {
-        throw this.error(
-          "CONTROL_CHARACTER",
-          `raw control character U+${codePoint.toString(16).toUpperCase().padStart(4, "0")} in a quoted scalar`,
-          loc,
-        );
       }
       out += char;
     }
@@ -1186,32 +1385,30 @@ export class KyamlParser {
   /**
    * Parse a `|` / `>` block scalar, including chomping and indent indicators.
    *
-   * Consumes the header (including an optional comment) and content lines,
-   * stopping before a document marker or a nonblank line below content indent.
-   * Literal style preserves line breaks; folded style folds ordinary text lines.
-   * Chomping controls trailing newlines in the returned string.
-   *
-   * @param {number} parentIndent  Indentation of the indicator's line, in spaces;
-   *   explicit indent indicators are relative to this value.
-   * @param {Loc} loc  Source location assigned to the scalar.
+   * @param {number} parentIndent
+   * @param {Loc} loc
    * @returns {ScalarNode}
-   * @throws {ConformanceError} For an invalid header or tab indentation, or
-   *   when the resulting string fails I-JSON Unicode validation.
    */
   parseBlockScalar(parentIndent, loc) {
     const style = this.bump() === "|" ? "literal" : "folded";
-    let chomp = "clip";
-    if (this.peek() === "+" || this.peek() === "-") {
-      chomp = this.bump() === "+" ? "keep" : "strip";
-    }
+    // The chomping and indentation indicators may come in either order
+    // (YAML 1.2 §8.1.1: `|2-` and `|-2`).
+    let chomp = null;
     let explicitIndent = null;
-    if (/[1-9]/.test(this.peek())) {
-      explicitIndent = Number(this.bump());
+    for (;;) {
+      if (chomp === null && (this.peek() === "+" || this.peek() === "-")) {
+        chomp = this.bump() === "+" ? "keep" : "strip";
+      } else if (explicitIndent === null && /[1-9]/.test(this.peek())) {
+        explicitIndent = Number(this.bump());
+      } else {
+        break;
+      }
     }
+    chomp ??= "clip";
     while (this.peek() === " " || this.peek() === "\t") this.bump();
     if (this.peek() === "#") {
-      // skipToEndOfLine consumes the newline too.
-      this.skipToEndOfLine();
+      // The comment runs to, and consumes, the header line break.
+      this.skipComment();
     } else if (!this.eof && this.peek() !== "\n") {
       throw this.error(
         "BAD_BLOCK_SCALAR",
@@ -1219,12 +1416,13 @@ export class KyamlParser {
         loc,
       );
     } else if (!this.eof) {
-      this.bump(); // header line break without a comment
+      this.bump(); // header line break
     }
 
-    /** @type {{text: string, moreIndented: boolean, blank: boolean}[]} */
+    /** @type {{text: string, moreIndented: boolean, blank: boolean, spaces?: number}[]} */
     const lines = [];
-    let contentIndent = explicitIndent === null ? null : parentIndent + explicitIndent;
+    // The document root sits at indentation -1; its content counts from 0.
+    let contentIndent = explicitIndent === null ? null : Math.max(parentIndent, 0) + explicitIndent;
 
     for (;;) {
       if (this.eof) break;
@@ -1246,13 +1444,28 @@ export class KyamlParser {
       }
       if (this.peek() === "\n" || this.eof) {
         if (!this.eof) this.bump();
-        lines.push({ text: "", moreIndented: false, blank: true });
+        if (contentIndent !== null && spaces > contentIndent) {
+          // Spaces past the content indentation are content, even on an
+          // otherwise empty line (YAML 1.2 §8.1.3).
+          lines.push({ text: " ".repeat(spaces - contentIndent), moreIndented: true, blank: false });
+        } else {
+          lines.push({ text: "", moreIndented: false, blank: true, spaces });
+        }
         continue;
       }
       if (contentIndent === null) {
         if (spaces <= parentIndent) {
           this.rewind(lineStart);
           break;
+        }
+        // A detected indentation must cover the leading blank lines: one with
+        // more spaces than the first content line is an error (YAML 1.2
+        // §8.1.1.1), not silently dropped spaces.
+        if (lines.some((line) => line.blank && line.spaces > spaces)) {
+          throw this.error(
+            "BAD_BLOCK_SCALAR",
+            "a leading blank line is indented past the block scalar's content",
+          );
         }
         contentIndent = spaces;
       }
@@ -1263,7 +1476,9 @@ export class KyamlParser {
       let text = " ".repeat(spaces - contentIndent);
       while (!this.eof && this.peek() !== "\n") text += this.bump();
       if (!this.eof) this.bump();
-      lines.push({ text, moreIndented: spaces > contentIndent, blank: false });
+      // A line that starts with white space after the indentation, a tab
+      // included, is "spaced" and is not folded (YAML 1.2 §8.1.3).
+      lines.push({ text, moreIndented: spaces > contentIndent || text.startsWith("\t"), blank: false });
     }
 
     // Drop trailing blank lines from the content; chomping decides their fate.
@@ -1272,6 +1487,9 @@ export class KyamlParser {
       lines.pop();
       trailingBreaks += 1;
     }
+    // The end of input ends the last line as a line break would: the YAML test
+    // suite reads `x: |\n  a` as "a\n" (L24T/01, JEF9/02).
+    const finalBreak = lines.length > 0;
 
     let body;
     if (style === "literal") {
@@ -1306,13 +1524,11 @@ export class KyamlParser {
       if (lines.length > 0 && !firstLine) body += "\n";
     }
 
-    if (chomp === "strip") {
-      body = body.replace(/\n+$/, "");
-    } else if (chomp === "clip") {
-      body = body.replace(/\n+$/, "");
-      if (lines.length > 0) body += "\n";
-    } else {
-      body += "\n".repeat(trailingBreaks);
+    body = body.replace(/\n+$/, "");
+    if (chomp === "clip" && finalBreak) {
+      body += "\n";
+    } else if (chomp === "keep") {
+      body += "\n".repeat((finalBreak ? 1 : 0) + trailingBreaks);
     }
 
     assertIJsonString(body, "", "kyaml", loc);
@@ -1320,16 +1536,10 @@ export class KyamlParser {
   }
 
   /**
-   * Parse a flow collection (may span lines), consuming its closing delimiter.
+   * Parse a flow collection (may span lines).
    *
-   * Accepts empty collections and a single trailing comma after an entry.
-   * Leading or consecutive commas are errors; omitted mapping values are null.
-   *
-   * @param {string} path  Pointer path of the collection for diagnostics.
-   * @returns {Node} A sequence or mapping node.
-   * @throws {ConformanceError} For empty entries (`EMPTY_VALUE` in sequences,
-   *   `EMPTY_KEY` in mappings), missing separators, unterminated collections,
-   *   duplicate or merge keys; errors from parsing keys and items propagate.
+   * @param {string} path
+   * @returns {Node}
    */
   parseFlowNode(path) {
     const loc = this.loc();
@@ -1348,13 +1558,15 @@ export class KyamlParser {
           throw this.error("UNTERMINATED_FLOW", "unterminated flow sequence", loc, path);
         }
         if (this.peek() === ",") {
+          // A `,` must follow an entry: `[1,,2]` and `[,]` have an empty one.
           throw this.error("EMPTY_VALUE", "empty flow sequence entry", this.loc(), path);
         }
         items.push(this.parseFlowItem(joinPath(path, String(items.length))));
         this.skipFlowGap();
         if (this.peek() === ",") {
+          // YAML 1.2 allows a final `,`; KYAML (KEP-5295) writes one after every
+          // entry. The next pass sees the closer and ends the collection.
           this.bump();
-          this.skipFlowGap();
           continue;
         }
         if (this.peek() === "]") {
@@ -1390,7 +1602,17 @@ export class KyamlParser {
       }
       const keyLoc = this.loc();
       const key = this.parseFlowKey();
+      const keyLine = this.line;
       this.skipFlowGap();
+      // An implicit key is on one line (YAML 1.2 §7.4.2).
+      if (this.line !== keyLine && this.peek() === ":") {
+        throw this.error(
+          "MULTILINE_KEY",
+          "a flow mapping key must end on the line it starts",
+          keyLoc,
+          path,
+        );
+      }
       if (this.peek() !== ":") {
         throw this.error(
           "FLOW_SEPARATOR",
@@ -1417,7 +1639,6 @@ export class KyamlParser {
       this.skipFlowGap();
       if (this.peek() === ",") {
         this.bump();
-        this.skipFlowGap();
         continue;
       }
       if (this.peek() === "}") {
@@ -1446,16 +1667,54 @@ export class KyamlParser {
     for (;;) {
       if (this.eof) return;
       const char = this.peek();
-      if (char === " " || char === "\t" || char === "\n") {
+      if (char === " " || char === "\t") {
         this.bump();
         continue;
       }
-      if (char === "#") {
-        this.skipToEndOfLine();
+      if (char === "\n" || char === "#") {
+        if (char === "#") this.skipComment();
+        else this.bump();
+        if (this.flowLineStart()) return;
         continue;
       }
       return;
     }
+  }
+
+  /**
+   * At the start of a line inside a flow collection: its content must be
+   * indented past the enclosing block node, with spaces (a tab there is
+   * indentation), and it cannot be a document marker. A line that only closes
+   * the collection may sit at the holding block's own column.
+   *
+   * @returns {boolean} True when the cursor is on the line's content.
+   */
+  flowLineStart() {
+    if (this.eof || this.column !== 1) return false;
+    if (this.markerAt(this.i)) {
+      throw this.error(
+        "UNTERMINATED_FLOW",
+        "a document marker cannot appear inside a flow collection",
+      );
+    }
+    let spaces = 0;
+    while (this.peek() === " ") {
+      this.bump();
+      spaces += 1;
+    }
+    const need = this.flowMin ?? 0;
+    const char = this.peek();
+    if (char === "\t" && spaces < need) {
+      throw this.error("TAB_INDENT", "a tab may not be used as indentation; use spaces");
+    }
+    if (this.eof || char === "\n" || char === "#" || char === "\t") return false;
+    if (spaces < need && !((char === "]" || char === "}") && spaces >= need - 1)) {
+      throw this.error(
+        "BAD_INDENT",
+        "a flow collection's lines must be indented past the block that holds it",
+      );
+    }
+    return true;
   }
 
   /**
@@ -1473,23 +1732,31 @@ export class KyamlParser {
     let tag = null;
     for (;;) {
       if (this.peek() === "&") {
+        if (anchor !== null) this.throwDuplicateProperty("anchor");
         this.bump();
         ANCHOR_NAME.lastIndex = this.i;
         const match = ANCHOR_NAME.exec(this.text);
         if (!match) throw this.error("BAD_ANCHOR", "anchor name is missing", loc);
         anchor = match[0];
         for (let count = 0; count < anchor.length; count += 1) this.bump();
+        this.assertPropertyEnd();
         this.skipFlowGap();
         continue;
       }
       if (this.peek() === "!") {
+        if (tag !== null) this.throwDuplicateProperty("tag");
         tag = this.parseTag();
+        this.assertPropertyEnd();
         this.skipFlowGap();
         continue;
       }
       break;
     }
     if (this.peek() === "*") {
+      // An alias carries no properties (YAML 1.2 §7.1), in flow as in block.
+      if (anchor !== null || tag !== null) {
+        throw this.error("ALIAS_DECORATED", "an alias may not carry an anchor or a tag", loc);
+      }
       this.bump();
       ALIAS_NAME.lastIndex = this.i;
       const match = ALIAS_NAME.exec(this.text);
@@ -1520,9 +1787,9 @@ export class KyamlParser {
       let raw = "";
       while (!this.eof) {
         const char = this.peek();
-        if (/[,\]}\n]/.test(char)) break;
-        if (char === ":" && this.isSeparatorAfter(this.i + 1)) break;
-        if (char === "#" && (raw === "" || raw.endsWith(" "))) break;
+        if (/[,[\]{}\n]/.test(char)) break;
+        if (char === ":" && this.isFlowSeparatorAfter(this.i + 1)) break;
+        if (char === "#" && (raw === "" || /[ \t]$/.test(raw))) break;
         raw += this.bump();
       }
       raw = raw.replace(/[ \t]+$/, "");
@@ -1548,19 +1815,92 @@ export class KyamlParser {
    */
   parseFlowKey() {
     const loc = this.loc();
-    if (this.peek() === "'" || this.peek() === '"') return this.parseQuoted(loc);
+    if ("&*!".includes(this.peek()) && this.peek() !== "") this.throwKeyProperty(loc);
+    if (this.peek() === "?" && /^[ \t\n]?$/.test(this.peek(1))) {
+      throw this.error(
+        "UNSUPPORTED_COMPLEX_KEY",
+        "complex mapping keys (`? `) are outside the KYAML subset",
+        loc,
+      );
+    }
+    if (this.peek() === "'" || this.peek() === '"') {
+      const start = this.i;
+      const node = this.parseQuoted(loc);
+      this.checkKeyLength(this.text.slice(start, this.i), loc);
+      return node;
+    }
     let raw = "";
     while (!this.eof) {
       const char = this.peek();
-      if (char === ":" || /[,\]}\n]/.test(char)) break;
+      // A `:` before a safe character is part of the key: `{http://x: 1}`.
+      if ((char === ":" && this.isFlowSeparatorAfter(this.i + 1)) || /[,[\]{}\n]/.test(char)) break;
+      // A `#` after white space starts a comment, which ends the key's line.
+      if (char === "#" && /[ \t]$/.test(raw)) break;
       raw += this.bump();
     }
-    raw = raw.trim();
+    // YAML white space is space and tab only (s-white); a no-break space is
+    // part of the key.
+    raw = raw.replace(/^[ \t]+|[ \t]+$/g, "");
     if (raw === "") throw this.error("EMPTY_KEY", "empty flow mapping key", loc);
+    this.checkKeyLength(raw, loc);
     return this.scalarFromRaw(raw, loc, "plain");
   }
 
   // ── small helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Whether the line at the cursor belongs to an enclosing collection rather
+   * than to the node at `indent`: left of the node and not past the enclosing
+   * line (`- &a` then `- b` is two entries, the first null). At the document
+   * root `lineIndent` is -1, so every line belongs to the node. A sequence
+   * entry at `seqAt` is the node's own compact sequence (`k:` then `  &a`
+   * then `- x`, yaml-test-suite SKE5).
+   *
+   * @param {number} indent
+   * @param {number} lineIndent
+   * @param {number|null} seqAt
+   * @returns {boolean}
+   */
+  isEnclosingLine(indent, lineIndent, seqAt) {
+    const column = this.column - 1;
+    return column < indent && column <= lineIndent && !(seqAt === column && this.isSeqEntry());
+  }
+
+  /**
+   * An implicit key is at most 1024 characters (YAML 1.2 §7.4.2, §8.2.2),
+   * counted in code points over the key itself: a plain key without its
+   * trailing blanks, or a quoted key with its quotes.
+   *
+   * @param {string} text
+   * @param {Loc} loc
+   * @returns {void}
+   */
+  checkKeyLength(text, loc) {
+    const length = [...text].length;
+    if (length > MAX_IMPLICIT_KEY) {
+      throw this.error(
+        "KEY_TOO_LONG",
+        `an implicit mapping key is limited to ${MAX_IMPLICIT_KEY} characters, this one has ${length}`,
+        loc,
+      );
+    }
+  }
+
+  /**
+   * An anchor or tag is followed by white space before its node (YAML 1.2
+   * §6.9): `&a[1]` and `!!seq{}` are not a property and a collection.
+   *
+   * @returns {void}
+   */
+  assertPropertyEnd() {
+    if (this.peek() === "[" || this.peek() === "{") {
+      throw this.error(
+        "PROPERTY_SEPARATION",
+        "an anchor or tag must be followed by white space before its node",
+        this.loc(),
+      );
+    }
+  }
 
   /**
    * Refuse the YAML 1.1 `<<` merge key.

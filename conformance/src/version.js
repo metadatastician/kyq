@@ -6,7 +6,7 @@
 // version.test.js` asserts the two agree, so a release cannot drift.
 
 /** Contract version. Bump with `conformance/VERSION` and package metadata. */
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 /** Schema URI of the fixture/vector files under `conformance/fixtures`. */
 export const CORPUS_SCHEMA = "kyq-conformance-corpus-v1";

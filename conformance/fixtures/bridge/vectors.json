@@ -1,7 +1,7 @@
 {
   "schema": "kyq-conformance-corpus-v1",
   "kind": "bridge-vectors",
-  "note": "The KYAML -> JSON bridge \u03c6: each vector is KYAML text and either the JCS bytes it must produce or the located diagnostic that refuses it.",
+  "note": "The KYAML -> JSON bridge φ: each vector is KYAML text and either the JCS bytes it must produce or the located diagnostic that refuses it.",
   "vectors": [
     {
       "name": "scalar-types",
@@ -46,7 +46,7 @@
     {
       "name": "quoted-escapes",
       "yaml": "a: \"tab\\tnl\\nq\\\"u\\u00e9\"\n",
-      "jcs": "{\"a\":\"tab\\tnl\\nq\\\"u\u00e9\"}"
+      "jcs": "{\"a\":\"tab\\tnl\\nq\\\"ué\"}"
     },
     {
       "name": "keys-need-quoting",
@@ -192,6 +192,744 @@
         "column": 10,
         "path": ""
       }
+    },
+    {
+      "name": "bom-after-leading-bom",
+      "yaml": "﻿a﻿\n",
+      "error": {
+        "code": "BOM_MIDSTREAM",
+        "line": 1,
+        "column": 2,
+        "path": ""
+      }
+    },
+    {
+      "name": "anchor-scoped-to-document",
+      "yaml": "---\na: &x 1\n---\nb: *x\n",
+      "array": true,
+      "error": {
+        "code": "UNKNOWN_ANCHOR",
+        "line": 4,
+        "column": 4,
+        "path": "b"
+      }
+    },
+    {
+      "name": "directive-trailing-comment",
+      "yaml": "%YAML 1.2 # version\n---\na: 1\n",
+      "jcs": "{\"a\":1}"
+    },
+    {
+      "name": "second-tag-refused",
+      "yaml": "x: !!int !!str true\n",
+      "error": {
+        "code": "DUPLICATE_PROPERTY",
+        "line": 1,
+        "column": 10,
+        "path": ""
+      }
+    },
+    {
+      "name": "second-anchor-refused",
+      "yaml": "x: &a &b 1\n",
+      "error": {
+        "code": "DUPLICATE_PROPERTY",
+        "line": 1,
+        "column": 7,
+        "path": ""
+      }
+    },
+    {
+      "name": "float-tag-on-integer",
+      "yaml": "x: !!float 1\n",
+      "jcs": "{\"x\":1}"
+    },
+    {
+      "name": "plain-indicator-at",
+      "yaml": "x: @foo\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "plain-indicator-backtick",
+      "yaml": "x: `foo\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "plain-indicator-percent",
+      "yaml": "x: %foo\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "tab-before-comment",
+      "yaml": "x: value\t# comment\n",
+      "jcs": "{\"x\":\"value\"}"
+    },
+    {
+      "name": "block-header-indent-then-chomp",
+      "yaml": "x: |2-\n  a\n",
+      "jcs": "{\"x\":\"a\"}"
+    },
+    {
+      "name": "block-header-chomp-then-indent",
+      "yaml": "x: >-2\n  a\n",
+      "jcs": "{\"x\":\"a\"}"
+    },
+    {
+      "name": "block-whitespace-line-is-content",
+      "yaml": "x: |2\n  a\n    \n  b\n",
+      "jcs": "{\"x\":\"a\\n  \\nb\\n\"}"
+    },
+    {
+      "name": "block-clip-at-end-of-input",
+      "yaml": "x: |\n  a",
+      "jcs": "{\"x\":\"a\\n\"}"
+    },
+    {
+      "name": "block-keep-at-end-of-input",
+      "yaml": "x: |+\n  a",
+      "jcs": "{\"x\":\"a\\n\"}"
+    },
+    {
+      "name": "block-keep-only-blank-lines",
+      "yaml": "x: |+\n\n\n",
+      "jcs": "{\"x\":\"\\n\\n\"}"
+    },
+    {
+      "name": "flow-empty-entry",
+      "yaml": "x: [1,,2]\n",
+      "error": {
+        "code": "EMPTY_VALUE",
+        "line": 1,
+        "column": 7,
+        "path": "x"
+      }
+    },
+    {
+      "name": "flow-lone-comma",
+      "yaml": "x: [,]\n",
+      "error": {
+        "code": "EMPTY_VALUE",
+        "line": 1,
+        "column": 5,
+        "path": "x"
+      }
+    },
+    {
+      "name": "tagged-key-refused",
+      "yaml": "a: 1\n!!str a: 2\n",
+      "error": {
+        "code": "KEY_PROPERTY",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "anchored-first-key-refused",
+      "yaml": "&k a: 1\n",
+      "error": {
+        "code": "KEY_PROPERTY",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "flow-tagged-key-refused",
+      "yaml": "x: {!!str a: 1}\n",
+      "error": {
+        "code": "KEY_PROPERTY",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "flow-alias-decorated",
+      "yaml": "a: &a 1\nb: [!!int *a]\n",
+      "error": {
+        "code": "ALIAS_DECORATED",
+        "line": 2,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "plain-indicator-dash-space",
+      "yaml": "a: - item\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "plain-indicator-question-space",
+      "yaml": "a: ? x\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "plain-indicator-lone-dash",
+      "yaml": "a: -\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "plain-indicator-in-flow",
+      "yaml": "a: [- x]\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "dash-before-safe-character",
+      "yaml": "a: -x\nb: -1\nc: ?x\nd: :x\n",
+      "jcs": "{\"a\":\"-x\",\"b\":-1,\"c\":\"?x\",\"d\":\":x\"}"
+    },
+    {
+      "name": "flow-complex-key-refused",
+      "yaml": "x: {? a: 1}\n",
+      "error": {
+        "code": "UNSUPPORTED_COMPLEX_KEY",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "comment-needs-space-after-quoted",
+      "yaml": "a: \"x\"#c\n",
+      "error": {
+        "code": "BAD_COMMENT",
+        "line": 1,
+        "column": 7,
+        "path": ""
+      }
+    },
+    {
+      "name": "comment-needs-space-after-flow",
+      "yaml": "a: [1, 2]#c\n",
+      "error": {
+        "code": "BAD_COMMENT",
+        "line": 1,
+        "column": 10,
+        "path": ""
+      }
+    },
+    {
+      "name": "comment-needs-space-after-block-header",
+      "yaml": "a: >#c\n  x\n",
+      "error": {
+        "code": "BAD_COMMENT",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-comment",
+      "yaml": "a: 1 # bad\u0001\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 11,
+        "path": ""
+      }
+    },
+    {
+      "name": "leading-blank-line-past-content",
+      "yaml": "x: |\n    \n  a\n",
+      "error": {
+        "code": "BAD_BLOCK_SCALAR",
+        "line": 3,
+        "column": 3,
+        "path": ""
+      }
+    },
+    {
+      "name": "folded-tab-line-is-spaced",
+      "yaml": "x: >\n  foo\n  \tbar\n",
+      "jcs": "{\"x\":\"foo\\n\\tbar\\n\"}"
+    },
+    {
+      "name": "directive-per-document",
+      "yaml": "%YAML 1.2\n---\na: 1\n...\n%YAML 1.2\n---\nb: 2\n",
+      "array": true,
+      "jcs": "[{\"a\":1},{\"b\":2}]"
+    },
+    {
+      "name": "directive-without-document",
+      "yaml": "%YAML 1.2\n",
+      "error": {
+        "code": "MISSING_DOC_START",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "duplicate-yaml-directive",
+      "yaml": "%YAML 1.2\n%YAML 1.2\n---\na: 1\n",
+      "error": {
+        "code": "DUPLICATE_DIRECTIVE",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "trailing-document-start-is-null",
+      "yaml": "a: b\n---\n",
+      "array": true,
+      "jcs": "[{\"a\":\"b\"},null]"
+    },
+    {
+      "name": "flow-line-not-indented",
+      "yaml": "x: [a,\nb]\n",
+      "error": {
+        "code": "BAD_INDENT",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "flow-closer-at-parent-column",
+      "yaml": "x: [\n  a,\n]\n",
+      "jcs": "{\"x\":[\"a\"]}"
+    },
+    {
+      "name": "root-flow-closes-at-column-one",
+      "yaml": "{\n  a: 1,\n}\n",
+      "jcs": "{\"a\":1}"
+    },
+    {
+      "name": "flow-tab-indentation",
+      "yaml": "x: [\n\t1\n]\n",
+      "error": {
+        "code": "TAB_INDENT",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "flow-tab-after-indentation",
+      "yaml": "x: [\n \t1\n]\n",
+      "jcs": "{\"x\":[1]}"
+    },
+    {
+      "name": "document-marker-in-flow",
+      "yaml": "[\n---\n]\n",
+      "error": {
+        "code": "UNTERMINATED_FLOW",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "flow-key-on-two-lines",
+      "yaml": "x: {\n  a\n  : 1}\n",
+      "error": {
+        "code": "MULTILINE_KEY",
+        "line": 2,
+        "column": 3,
+        "path": "x"
+      }
+    },
+    {
+      "name": "flow-key-holds-url-colon",
+      "yaml": "x: {http://example.com: ok}\n",
+      "jcs": "{\"x\":{\"http://example.com\":\"ok\"}}"
+    },
+    {
+      "name": "flow-plain-cannot-hold-bracket",
+      "yaml": "x: [a[b]\n",
+      "error": {
+        "code": "FLOW_SEPARATOR",
+        "line": 1,
+        "column": 6,
+        "path": "x"
+      }
+    },
+    {
+      "name": "plain-indicator-comma-after-tag",
+      "yaml": "- !!str, x\n",
+      "error": {
+        "code": "PLAIN_INDICATOR",
+        "line": 1,
+        "column": 8,
+        "path": ""
+      }
+    },
+    {
+      "name": "tab-indents-nested-sequence",
+      "yaml": "-\t- a\n",
+      "error": {
+        "code": "TAB_INDENT",
+        "line": 1,
+        "column": 3,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-plain",
+      "yaml": "a: x\u0001y\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-key",
+      "yaml": "a\u0001: 1\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 2,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-flow",
+      "yaml": "a: [x\u0001y]\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 6,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-block",
+      "yaml": "a: |\n  x\u0001y\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 2,
+        "column": 4,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-quoted",
+      "yaml": "a: \"x\u0001\"\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 6,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-directive-comment",
+      "yaml": "%YAML 1.2 # c\u0001\n---\na: 1\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 14,
+        "path": ""
+      }
+    },
+    {
+      "name": "control-character-in-anchor",
+      "yaml": "a: &x\u0001 1\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 6,
+        "path": ""
+      }
+    },
+    {
+      "name": "delete-character",
+      "yaml": "a: 'x'\n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 6,
+        "path": ""
+      }
+    },
+    {
+      "name": "c1-control-in-comment",
+      "yaml": "a: 1 # ok \n",
+      "error": {
+        "code": "CONTROL_CHARACTER",
+        "line": 1,
+        "column": 12,
+        "path": ""
+      }
+    },
+    {
+      "name": "raw-noncharacter",
+      "yaml": "a: x￾\n",
+      "error": {
+        "code": "NONCHARACTER",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "next-line-is-printable",
+      "yaml": "a: \"xy\"\n",
+      "jcs": "{\"a\":\"xy\"}"
+    },
+    {
+      "name": "tab-in-block-is-printable",
+      "yaml": "a: |\n  tab\tok\n",
+      "jcs": "{\"a\":\"tab\\tok\\n\"}"
+    },
+    {
+      "name": "anchor-needs-separation",
+      "yaml": "a: &x[1]\n",
+      "error": {
+        "code": "PROPERTY_SEPARATION",
+        "line": 1,
+        "column": 6,
+        "path": ""
+      }
+    },
+    {
+      "name": "tag-needs-separation",
+      "yaml": "a: !!seq{}\n",
+      "error": {
+        "code": "PROPERTY_SEPARATION",
+        "line": 1,
+        "column": 9,
+        "path": ""
+      }
+    },
+    {
+      "name": "anchor-separated",
+      "yaml": "a: &x [1]\n",
+      "jcs": "{\"a\":[1]}"
+    },
+    {
+      "name": "flow-key-keeps-nbsp",
+      "yaml": "x: { a : 1}\n",
+      "jcs": "{\"x\":{\" a \":1}}"
+    },
+    {
+      "name": "flow-key-stops-at-comment",
+      "yaml": "x: {a #c\n  : 1}\n",
+      "error": {
+        "code": "MULTILINE_KEY",
+        "line": 1,
+        "column": 5,
+        "path": "x"
+      }
+    },
+    {
+      "name": "root-explicit-indent",
+      "yaml": "|2\n  text\n",
+      "jcs": "\"text\\n\""
+    },
+    {
+      "name": "root-explicit-indent-one",
+      "yaml": "|1\n  text\n",
+      "jcs": "\" text\\n\""
+    },
+    {
+      "name": "directive-nbsp-separator",
+      "yaml": "%YAML 1.2\n---\na: 1\n",
+      "error": {
+        "code": "UNSUPPORTED_DIRECTIVE",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "nbsp-before-hash-is-key-text",
+      "yaml": "a #b: 1\n",
+      "jcs": "{\"a #b\":1}"
+    },
+    {
+      "name": "nbsp-is-part-of-anchor-name",
+      "yaml": "a: &x  1\nb: *x \n",
+      "jcs": "{\"a\":1,\"b\":1}"
+    },
+    {
+      "name": "nbsp-anchor-is-not-the-short-name",
+      "yaml": "a: &x  1\nb: *x\n",
+      "error": {
+        "code": "UNKNOWN_ANCHOR",
+        "line": 2,
+        "column": 4,
+        "path": "b"
+      }
+    },
+    {
+      "name": "implicit-key-at-limit",
+      "yaml": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: 1\n",
+      "jcs": "{\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\":1}"
+    },
+    {
+      "name": "implicit-key-over-limit",
+      "yaml": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: 1\n",
+      "error": {
+        "code": "KEY_TOO_LONG",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "flow-key-over-limit",
+      "yaml": "x: {kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: 1}\n",
+      "error": {
+        "code": "KEY_TOO_LONG",
+        "line": 1,
+        "column": 5,
+        "path": ""
+      }
+    },
+    {
+      "name": "quoted-key-over-limit",
+      "yaml": "\"qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\": 1\n",
+      "error": {
+        "code": "KEY_TOO_LONG",
+        "line": 1,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "astral-key-at-limit",
+      "yaml": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀: 1\n",
+      "jcs": "{\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\":1}"
+    },
+    {
+      "name": "flow-dashes-and-dot-are-a-scalar",
+      "yaml": "[\n--. ,\n]\n",
+      "jcs": "[\"--.\"]"
+    },
+    {
+      "name": "flow-dash-dot-dash-is-a-scalar",
+      "yaml": "[\n-.- ,\n]\n",
+      "jcs": "[\"-.-\"]"
+    },
+    {
+      "name": "flow-document-marker-refused",
+      "yaml": "[\n--- ,\n]\n",
+      "error": {
+        "code": "UNTERMINATED_FLOW",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "anchor-continued-on-next-line-refused",
+      "yaml": "a: &one\n  &two value\n",
+      "error": {
+        "code": "DUPLICATE_PROPERTY",
+        "line": 2,
+        "column": 3,
+        "path": ""
+      }
+    },
+    {
+      "name": "tag-continued-on-next-line-refused",
+      "yaml": "a: !!str\n  !!int 1\n",
+      "error": {
+        "code": "DUPLICATE_PROPERTY",
+        "line": 2,
+        "column": 3,
+        "path": ""
+      }
+    },
+    {
+      "name": "anchor-then-tag-on-next-line",
+      "yaml": "a: &one\n  !!str 1\nb: *one\n",
+      "jcs": "{\"a\":\"1\",\"b\":\"1\"}"
+    },
+    {
+      "name": "root-anchor-continued-refused",
+      "yaml": "&x\n&y v\n",
+      "error": {
+        "code": "DUPLICATE_PROPERTY",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "root-block-scalar-at-column-one",
+      "yaml": "|\ntext\n",
+      "jcs": "\"text\\n\""
+    },
+    {
+      "name": "seq-anchor-then-sibling",
+      "yaml": "- &a\n- b\n",
+      "jcs": "[null,\"b\"]"
+    },
+    {
+      "name": "seq-tag-then-sibling",
+      "yaml": "- !!str\n- b\n",
+      "jcs": "[\"\",\"b\"]"
+    },
+    {
+      "name": "nested-anchor-then-sibling-key",
+      "yaml": "a:\n  &x\nb: 1\n",
+      "jcs": "{\"a\":null,\"b\":1}"
+    },
+    {
+      "name": "seq-anchor-then-map-refused",
+      "yaml": "- &a\nkey: v\n",
+      "error": {
+        "code": "UNEXPECTED_CONTENT",
+        "line": 2,
+        "column": 1,
+        "path": ""
+      }
+    },
+    {
+      "name": "seq-anchor-then-nested-seq",
+      "yaml": "- &a\n - b\n",
+      "jcs": "[[\"b\"]]"
+    },
+    {
+      "name": "nested-anchor-then-own-map",
+      "yaml": "a:\n  &x\n  b: 1\n",
+      "jcs": "{\"a\":{\"b\":1}}"
+    },
+    {
+      "name": "anchor-then-compact-seq",
+      "yaml": "seq:\n &anchor\n- a\n- b\n",
+      "jcs": "{\"seq\":[\"a\",\"b\"]}"
     }
   ]
 }

@@ -4,9 +4,9 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-11-07
-:revnumber: 0.2.0
-:status: NORMATIVE — executable gate in `conformance/` (v0.2.0)
+:revdate: 2026-11-09
+:revnumber: 0.3.0
+:status: NORMATIVE — executable gate in `conformance/` (v0.3.0)
 
 This is the normative home for "kyaml". A YAML document is kyaml iff it
 conforms to this spec. The spec is a *subset* of YAML 1.2; anything outside the
@@ -23,14 +23,18 @@ toc::[]
   `kyq-conformance-v<version>`) implements §2–§7. `docs/CONFORMANCE_GATE.adoc`
   is the operational manual: install, CLI contract, fixtures, CI invocation.
 * The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
-* Version `0.2.0` is the *contract* version. It changes when a document that
+* Version `0.3.0` is the *contract* version. It changes when a document that
   used to conform stops conforming, or the other way round. The corpus in
   `conformance/fixtures/` is the arbiter: a change of verdict is a version
   change, not a test tweak.
   Version `0.2.0` accepts legal flow trailing commas and a single leading BOM,
-  and rejects the full YAML 1.2 non-printable character set. The fixture file
-  structure is unchanged (`kyq-conformance-corpus-v1`). This source revision
-  does not itself establish that a release tag or artifact has been published.
+  and rejects the full YAML 1.2 non-printable character set. Version `0.3.0`
+  reads every stream the YAML test suite marks invalid as invalid, and every
+  valid stream it accepts as the suite's JSON reads it: the rules below that
+  name a YAML 1.2 production or a test-suite case are the changes. The fixture
+  file structure is unchanged (`kyq-conformance-corpus-v1`). This source
+  revision does not itself establish that a release tag or artifact has been
+  published.
 * Out of scope for this document: lint rules (§ "Lint rules" below),
   `kyq get/set/del`, templates (`{{VAR}}`), K8s schema validation and
   performance targets. They are tracked in `docs/status/ROADMAP.adoc` and are
@@ -76,28 +80,45 @@ reject would let a consumer claim KYAML conformance it cannot use.
 
 === Streams, directives and markers
 
-* Optional directive lines, before the first document only. `%YAML 1.2` is
+* Optional directive lines before a document. `%YAML 1.2` is
   accepted; any other version, and every `%TAG` directive, is rejected
-  (`UNSUPPORTED_VERSION`, `UNSUPPORTED_DIRECTIVE`). A directive MUST be followed
-  by a `---` marker (`MISSING_DOC_START`).
-* `---` starts a document; `...` ends one. Both MUST occupy their own line:
+  (`UNSUPPORTED_VERSION`, `UNSUPPORTED_DIRECTIVE`). A comment may follow
+  the version (`%YAML 1.2 # note`). Directives may also precede a later
+  document, after a `...` marker; `%YAML` appears at most once per document
+  (`DUPLICATE_DIRECTIVE`). A directive MUST be followed by a `---` marker
+  (`MISSING_DOC_START`).
+* `---` starts a document; `...` ends one. Only those two spellings, followed by
+  white space or the end of the line, are markers: `--.` is a plain scalar. Both
+  MUST occupy their own line:
   content after `---` on the same line is rejected (`DOC_MARKER_CONTENT`).
 * A document with no content (for example `---` immediately followed by another
-  marker or by end of input) is the `null` document. A *trailing* empty
-  document, produced by a final `---`, is dropped — this is the one place where
-  the stream, not the document, decides.
+  marker or by end of input) is the `null` document, a final `---` included:
+  `a: b\n---\n` is two documents, the second `null`, as YAML reads it.
 * A stream with no documents at all (empty file, or comments only) is legal in
   the sense that `check`/`fix` accept it; it formats to zero bytes. It has no
   JSON image, so `canon` refuses it with `EMPTY_STREAM`.
 * Comments run from `#` to end of line, where `#` starts a comment only at the
-  beginning of a token or after whitespace. Comments are not data: `fmt` drops
-  them (§7.3).
+  start of a line or after white space: `"x"#c` and `[1]#c` are `BAD_COMMENT`.
+  Comments are not data: `fmt` drops them (§7.3).
+* Every character of the stream is printable YAML (YAML 1.2 §5.1,
+  `c-printable`), in scalars, comments, directives and properties alike. A C0
+  control other than tab and line feed, DEL, or a C1 control other than NEL
+  (U+0085) is `CONTROL_CHARACTER`; U+FFFE and U+FFFF are `NONCHARACTER`. The
+  diagnostic stands at the character itself. Line breaks are normalised first,
+  so a bare CR is still `INVALID_NEWLINE`.
+* White space is space and tab (YAML 1.2 `s-white`); with the line break, it is
+  the only separation. A no-break space or other Unicode space is content: it
+  does not separate directive fields, start a comment before `#`, or end an
+  anchor or alias name.
+* A `...` marker with no document open is legal and adds no document (YAML test
+  suite HWV9).
 * Blank lines are insignificant between nodes.
 
 === Block structure
 
 * Indentation is spaces only. A tab in indentation is `TAB_INDENT`. Tab inside a
-  scalar's content is data.
+  scalar's content is data. A tab may not indent a compact nested collection
+  (`-\t- a`).
 * Sibling entries of one block collection share one indentation. A deeper line
   after a complete node is `UNEXPECTED_INDENT`; there is no implicit
   multi-line plain-scalar folding (§4.3).
@@ -120,27 +141,48 @@ nextKey: 1        # the mapping resumes at the same indentation
 * A sequence entry at mapping indentation, or a mapping key at sequence
   indentation, is `MIXED_COLLECTION` unless it terminates the collection as
   above.
-* Complex (`? `) keys are rejected: `UNSUPPORTED_COMPLEX_KEY`. The YAML merge
+* Complex (`? `) keys are rejected, in block and flow mappings:
+  `UNSUPPORTED_COMPLEX_KEY`. The YAML merge
   key `<<` is rejected: `UNSUPPORTED_MERGE_KEY` — treating it as an ordinary
   string key would silently change the document's meaning.
+* An implicit key is at most 1024 characters, counted in code points over the
+  key itself (a quoted key with its quotes): `KEY_TOO_LONG`, in block and flow
+  mappings (YAML 1.2 §7.4.2).
+* An anchor, tag or alias on a mapping key (`&k a: 1`, `!!str a: 1`) is
+  `KEY_PROPERTY`: read as a plain key, `!!str a` would be a different key from
+  `a`.
 
 === Scalars
 
 Styles: plain, single-quoted, double-quoted and block (`|`, `>`), each with the
-YAML 1.2 chomping (`-`, `+`) and explicit-indent (`1`–`9`) indicators.
+YAML 1.2 chomping (`-`, `+`) and explicit-indent (`1`–`9`) indicators, in either
+order (`|2-` and `|-2`).
 
 * Plain and quoted scalars are single-line. A scalar continued on a following
   line is rejected (`UNEXPECTED_INDENT` for plain, `UNTERMINATED_QUOTE` for
   quoted); write it in a block scalar or with explicit escapes instead.
 * Block scalars fold and chomp per YAML 1.2 §8.1.3, including more-indented
-  lines inside `>` and leading blank lines.
+  lines inside `>` and leading blank lines. A line starting with a tab after
+  the indentation is not folded. A leading blank line indented past the first
+  content line is `BAD_BLOCK_SCALAR`. End of input ends the last line as a line
+  break would: `x: |\n  a` is `"a\n"`.
 * Double-quoted escapes: the YAML 1.2 set (`\0 \a \b \t \n \v \f \r \e \" \\ \/
   \N \_ \L \P \xXX \uXXXX \UXXXXXXXX`, space). An unknown escape is
   `BAD_ESCAPE`; `\uD800`-style lone surrogates are `LONE_SURROGATE`.
-* YAML 1.2 §5.1's `c-printable` restriction applies throughout the stream,
-  including comments, directives and anchor names. Excluded C0/C1 characters
-  and DEL are `CONTROL_CHARACTER`; U+FFFE/U+FFFF are `NONCHARACTER`.
-  Escaped controls remain legal string content, subject to the I-JSON bridge.
+* A raw control character is refused wherever it stands (see the stream
+  rules above); TAB is printable, in a block scalar as elsewhere. Escaped
+  controls remain legal string content, subject to the I-JSON bridge.
+* A plain scalar may not start with an indicator (`PLAIN_INDICATOR`, YAML 1.2
+  `ns-plain-first`): never with `@`, `` ` `` or `%`, and not with `-`, `?` or
+  `:` followed by a space, a tab or the end of the scalar. So `a: - item` is
+  refused, while `-1`, `-x` and `?x` are plain scalars.
+* A block scalar's spaces past its content indentation are content, even on
+  an otherwise empty line.
+* An explicit indentation indicator counts from the indentation of the node
+  holding the scalar, and from column 0 at the document root: `|2` at the root
+  reads `  text` as `"text\n"`.
+* An explicit `!!float` accepts a decimal integer (`!!float 1` is 1): the
+  float pattern below matches it.
 
 .Core Schema resolution of a plain scalar (normative)
 |===
@@ -168,11 +210,18 @@ Consequences that MUST be relied on, because they differ from YAML 1.1 habits:
 
 === Flow collections
 
-`[...]` and `{...}` are accepted, may span lines, and nest. A single trailing
-comma after an entry is accepted, as in YAML 1.2 §7.4 and Kubernetes KYAML
-(KEP-5295). Empty entries and consecutive commas are refused. An unterminated collection is
-`UNTERMINATED_FLOW`. Inside a flow collection a plain scalar ends at `,`, `]`,
-`}`, a `:` that separates a key, or end of line.
+`[...]` and `{...}` are accepted, may span lines, and nest. A trailing comma is
+accepted: YAML 1.2 allows it, and KYAML as Kubernetes writes it (KEP-5295)
+ends every entry with one. An empty entry is `EMPTY_VALUE` in a sequence (`[1,,2]`, `[,]`) and `EMPTY_KEY` in a mapping. An
+unterminated collection is `UNTERMINATED_FLOW`, as is a document marker inside
+one. Each line of a flow collection is indented past the block node holding it,
+with spaces (`BAD_INDENT`, `TAB_INDENT`); a line that only closes the collection
+may sit at that block's own column, and a root collection may close at column 1.
+An implicit key is on one line (`MULTILINE_KEY`). Inside a flow collection a
+plain scalar ends at `,`, `[`, `]`, `{`, `}`, a `:` followed by white space or a
+flow indicator, a `#` after white space (a comment, which ends the key's line),
+or end of line, so `{http://x: 1}` has the key `http://x`. Only space and tab
+are trimmed from a key: a no-break space is part of it.
 
 === Anchors, aliases and tags
 
@@ -181,6 +230,18 @@ comma after an entry is accepted, as in YAML 1.2 §7.4 and Kubernetes KYAML
   `UNKNOWN_ANCHOR`. Cycles are therefore inexpressible rather than merely
   detected; the diagnostic says so.
 * Anchors may be redefined (the later definition wins), as in YAML.
+* An anchor is scoped to its document: an alias in a later document cannot
+  name it (`UNKNOWN_ANCHOR`).
+* An anchor or tag is separated from its node by white space
+  (`PROPERTY_SEPARATION`, YAML 1.2 §6.9): `&a[1]` and `!!seq{}` are refused.
+* A node carries at most one anchor and one tag (`DUPLICATE_PROPERTY`), whether
+  they share a line or a bare property ends one line and the next line continues
+  with more (`a: &x` then `  &y v`). An anchor and a tag may be split that way.
+  An alias carries neither, in block or flow context (`ALIAS_DECORATED`).
+* A bare property's value on the following lines stays inside the node: a line
+  that belongs to the enclosing collection leaves the node null (`- &a` then
+  `- b` is `[null, "b"]`), except a mapping value's compact sequence at the
+  mapping's own indentation (yaml-test-suite SKE5).
 * Alias expansion is bounded: a document whose expanded tree exceeds
   `NODE_BUDGET` (100 000 nodes, `conformance/src/kyaml.js`) is
   `NODE_BUDGET_EXCEEDED`. This is the anchor-bomb limit required by SEC-1.
@@ -203,6 +264,9 @@ comma after an entry is accepted, as in YAML 1.2 §7.4 and Kubernetes KYAML
 | `.inf` / `.nan` | `NON_FINITE_NUMBER`
 | Unpaired surrogate in a string | `LONE_SURROGATE`
 | Unicode noncharacter in a string | `NONCHARACTER`
+| Character outside YAML's printable set | `CONTROL_CHARACTER`, `NONCHARACTER`
+| Anchor or tag not separated from its node | `PROPERTY_SEPARATION`
+| Implicit key over 1024 characters | `KEY_TOO_LONG`
 | Complex `? ` key | `UNSUPPORTED_COMPLEX_KEY`
 | Merge key `<<` | `UNSUPPORTED_MERGE_KEY`
 | `%TAG`, `%YAML` other than 1.2 | `UNSUPPORTED_DIRECTIVE`, `UNSUPPORTED_VERSION`
