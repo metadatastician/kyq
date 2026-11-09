@@ -227,8 +227,8 @@ Error codes include `DUPLICATE_KEY`, `NON_STRING_KEY`, `UNSAFE_INTEGER`,
 |===
 | Path | Count | What it pins
 
-| `fixtures/kyaml/valid/*.yaml` | 10 | inputs that must parse, and their canonical form
-| `fixtures/kyaml/invalid/*.yaml` | 32 | inputs that must be refused, and why
+| `fixtures/kyaml/valid/*.yaml` | 14 | inputs that must parse, and their canonical form
+| `fixtures/kyaml/invalid/*.yaml` | 35 | inputs that must be refused, and why
 | `fixtures/kyaml/cases.json` | — | the single expectation per fixture (reason text, code, line/column)
 | `fixtures/ijson/vectors.json` | 37 | strict I-JSON acceptance/refusal and JCS bytes
 | `fixtures/ijson/check.json` | 13 | file bytes → `check` exit status, including BOM, CRLF and double-newline
@@ -259,13 +259,14 @@ the vector tests.
 | Suite | Property
 
 | `test/json.test.js` (104) | I-JSON strictness and JCS bytes: key sorting by UTF-16 code units, ES number formatting, escaping, duplicate keys, surrogates, noncharacters, BOM handling, unsafe integers, the non-reflexive float vectors
-| `test/corpus.test.js` (81) | every KYAML fixture accepts/refuses as declared, with a located reason and the declared code; corpus invariants above
-| `test/formatter.test.js` (37) | for every valid fixture: `parse(fmt(x))` has the same JCS image (VALUE), `fmt(fmt(x)) == fmt(x)` byte-equal (FIXED), and exactly one trailing newline or zero bytes (HYGIENE)
-| `test/bridge.test.js` (48) | φ: integer range checks, finiteness, non-string keys, alias/node budget, multi-document streams, JSON-Pointer paths
+| `test/corpus.test.js` (91) | every KYAML fixture accepts/refuses as declared, with a located reason and the declared code; corpus invariants above
+| `test/formatter.test.js` (41) | for every valid fixture: `parse(fmt(x))` has the same JCS image (VALUE), `fmt(fmt(x)) == fmt(x)` byte-equal (FIXED), and exactly one trailing newline or zero bytes (HYGIENE)
+| `test/bridge.test.js` (144) | φ: integer range checks, finiteness, non-string keys, alias/node budget, multi-document streams, JSON-Pointer paths
 | `test/cli.test.js` (43) | exit codes, printed lines, `--report json`, `fix` rewriting, `canon` newline rule, `--`, usage errors, and the CLI vectors transcribed from `ijson-jcs`
+| `test/spec-regressions.test.js` (6) | the specification cases generated in code rather than committed as bytes: every excluded C0/C1 control and noncharacter in eight lexical contexts, a single leading BOM, block-header comments, flow trailing commas and empty entries
 |===
 
-313 tests in total. Formatter idempotence (`fmt(fmt(x)) == fmt(x)`, compared as
+429 tests in total. Formatter idempotence (`fmt(fmt(x)) == fmt(x)`, compared as
 bytes) is a property over the whole valid corpus, not one hand-picked example:
 `fixtures/kyaml/valid/canonical.yaml` is a fixed point by construction, and
 `examples/deployment.yaml` is deliberately *not* canonical, so both directions

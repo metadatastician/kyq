@@ -173,11 +173,16 @@ order (`|2-` and `|-2`).
   rules above); TAB is printable, in a block scalar as elsewhere. Escaped
   controls remain legal string content, subject to the I-JSON bridge.
 * A plain scalar may not start with an indicator (`PLAIN_INDICATOR`, YAML 1.2
-  `ns-plain-first`): never with `@`, `` ` `` or `%`, and not with `-`, `?` or
-  `:` followed by a space, a tab or the end of the scalar. So `a: - item` is
-  refused, while `-1`, `-x` and `?x` are plain scalars.
+  `ns-plain-first`): never with `@`, `` ` ``, `%`, `[`, `{`, `|` or `>`, and
+  not with `-`, `?` or `:` followed by a space, a tab or the end of the
+  scalar. So `a: - item` is refused, and so is a later mapping key such as
+  `[b]: 2` or `|b: 1`, while `-1`, `-x` and `?x` are plain scalars.
 * A block scalar's spaces past its content indentation are content, even on
   an otherwise empty line.
+* A block scalar, or a flow collection, that starts on the line after its key
+  or `-` is measured from the block node holding it, as on the same line:
+  `a:` then `  |` then `  x` is `{a: "x\n"}`, and `a:` then `  [x,` then
+  `  y]` is `{a: [x, y]}`.
 * An explicit indentation indicator counts from the indentation of the node
   holding the scalar, and from column 0 at the document root: `|2` at the root
   reads `  text` as `"text\n"`.
@@ -427,7 +432,13 @@ fixture has no expectation or an expectation names no fixture.
   flow nesting, scalar resolution, comment handling.
 | `validate` → OK; `fmt` idempotent; the JSON image is stable.
 
-| `invalid/*.yaml` (32 files)
+| `valid/flow-trailing-comma.yaml`, `valid/leading-bom.yaml`,
+  `valid/block-scalar-header-comment.yaml`, `valid/next-line-flow-and-block.yaml`
+| A flow trailing comma, a single leading BOM, a comment after a block scalar
+  header, and a flow collection and block scalar on the line after their key.
+| `validate` → OK; document count 1 each.
+
+| `invalid/*.yaml` (35 files)
 | One failure per file: duplicate keys (block, nested, quoted, flow, resolved),
   non-string keys, unsafe integers, non-finite floats, surrogates,
   noncharacters, merge key, complex key, tags, indentation, tabs, flow errors,
@@ -446,7 +457,7 @@ KYAML with wrong Kubernetes content, and belongs to the lint rules.
 | Guarantee | Evidence in this repository
 
 | Lexing/parsing is total and deterministic; every failure is located.
-| 42 YAML fixtures, all with pinned codes/locations; `corpus.test.js` also
+| 49 YAML fixtures, all with pinned codes/locations; `corpus.test.js` also
   asserts that *every* negative fixture produces a line and column.
 
 | Duplicate keys are impossible to miss.
@@ -459,7 +470,7 @@ KYAML with wrong Kubernetes content, and belongs to the lint rules.
   and a generated document set, plus a quoting table.
 
 | The JSON image is lossless, and lossy cases are refused.
-| `bridge/vectors.json` (26 vectors) plus "every bridged fixture re-reads as
+| `bridge/vectors.json` (118 vectors) plus "every bridged fixture re-reads as
   valid strict I-JSON".
 
 | JCS bytes agree with `hyperpolymath/ijson-jcs`.

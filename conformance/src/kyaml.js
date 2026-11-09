@@ -9,8 +9,8 @@
 //     identity (`a`, `"a"` and `!!str a` are one key), with line/column and the
 //     pointer path of the offending mapping;
 //   * complex (`? `) keys, `%TAG` directives, `%YAML` versions other than 1.2,
-//     non-core tags, multi-line plain/quoted scalars and trailing commas in flow
-//     collections are refused with a specific code;
+//     non-core tags and multi-line plain/quoted scalars are refused with a
+//     specific code; a trailing comma in a flow collection is accepted;
 //   * anchors and aliases are resolved, alias cycles are impossible because an
 //     alias may only name an already-completed node, and expansion is bounded.
 //
@@ -641,13 +641,18 @@ export class KyamlParser {
    *
    * @param {number} indent  Expected indentation of sibling entries.
    * @param {string} path    Pointer path of this node.
+   * @param {number} [lineIndent]
+   * @param {number|null} [seqAt]
+   * @param {number} [floor] The indentation of the block node that holds
+   *   this one: a flow collection's lines and a block scalar's content are
+   *   indented past it (YAML 1.2 s-flow-line-prefix, s-indent).
    * @returns {Node}
    */
-  parseBlock(indent, path, lineIndent = indent, seqAt = null) {
+  parseBlock(indent, path, lineIndent = indent, seqAt = null, floor = lineIndent) {
     if (this.eof) return this.nullNode(this.loc());
     if (this.isSeqEntry()) return this.parseSeq(indent, path);
     if (this.isMapEntry()) return this.parseMap(indent, path);
-    return this.parseInlineNode(indent, path, "root", lineIndent, [null, null], seqAt);
+    return this.parseInlineNode(indent, path, "root", lineIndent, [null, null], seqAt, floor);
   }
 
   /**
@@ -939,7 +944,10 @@ export class KyamlParser {
     }
     const nextIndent = this.column - 1;
     if (nextIndent > parentIndent) {
-      return this.parseBlock(nextIndent, path, nextIndent, allowSameIndentSeq ? parentIndent : null);
+      // A value on the following line is indented past its parent, and that
+      // parent, not the value's own column, is what a flow collection's
+      // continuation lines and a block scalar's content are measured from.
+      return this.parseBlock(nextIndent, path, nextIndent, allowSameIndentSeq ? parentIndent : null, parentIndent);
     }
     if (allowSameIndentSeq && nextIndent === parentIndent && this.isSeqEntry()) {
       return this.parseSeq(parentIndent, path);
@@ -993,9 +1001,10 @@ export class KyamlParser {
    *   from a line above, for properties continued on the next line.
    * @param {number|null} [seqAt] The indentation of the mapping whose value
    *   this is, when a block sequence may sit at that same indentation.
+   * @param {number} [floor] See parseBlock.
    * @returns {Node}
    */
-  parseInlineNode(indent, path, context, lineIndent = indent, props = [null, null], seqAt = null) {
+  parseInlineNode(indent, path, context, lineIndent = indent, props = [null, null], seqAt = null, floor = lineIndent) {
     const loc = this.loc();
     /** @type {string|null} */
     let anchor = props[0];
@@ -1040,7 +1049,7 @@ export class KyamlParser {
         !this.eof &&
         (context === "root" ? !this.isEnclosingLine(indent, lineIndent, seqAt) : this.column - 1 > indent);
       if (ownsNextLine && (this.peek() === "&" || this.peek() === "!") && !this.isPropertyKey()) {
-        return this.parseInlineNode(indent, path, context, lineIndent, [anchor, tag], seqAt);
+        return this.parseInlineNode(indent, path, context, lineIndent, [anchor, tag], seqAt, floor);
       }
       // `a: &b` then `  *c`: the alias on the next line is this node, so it
       // carries the anchor or tag as surely as `a: &b *c` does. Left alone, it
@@ -1103,11 +1112,11 @@ export class KyamlParser {
     } else if (this.peek() === "|" || this.peek() === ">") {
       // The block scalar consumes its own header line and content lines. Its
       // content must be indented past the line that carries the indicator.
-      node = this.parseBlockScalar(lineIndent, loc);
+      node = this.parseBlockScalar(floor, loc);
     } else if (this.peek() === "{" || this.peek() === "[") {
       // Each line of a flow collection must be indented past the block node
       // that holds it (YAML 1.2 s-flow-line-prefix).
-      this.flowMin = lineIndent + 1;
+      this.flowMin = floor + 1;
       node = this.parseFlowNode(path);
       this.flowMin = null;
       this.expectEndOfLine();
@@ -1270,10 +1279,12 @@ export class KyamlParser {
    */
   scalarFromRaw(raw, loc, style) {
     // A plain scalar may not start with an indicator (YAML 1.2 ns-plain-first):
-    // `@`, `` ` `` and `%` ever, and `-`, `?` or `:` unless a safe character
-    // follows, so `a: - item` is not the string "- item" (`-1` and `-x` are
-    // plain scalars).
-    if (/^[@`%,\]}]/.test(raw) || /^[-?:]($|[ \t])/.test(raw)) {
+    // `@`, `` ` ``, `%`, `[`, `{`, `|`, `>`, `,`, `]` and `}` ever, and `-`,
+    // `?` or `:` unless a safe character follows, so `a: - item` is not the
+    // string "- item" (`-1` and `-x` are plain scalars). A later mapping key
+    // such as `[b]` or `|b` reaches here as text, and YAML does not read it
+    // as that string.
+    if (/^[@`%,[\]{}|>]/.test(raw) || /^[-?:]($|[ \t])/.test(raw)) {
       throw this.error(
         "PLAIN_INDICATOR",
         `a plain scalar cannot start with \`${raw[0]}\` here; quote it`,
