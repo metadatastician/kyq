@@ -1036,13 +1036,18 @@ export class KyamlParser {
     if ((anchor !== null || tag !== null) && (this.eof || this.peek() === "\n" || this.peek() === "#")) {
       const saved = { i: this.i, line: this.line, column: this.column, atContent: this.atContent };
       this.skipGap();
-      if (
+      const ownsNextLine =
         !this.eof &&
-        (this.peek() === "&" || this.peek() === "!") &&
-        !this.isPropertyKey() &&
-        (context === "root" ? !this.isEnclosingLine(indent, lineIndent, seqAt) : this.column - 1 > indent)
-      ) {
+        (context === "root" ? !this.isEnclosingLine(indent, lineIndent, seqAt) : this.column - 1 > indent);
+      if (ownsNextLine && (this.peek() === "&" || this.peek() === "!") && !this.isPropertyKey()) {
         return this.parseInlineNode(indent, path, context, lineIndent, [anchor, tag], seqAt);
+      }
+      // `a: &b` then `  *c`: the alias on the next line is this node, so it
+      // carries the anchor or tag as surely as `a: &b *c` does. Left alone, it
+      // would register `b` as an alias of `c`, and chains of such aliases cost
+      // the node budget nothing per link.
+      if (ownsNextLine && this.peek() === "*") {
+        throw this.error("ALIAS_DECORATED", "an alias may not carry an anchor or a tag", loc);
       }
       Object.assign(this, saved);
     }

@@ -96,6 +96,14 @@
       "path": ""
     },
     {
+      "file": "invalid/alias-decorated-next-line.yaml",
+      "expect": "invalid",
+      "code": "ALIAS_DECORATED",
+      "line": 2,
+      "column": 4,
+      "path": ""
+    },
+    {
       "file": "invalid/alias-cycle.yaml",
       "expect": "invalid",
       "code": "UNKNOWN_ANCHOR",
