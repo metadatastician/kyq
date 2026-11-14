@@ -53,7 +53,7 @@ not unfilled repository placeholders.
 
 Input YAML is tokenised by the lexer, parsed into the KYAML abstract syntax
 tree, and then either queried, linted against the Kubernetes rule set, or
-pretty-printed. See `README.md` for the planned command set and the
+pretty-printed. See `README.adoc` for the planned command set and the
 route-to-MVP milestones in `docs/status/ROADMAP.adoc`.
 
 == Build

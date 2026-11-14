@@ -58,7 +58,7 @@ toc::[]
   `docs/status/A1_GRAMMAR_CENSUS.adoc`.
 * Commands (`lint`, `fmt`, `get`, `set`, `del`, `validate`, `split`, `merge`,
   `diff`, `to-json`, `from-json`, `envsubst`, `inject`) are documented in
-  `README.md` and `Main.affine` help text. None are implemented. The help text
+  `README.adoc` and `Main.affine` help text. None are implemented. The help text
   itself is the product today.
 * Fixtures: `tests/fixtures/invalid-deployment.yaml` (deliberately broken
   `apps/v1beta2` + type mismatch + selector mismatch + `:latest`) and
@@ -118,7 +118,7 @@ evidence; no Scorecard/Hypatia/Mirror runtime PASS is claimed.
 
 === 0.3 Documentation, security, quality signals
 
-* `README.md` still says `make build` in *Installation* while the repo uses
+* `README.adoc` still says `make build` in *Installation* while the repo uses
   `just`; it claims binary sizes/startup times (`1–5 MB`, `10–20 ms`) as if
   measured, but ROADMAP says nothing has been compiled. `AFFIRMATION.adoc` is
   `DRAFT — UNSIGNED` at `4749fd5`, with correct toolchain versions, and it
@@ -150,7 +150,7 @@ evidence; no Scorecard/Hypatia/Mirror runtime PASS is claimed.
   accepts*, plus K8s conventions (multi-doc `---`, anchors/aliases used
   sparingly, tags rare, `apiVersion`/`kind`/`metadata`/`spec` required shapes).
 * Lint rules in `RequiredFields.affine` cover `required-field` for Pod,
-  Deployment, Service, ConfigMap, Secret; `README.md` enumerates a broader rule
+  Deployment, Service, ConfigMap, Secret; `README.adoc` enumerates a broader rule
   set (`deprecated-api`, `latest-tag`, `selector-mismatch`, `resource-names`,
   `label-keys`, `type-check`, etc.) that does not yet exist as code.
 
@@ -253,7 +253,7 @@ signal is left acknowledged-but-unhandled.
 
 === 3.2 Documentation fixes that stop lying
 
-* `README.md` Installation: `make build` → `just build`; add *Prerequisites*
+* `README.adoc` Installation: `make build` → `just build`; add *Prerequisites*
   (AffineScript toolchain URL + pinned version) and a *Current status* banner
   linking to `docs/status/ROADMAP.adoc` / `docs/AFFIRMATION.adoc`.
 * `CONTRIBUTING.md`: replace `make`/`meta-repos/kyq` paths, add
@@ -665,7 +665,7 @@ Already landed on `arena/dc1301aa-kyq` (previous commits):
   + `docs/IJSON_JCS_INTEGRATION.adoc` (stub) as the spec surface.
 * Hygiene: trimmed `dependabot.yml` (now `github-actions` + `cargo` only),
   noted Governance `Actions-lock verify` failure as follow-up, added
-  `just lock-check`, corrected `README.md`/`CONTRIBUTING.md`.
+  `just lock-check`, corrected `README.adoc`/`CONTRIBUTING.md`.
 * AffineScript mechanical port (A1) landed: `src/Kyaml/Ast.affine`,
   `Main.affine`, `Kyaml.affine`, `Lexer.affine`, `Parser.affine`,
   `Lint/RequiredFields.affine`, `Jcs.affine`, `Ijson.affine`, `tests/*.affine`,
