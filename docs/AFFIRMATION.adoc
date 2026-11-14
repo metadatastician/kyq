@@ -82,7 +82,7 @@ the reproduction steps and write a fresh affirmation; do not trust a stale one.
 * `kcq_chora.deed`: `(maturity :level experimental)`. Read it against this
   file.
 * `docs/status/ROADMAP.adoc`: blockers and next actions.
-* `README.adoc`: at the anchor its licence badge and licence section said
+* `README.md`: at the anchor its licence badge and licence section said
   Apache-2.0, while `LICENSE` and the SPDX headers say MPL-2.0 for code and
   CC-BY-SA-4.0 for prose. The change that lands this file corrects both, at
   the owner's request. Its first two lines are still `//` SPDX comments,
