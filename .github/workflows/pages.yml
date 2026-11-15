@@ -1,18 +1,25 @@
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
-# GitHub Pages via casket-ssg (hyperpolymath's pure-Haskell static site generator).
+# GitHub Pages via ddraig-ssg (hyperpolymath's Idris2 static site generator, the
+# proof-carrying one: the build fails if a page cannot be certified accessible).
 # Replaces the orphan one-off Pages deployment with a reproducible build.
 name: GitHub Pages
 
+# Deployed AFTER Dogfood Gate completes on main, because the site now carries
+# badges/k9.json (the README's live K9 badge). There is one Pages site per
+# repository and a deployment replaces it wholesale, so the badge has to be part
+# of THE deployment; a second, earlier deploy from a bare push would erase it.
+# This also means a manual workflow_dispatch is gone: re-run Dogfood Gate on
+# main to redeploy. Pages deployments are not branch writes, so this satisfies
+# the Branch-Floor ruleset (which refused the old governance-badges branch).
 on:
-  push:
+  workflow_run:
+    workflows: ["Dogfood Gate"]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Least privilege: nothing at workflow level; each job asks for what it needs.
+permissions: {}
 
 # Serialise Pages deploys; never cancel an in-flight deploy.
 concurrency:
@@ -20,72 +27,163 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    timeout-minutes: 20
-    runs-on: ubuntu-latest
+  # Freshness gate. Re-running an OLDER Dogfood Gate run (or a late-finishing one
+  # during a burst of merges) must not replace a newer run's badge: a green
+  # badge from an old commit would overwrite a red one from the current head.
+  # Only the run for the default branch's CURRENT head may deploy; a superseded
+  # run is skipped (not failed), because the newer run's own deployment follows.
+  gate:
+    # Only main pushes (never a PR or fork run), and not a cancelled gate run:
+    # a cancelled run staged nothing trustworthy to deploy.
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    outputs:
+      current: ${{ steps.fresh.outputs.current }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-
-      - name: Checkout casket-ssg
-        uses: actions/checkout@v7.0.1
-        with:
-          repository: hyperpolymath/casket-ssg
-          path: .casket-ssg
-
-      - name: Setup GHCup
-        uses: haskell-actions/setup@v2.12.1
-        with:
-          ghc-version: '9.8.2'
-          cabal-version: '3.10'
-
-      - name: Cache Cabal
-        uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ~/.cabal/packages
-            ~/.cabal/store
-            .casket-ssg/dist-newstyle
-          key: ${{ runner.os }}-casket-${{ hashFiles('.casket-ssg/casket-ssg.cabal') }}
-
-      - name: Build casket-ssg
-        working-directory: .casket-ssg
-        run: cabal build
-
-      - name: Build site
+      - name: Is this the default branch's current head?
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -euo pipefail
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/HEAD" --jq .sha)"
+          if [ "$head" = "$RUN_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Superseded: run is for ${RUN_SHA:0:12}, default branch is at ${head:0:12}; not deploying its badge."
+          fi
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.current == 'true'
+    permissions:
+      contents: read
+      actions: read   # download the badge artifact of the triggering run
+      pages: read     # configure-pages reads the Pages config (private repos)
+    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    steps:
+      # Deliberately NO `ref:`: a workflow_run job runs with this repository's
+      # permissions, so it builds the default branch (this repo's own trusted
+      # code) and never checks out the triggering run's head.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pinned to a commit: an SSG that runs in the deploy path must not float.
+      # Fetched by that exact SHA and verified, rather than through
+      # actions/checkout with a repository+ref: in a workflow_run workflow,
+      # SonarCloud S7631 flags any such checkout as possibly running fork code,
+      # and cannot tell a hard-coded SHA of a trusted repository from a
+      # variable ref. This step avoids that pattern; it does not make the
+      # finding wrong. The pin is the control, and the test below enforces it.
+      - name: Fetch ddraig-ssg at the pinned commit
+        env:
+          DDRAIG_SHA: c334dab63a25995ed5ce1256e4e633bad21adacd
+        run: |
+          set -euo pipefail
+          git init -q .ddraig-ssg
+          git -C .ddraig-ssg fetch -q --depth 1 https://github.com/hyperpolymath/ddraig-ssg "$DDRAIG_SHA"
+          git -C .ddraig-ssg checkout -q --detach FETCH_HEAD
+          test "$(git -C .ddraig-ssg rev-parse HEAD)" = "$DDRAIG_SHA"
+
+      # ddraig reads Markdown only and certifies every page (exactly one <h1>,
+      # non-skipping headings); a page that fails certification FAILS the build
+      # (exit 1) rather than publishing. So the seed is a minimal page with one
+      # <h1> pointing at the README (README.adoc is AsciiDoc and would fail the
+      # gate). A repository that wants a real site provides site/index.md.
+      # The toolchain is the same digest-pinned image ddraig's own CI uses, run
+      # on the runner's Docker: no marketplace action is needed for the build.
+      - name: Build site
+        env:
+          IDRIS2_PACK_IMAGE: ghcr.io/stefan-hoeck/idris2-pack@sha256:f0758996a931fb35d9ecb1de273c4d59dabe2a09b433afc7e357f65a08b7e1ff
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
           mkdir -p site _site
-          # Seed site/index.md from README if the author hasn't provided one.
+          name="${REPO#*/}"
           if [ ! -f site/index.md ]; then
             {
               echo "---"
-              echo "title: $(basename "$PWD")"
+              echo "title: ${name}"
               echo "date: $(date +%Y-%m-%d)"
               echo "---"
-              if [ -f README.adoc ]; then cat README.adoc
-              elif [ -f README.md ]; then cat README.md
-              else printf '\n# %s\n\nDocumentation coming soon.\n' "$(basename "$PWD")"
-              fi
+              echo "# ${name}"
+              echo
+              echo "See the [repository README](https://github.com/${REPO}#readme)."
             } > site/index.md
           fi
-          cd .casket-ssg && cabal run casket-ssg -- build ../site ../_site
+          base_url="https://$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]').github.io/${name}"
+          docker run --rm -v "$PWD:/w" -w /w/.ddraig-ssg "$IDRIS2_PACK_IMAGE" \
+            sh -c 'idris2 Ddraig.idr -o ddraig && ./build/exec/ddraig build ../site ../_site "$1"' _ "$base_url"
+
+      # The badge was staged by the gate's `badges` job from the lane result and
+      # evidence. A missing artifact fails this job loudly: deploying the site
+      # without it would silently delete the live badge.
+      - name: Fetch the staged badge
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: governance-badge-site
+          path: ${{ runner.temp }}/governance-badge-site
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Add the badge to the site
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/governance-badge-site/badges/k9.json"
+          mkdir -p _site/badges
+          cp "$RUNNER_TEMP/governance-badge-site/badges/k9.json" _site/badges/k9.json
+          cat _site/badges/k9.json
 
       - name: Setup Pages
-        uses: actions/configure-pages@v6.0.0
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5.0.0
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: '_site'
 
   deploy:
+    permissions:
+      contents: read   # read the default branch head for the freshness re-check
+      pages: write
+      id-token: write
     timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     steps:
+      # Second freshness check. The gate job only looked once, at the start; the
+      # build can take up to 20 minutes and the pages concurrency group does not
+      # cancel in-flight runs, so a newer push to the default branch may have landed
+      # since. Re-check immediately before deploying and skip (not fail) when this
+      # run has been superseded: the newer run's own deployment follows.
+      - name: Still the default branch's current head? (re-check before deploy)
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/HEAD" --jq .sha)"
+          if [ "$head" = "$RUN_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Superseded: run is for ${RUN_SHA:0:12}, default branch is at ${head:0:12}; not deploying its badge."
+          fi
+
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5.0.1
+        if: steps.fresh.outputs.current == 'true'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
