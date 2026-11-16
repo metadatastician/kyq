@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: MPL-2.0
+[package]
+name = "kyq"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MPL-2.0"
+description = "Bounded KYAML, I-JSON/JCS and Dhall processing for repository automation"
+repository = "https://github.com/metadatastician/kyq"
+readme = "README.adoc"
+keywords = ["kyaml", "json", "jcs", "dhall", "kubernetes"]
+categories = ["command-line-utilities", "encoding"]
+
+[dependencies]
+kyq-bounds = { path = "verification/bounds" }
+ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", rev = "1735d68768920f6f59667c9ba2c84769d8d45336" }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+serde_dhall = { version = "0.13", default-features = false }
+yaml-rust2 = "0.11"
+regex = "1"
+
+[dev-dependencies]
+proven-evidence = { git = "https://github.com/hyperpolymath/proven-tests-and-benches", rev = "2e978736732651098022169a6d1680e771eefc3e" }
+proptest = "1.9"
+
+[[bench]]
+name = "parsing"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

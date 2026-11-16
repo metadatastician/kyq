@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= First-party Rust proof status
+:revdate: 2026-11-16
+
+Owning policy: `metadatastician/standards`,
+`3-practice/PROOF-POLICY.adoc`, revision
+`305743d271bac04cf271a792b703a6379e29588b`, especially sections 1.2 and 5–6.
+Creusot verifies Rust implementations; Pearlite expresses their contracts.
+Verus supplies complementary specifications and proofs. It does not execute
+Pearlite contracts, and an independent model is not a second proof of the
+production implementation.
+
+== Obligations and connections to production
+
+[cols="1,2,2,1,3",options="header"]
+|===
+|ID |Implementation |Specification and verifier |Status |Evidence or next action
+|BUDGET-IMPL
+|`bounds/src/lib.rs::consume`; called by `src/kyaml.rs::Reader`
+|Pearlite postcondition: success is the mathematical sum within the limit;
+refusal means the sum exceeds it. Creusot 0.14.0.
+|PROVEN
+|The local 7 November run is recorded in link:README.adoc[]; the current
+candidate replay is link:REPLAY-2026-11-16.adoc[]. This row covers
+arithmetic only, not every caller's choice of charge or budget.
+|BUDGET-MODEL
+|`verus/budget.rs::consume`
+|Verus ensures the corresponding arithmetic statement, with `--no-cheating`.
+|PROVEN
+|The current model replay is link:REPLAY-2026-11-16.adoc[]. The model
+is not linked into the executable.
+|BUDGET-CORRESPONDENCE
+|Production `consume` versus the Verus model
+|A checked relation between inputs, return values and arithmetic semantics.
+Creusot/Pearlite implementation; Verus model.
+|OPEN
+|The bodies are separately maintained. Add a checked correspondence before
+counting Verus as evidence about the shipped implementation.
+|KYAML-GRAMMAR
+|`src/kyaml.rs::lexical_checks`, `Reader::node`, `parse`
+|Creusot/Pearlite contracts for source positions, state transitions and bounds;
+complementary Verus grammar and transition invariants.
+|OPEN
+|The native contract corpus passes, but parser contracts and their refinement
+to the normative grammar are not yet discharged. Decompose state transitions
+and specify dependency interfaces before extending the verified kernel.
+|KYAML-MAPS
+|`Reader::node` mapping branch
+|Creusot/Pearlite pre-insertion uniqueness invariant; Verus key-set model.
+|OPEN
+|Duplicate rejection is tested. Prove uniqueness over every accepted mapping,
+including escaped keys, and connect the model to the production branch.
+|KYAML-ALIASES
+|`Reader::node`, `storage_cost`, document-boundary anchor reset
+|Creusot/Pearlite accounting and depth invariants; Verus expansion model.
+|OPEN
+|Prove that charges cover every retained copy, that completed-node aliases
+preserve depth, and that document boundaries remove all prior anchors.
+|FORMAT-CLOSURE
+|`src/emit.rs`, `src/lib.rs::format_documents`
+|Creusot/Pearlite round-trip contract; Verus semantic-value model.
+|OPEN
+|Prove parse/format semantic preservation and idempotence, including numeric
+token distinctions. Property tests are separate empirical evidence.
+|JSON-POINTER
+|`src/lib.rs::query`, KYAML diagnostic `pointer` and `path_before`
+|Creusot/Pearlite escape/lookup contracts; Verus path model.
+|OPEN
+|Specify RFC 6901 token decoding, array lookup and source-path correspondence.
+|CLI-IO
+|`src/main.rs`
+|Creusot/Pearlite contracts for format dispatch and exit-state selection;
+Verus finite command-state model, with OS I/O assumptions.
+|OPEN
+|Native tests cover the declared commands. Model error propagation and connect
+the exit-state model to the production dispatcher.
+|REPO-TOOLS
+|`scripts/prune-dependabot-ecosystems.rs`, `scripts/strip-instruction-blocks.rs`
+|Creusot/Pearlite file-selection and transformation contracts; complementary
+Verus model of allowed edits and preservation of unrelated input.
+|OPEN
+|Canonical template utilities were copied with their functional controls.
+Develop contracts in the owning template and propagate their checked source;
+do not infer formal verification from passing mint-helper tests.
+|===
+
+The 118 bridge vectors, 49 fixture contracts, boundary regressions and bounded
+property tests are TESTED evidence. They do not change these OPEN proof rows
+to PROVEN. Existing research theorem statements in
+link:../docs/PROOF_OBLIGATIONS.adoc[] are not executed native proofs.
+
+== Dependency and verifier trust boundaries
+
+ASSUMED: `yaml-rust2` 0.11.1 scanning/events, `serde_dhall` 0.13 and its locked
+evaluator dependencies, and the JSON value representation used by
+`serde_json`. Their exact dependency closure is Cargo.lock. No third-party
+source was modified to insert proof contracts.
+
+`ijson-jcs` is an estate-owned companion, pinned at
+`1735d68768920f6f59667c9ba2c84769d8d45336`. Its validation and canonicalization
+behaviour is an ASSUMED boundary of the current kyq proofs. UTF-16 ordering,
+number serialization and the bridge require obligations in that owning
+repository, followed by checked interface contracts here.
+
+The Creusot toolchain, Why3 translation, SMT provers and their arithmetic
+models are checking dependencies. The Verus toolchain and its Z3 backend are
+also checking dependencies. Shared SMT trust is not independent witness
+evidence. No theory Proof Witness Grade is assigned by these engineering runs.
+
+== Toolchain provisioning deviations
+
+`CREUSOT-INSTALL` is open: the reusable Creusot workflow currently installs
+Creusot 0.14.0 from its upstream release tag with Rust nightly-2026-08-03,
+outside the repository's Guix/container environment. The workflow is pinned to
+`proven-cicd-and-workflows@9eb0bbf9bd80b7964ce5b9957e75821b3cd4a55b`.
+A qualified Guix/container proof-toolchain build and an immutable upstream
+installation digest are still required; the suite pin alone is not that digest.
+
+`VERUS-INSTALL` is open: the native Verus workflow downloads release
+`0.2026.11.02.8bf68ee`, archive SHA-256
+`f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c`,
+with Rust 1.99.1. This enables the model check while the Guix/container proof
+toolchain remains unqualified. Close the deviation only after that environment
+has a successful recorded build and replay.
+
+Any source, contract, dependency, verifier, solver, target-width or proof-gate
+change triggers revalidation of the affected rows. Record exact versions,
+source identity, invocation, positive/negative controls and discharged scope
+with each new receipt; a setup failure is not a proof result.

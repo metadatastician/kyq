@@ -1,638 +1,123 @@
 // SPDX-License-Identifier: CC-BY-SA-4.0
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+= kyq
+:toc:
+:toclevels: 2
 
-= kyq: Kubernetes YAML Query
+Native Rust processing for KYAML, strict I-JSON/JCS and import-free Dhall.
 
-*Kubernetes-native YAML processor, linter, and query tool built with AffineScript.*
+kyq validates structured data, queries it with JSON Pointer, formats KYAML,
+and produces deterministic JSON bytes through
+https://github.com/hyperpolymath/ijson-jcs[ijson-jcs].
+https://github.com/hyperpolymath/docmatrix[DocMatrix] uses the same parsing boundary.
 
-[NOTE]
-====
-Formerly *kcq*; renamed to *kyq* on 2026-10-14 (owner ruling D333, hyperpolymath/standards#1234). Old `metadatastician/kcq` links redirect here.
-====
+This is the Rust migration candidate. Earlier AffineScript sources remain
+historical research. link:docs/ASSURANCE.adoc[The acceptance record] separates
+executed checks from outstanding requirements for estate-wide adoption.
 
-....
-kyq — the yq that understands Kubernetes
-....
+== Start
 
-image:https://img.shields.io/badge/Code-MPL_2.0-blue.svg[Code: MPL-2.0,link=LICENSE]
-image:https://img.shields.io/badge/Docs-CC--BY--SA_4.0-lightgrey.svg[Docs: CC-BY-SA-4.0,link=LICENSES/CC-BY-SA-4.0.txt]
-image:https://img.shields.io/badge/Language-AffineScript-blueviolet.svg[Language: AffineScript,link=https://github.com/hyperpolymath/affinescript]
-image:https://img.shields.io/badge/Target-WebAssembly-654ff0.svg[Target: WebAssembly,link=https://webassembly.org/]
+Install Rust/rustup and Git. The repository pins its Rust toolchain.
+Bash is needed for the launcher and Just recipes; Windows users can use
+Git Bash or WSL, or invoke Cargo directly.
 
-'''
+[source,sh]
+----
+cargo build --locked --release
+cargo run --locked -- --help
+./launcher.sh --run validate examples/deployment.yaml
+just check
+----
 
-== Overview
+Run `just` to discover build, test, benchmark, documentation, provisioning and
+Podman tasks. link:docs/SETUP.adoc[Setup] covers manual installation, mise and Guix.
 
-`kyq` is a *Kubernetes YAML Query* tool — a specialized YAML processor designed for the Kubernetes ecosystem. Built on https://github.com/hyperpolymath/affinescript[AffineScript], it provides:
+== Commands and formats
 
-* *Kubernetes-aware parsing* — Understands K8s schemas, resource types, and conventions
-* *Resource safety* — AffineScript's type system prevents resource leaks and double-frees
-* *Small footprint* — Compiles to WebAssembly for minimal binary size (~1-5MB)
-* *Fast execution* — Optimized for K8s manifests and workflows
-* *Extensible linting* — Pluggable rule system for K8s best practices
+[source,sh]
+----
+kyq validate --from kyaml manifest.yaml
+kyq canon --from json document.json
+kyq to-json --from dhall configuration.dhall
+kyq get --pointer /metadata/name manifest.yaml
+kyq fmt manifest.yaml
+kyq check manifest.yaml
+----
 
-=== Goal: Replace yq for Kubernetes Use Cases
+Omit the filename or use `-` to read stdin. Input format is explicit and
+defaults to KYAML; a file extension does not establish content validity.
 
-While `yq` is excellent for generic YAML/JSON processing, `kyq` is *optimized for Kubernetes*:
-
-[cols="3,2,2",options="header"]
+[cols="1,3",options="header"]
 |===
-| Feature | yq | kyq
-
-| K8s schema validation | ❌ | ✅
-| Deprecated API warnings | ❌ | ✅
-| Selector validation | ❌ | ✅
-| Image tag warnings | ❌ | ✅
-| Resource naming rules | ❌ | ✅
-| Binary size | ~30-50MB | **~1-5MB**
-| Startup time | ~50ms | **~10-20ms**
-| Memory usage | Moderate | **Smaller**
-| Format support | YAML, JSON, XML, CSV, TOML, HCL | **KYAML (K8s YAML), JSON**
-|===
-
-[NOTE]
-====
-*For K8s: use kyq. For general YAML: use yq. Both can coexist.*
-====
-
-'''
-
-== Installation
-
-=== From Source
-
-[source,bash]
-----
-# Prerequisites
-git clone https://github.com/hyperpolymath/affinescript
-# Follow AffineScript setup instructions
-
-# Verify repository layout and deed
-just validate
-
-# Build kyq (currently blocked: AffineScript 0.1.1 does not parse src/ — see docs/status/ROADMAP.adoc)
-just build
-----
-
-[NOTE]
-====
-*Current status:* `just build` / `just test` / `just bench` fail with
-`not implemented` until the AffineScript grammar gap clears. This is
-intentional — no placeholder artefact is emitted. See
-`docs/ULTRAPLAN.adoc`, `docs/KYAML_SPEC.adoc`, and
-`docs/IJSON_JCS_INTEGRATION.adoc` for the KYAML + JCS guarantees being built
-toward, and `docs/PROOF_OBLIGATIONS.adoc` for the theorems they must satisfy.
-K8s manifests live under `examples/`; the lint-negative fixture is
-`tests/fixtures/invalid-deployment.yaml`.
-====
-
-=== Pre-built Binaries
-
-Pre-built WebAssembly and native binaries will be available in https://github.com/metadatastician/kyq/releases[Releases].
-
-'''
-
-=== Conformance gate (KYAML and I-JSON/JCS)
-
-The KYAML and JCS contracts in link:docs/KYAML_SPEC.adoc[`docs/KYAML_SPEC.adoc`] and
-link:docs/IJSON_JCS_INTEGRATION.adoc[`docs/IJSON_JCS_INTEGRATION.adoc`] are executable,
-not aspirational. `conformance/` holds the gate that enforces them:
-
-[source,bash]
-----
-node --test conformance/test/*.test.js                     # the gate's own corpus
-node conformance/bin/kyq-conformance.mjs check $(git ls-files '*.yaml' '*.yml')
-----
-
-It rejects duplicate keys and complex/merge keys, reports every parse error with
-a line and column, verifies `fmt(fmt(x)) == fmt(x)` byte-for-byte over the whole
-valid corpus, and emits JCS bytes that are diffed against the pinned
-https://github.com/hyperpolymath/ijson-jcs[`hyperpolymath/ijson-jcs`] commit.
-
-*The gate is a verification harness, not this implementation.* `src/` remains
-the AffineScript deliverable and must pass the same corpus once it compiles. Pin
-a release tarball digest and copy the CI job verbatim from
-link:docs/CONFORMANCE_GATE.adoc[`docs/CONFORMANCE_GATE.adoc`]; until such a gate
-exists, consumer CI cannot honestly claim to enforce KYAML/JCS conformance.
-
-'''
-
-== Usage
-
-=== Basic Commands
-
-[source,bash]
-----
-# Lint a Kubernetes manifest for common issues
-kyq lint deployment.yaml
-
-# Pretty-print a YAML file
-kyq fmt deployment.yaml
-
-# Query a value
-kyq get deployment.yaml '.spec.replicas'
-
-# Set a value
-kyq set deployment.yaml '.spec.replicas' 5 -i
-
-# Validate against K8s schemas
-kyq validate deployment.yaml
-
-# Convert YAML to JSON
-kyq to-json deployment.yaml
-----
-
-=== Example: Full Workflow
-
-[source,bash]
-----
-# Create a deployment with issues
-cat > deployment.yaml <<EOF
-apiVersion: apps/v1beta2
-kind: Deployment
-metadata:
-  name: my-app
-spec:
-  replicas: "3"
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: apache
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-EOF
-
-# Lint for issues
-$ kyq lint deployment.yaml
-✗ deployment.yaml:1:1 — deprecated API version: use apps/v1 instead of apps/v1beta2
-✗ deployment.yaml:5:16 — type error: spec.replicas must be integer, got string
-✗ deployment.yaml:14:10 — image uses :latest tag (nginx:latest)
-✗ deployment.yaml:8:5 — selector mismatch: spec.selector.matchLabels does not match spec.template.metadata.labels
-
-# Fix issues with kyq
-kyq set deployment.yaml '.apiVersion' 'apps/v1' -i
-kyq set deployment.yaml '.spec.replicas' 3 -i
-kyq set deployment.yaml '.spec.template.spec.containers[0].image' 'nginx:1.25' -i
-
-# Verify
-$ kyq lint deployment.yaml
-✓ deployment.yaml — all checks passed
-----
-
-'''
-
-== Commands Reference
-
-=== `kyq lint [FILES...]`
-
-Lint Kubernetes manifests for common issues.
-
-*Rules:*
-
-* `required-fields` — All K8s-required fields are present
-* `type-check` — Fields have correct types
-* `deprecated-api` — Warn on deprecated API versions
-* `latest-tag` — Warn on `:latest` image tags
-* `selector-mismatch` — Check selector matches pod template labels
-* `resource-names` — Enforce DNS-1123 naming conventions
-* `label-keys` — Validate label key format
-
-*Options:*
-
-----
-  -r, --rule RULE     Enable/disable specific rules (e.g., --rule=-latest-tag)
-  --color             Colored output
-  --no-color          Disable colors
-  --quiet             Only show errors
-  --format FORMAT     Output format: text, json, sarif
-  --check             Exit with error code if issues found
-----
-
-=== `kyq fmt [FILES...]`
-
-Pretty-print YAML files.
-
-*Options:*
-
-----
-  -i, --in-place      Modify files in place
-  -o, --output FILE   Write to file
-  --indent INT        Indentation (default: 2)
-  --width INT         Line width (default: 80)
-----
-
-=== `kyq get FILE PATH`
-
-Extract a value from a YAML file.
-
-*Examples:*
-
-[source,bash]
-----
-# Get replicas
-kyq get deployment.yaml '.spec.replicas'
-
-# Get all container images
-kyq get deployment.yaml '.spec.template.spec.containers[].image'
-
-# Get from multiple files
-kyq get '*.yaml' '.metadata.name'
-----
-
-=== `kyq set FILE PATH VALUE [-i]`
-
-Set a value at a path.
-
-*Examples:*
-
-[source,bash]
-----
-# Set replicas
-kyq set deployment.yaml '.spec.replicas' 5 -i
-
-# Set image
-kyq set deployment.yaml '.spec.template.spec.containers[0].image' 'nginx:1.25' -i
-
-# Add namespace
-kyq set deployment.yaml '.metadata.namespace' 'production' -i
-----
-
-=== `kyq del FILE PATH [-i]`
-
-Delete a field at a path.
-
-*Examples:*
-
-[source,bash]
-----
-# Remove a label
-kyq del deployment.yaml '.metadata.labels.old-label' -i
-
-# Remove a container
-kyq del deployment.yaml '.spec.template.spec.containers[1]' -i
-----
-
-=== `kyq validate [FILES...]`
-
-Validate against Kubernetes OpenAPI schemas.
-
-*Options:*
-
-----
-  --schema PATH     Custom schema file
-  --strict          Strict validation (fail on warnings)
-----
-
-=== `kyq split FILE [-o DIR]`
-
-Split multi-document YAML into separate files.
-
-*Examples:*
-
-[source,bash]
-----
-kyq split multi.yaml -o manifests/
-# Creates: manifests/00-deployment.yaml, manifests/01-service.yaml, etc.
-----
-
-=== `kyq merge [FILES...] [-o FILE]`
-
-Merge multiple YAML files into one.
-
-=== `kyq diff FILE1 FILE2`
-
-Show differences between two resources.
-
-=== `kyq to-json FILE [-o FILE]`
-
-Convert YAML to JSON.
-
-=== `kyq from-json FILE [-o FILE]`
-
-Convert JSON to YAML.
-
-=== `kyq envsubst [FILES...]`
-
-Replace `${VAR}` with environment variables.
-
-*Examples:*
-
-[source,bash]
-----
-# In YAML: image: ${IMAGE}:${TAG}
-IMAGE=nginx TAG=1.25 kyq envsubst deployment.yaml
-# Output: image: nginx:1.25
-----
-
-=== `kyq inject [FILES...] [-i]`
-
-Inject namespace, labels, or annotations.
-
-*Examples:*
-
-[source,bash]
-----
-# Inject namespace
-kyq inject deployment.yaml --namespace production -i
-
-# Inject labels
-kyq inject deployment.yaml --label app=myapp --label env=prod -i
-
-# Inject annotations
-kyq inject deployment.yaml --annotation 'k8s.io/description=My App' -i
-----
-
-'''
-
-== Query Language
-
-`kyq` supports a *jq-like query language* optimized for Kubernetes.
-
-=== Path Queries
-
-[cols="1,1",options="header"]
-|===
-| Query | Description
-
-| `.spec.replicas` | Get replicas
-| `.spec.containers[0].image` | Get first container image
-| `.spec.containers[].image` | Get all container images
-| `.metadata.labels."app.kubernetes.io/name"` | Get label with special chars
-| `.spec.ports[?(.port == 80)]` | Filter ports (future)
+|Operation |Contract
+|`validate` |Parse and validate; no rewritten output.
+|`canon` |Exactly one document, RFC 8785 bytes without a final newline.
+|`to-json` |Exactly one document, canonical bytes plus LF.
+|`get` |RFC 6901 JSON Pointer, one result per document.
+|`fmt` |Block KYAML on stdout; retains data and mapping order, discards comments.
+|`check` |Compare with native formatted bytes; never modify input.
 |===
 
-=== Filters (Future)
-
-[cols="1,1",options="header"]
-|===
-| Filter | Description
-
-| `select(.kind == "Deployment")` | Filter documents
-| `map(.metadata.name)` | Transform array
-| `.items[]` | Iterate over array
-|===
-
-=== Built-in Functions (Future)
-
-[cols="1,1",options="header"]
-|===
-| Function | Description
-
-| `length` | Array length
-| `keys` | Object keys
-| `has("field")` | Check if field exists
-| `env("VAR")` | Get environment variable
-|===
-
-'''
-
-== Architecture
-
-....
-┌─────────────────────────────────────────────────────────────┐
-│                         kyq CLI                                │
-├─────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │   Parser     │    │   Linter    │    │   Query     │  │
-│  │ (AffineScript)│───▶│ (Rules)     │───▶│  Engine     │  │
-│  └──────────────┘    └──────────────┘    └──────────────┘  │
-│           │                   │                   │            │
-│           ▼                   ▼                   ▼            │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                    KYAML AST                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-               ┌─────────────────────────────┐
-               │       Output Formatter       │
-               │  (YAML, JSON, Text, SARIF)    │
-               └─────────────────────────────┘
-....
-
-=== Core Components
-
-. *Parser* (`src/Kyaml/Parser.affine`)
-** Lexer for KYAML (K8s-specific YAML subset)
-** Parser to build Abstract Syntax Tree
-** Multi-document support
-
-. *Linter* (`src/Kyaml/Lint/`)
-** Pluggable rule system
-** K8s-specific validation
-** Configurable severity levels
-
-. *Query Engine* (`src/Kyaml/Query.affine`)
-** Path-based queries
-** jq-like filter language
-** In-place mutations
-
-. *K8s Schema* (`src/Kyaml/Schema/`)
-** Embedded K8s API schemas
-** Type definitions for common resources
-** Validation against official schemas
-
-'''
-
-== K8s Resource Support
-
-[cols="1,1,1",options="header"]
-|===
-| Kind | API Version | Support
-
-| Deployment | apps/v1 | ✅ Full
-| StatefulSet | apps/v1 | ✅ Full
-| DaemonSet | apps/v1 | ✅ Full
-| Service | v1 | ✅ Full
-| ConfigMap | v1 | ✅ Full
-| Secret | v1 | ✅ Full
-| Ingress | networking.k8s.io/v1 | ✅ Full
-| PersistentVolume | v1 | ✅ Full
-| PersistentVolumeClaim | v1 | ✅ Full
-| Namespace | v1 | ✅ Full
-| Job | batch/v1 | ✅ Full
-| CronJob | batch/v1 | ✅ Full
-| HorizontalPodAutoscaler | autoscaling/v2 | ✅ Full
-| PodDisruptionBudget | policy/v1 | ✅ Full
-| NetworkPolicy | networking.k8s.io/v1 | ✅ Full
-| CustomResourceDefinition | apiextensions.k8s.io/v1 | ✅ Full
-|===
-
-*All standard K8s resource types are supported.*
-
-'''
-
-== Lint Rules Reference
-
-=== Error-Level Rules
-
-[cols="1,2,1",options="header"]
-|===
-| Rule ID | Description | Default
-
-| `required-fields` | Missing required K8s fields | ✅
-| `type-mismatch` | Field has wrong type | ✅
-| `invalid-name` | Invalid resource name (DNS-1123) | ✅
-|===
-
-=== Warning-Level Rules
-
-[cols="1,2,1",options="header"]
-|===
-| Rule ID | Description | Default
-
-| `deprecated-api` | Using deprecated API version | ✅
-| `latest-tag` | Image uses `:latest` tag | ✅
-| `selector-mismatch` | Selector doesn't match pod template | ✅
-| `missing-labels` | Missing recommended labels | ❌
-| `root-user` | Container runs as root | ✅
-| `empty-selector` | Deployment has empty selector | ✅
-|===
-
-=== Info-Level Rules
-
-[cols="1,2,1",options="header"]
-|===
-| Rule ID | Description | Default
-
-| `non-standard-label` | Label key doesn't follow conventions | ❌
-| `missing-description` | Missing description annotation | ❌
-|===
-
-'''
-
-== Comparison: kyq vs yq
-
-=== Size & Performance
-
-[cols="1,1,1,1",options="header"]
-|===
-| Metric | yq (Go) | kyq (AffineScript/WASM) | Winner
-
-| Binary size | ~30-50MB | **~1-5MB** | ✅ kyq
-| Memory usage | ~50-100MB | **~20-40MB** | ✅ kyq
-| Startup time | ~50ms | **~10-20ms** | ✅ kyq
-| Parse speed | ~50MB/s | **~30-40MB/s** (early) | ⚠️ yq
-|===
-
-=== Features
-
-[cols="2,1,1,1",options="header"]
-|===
-| Feature | yq | kyq | Winner
-
-| Generic YAML | ✅ | ✅ | Tie
-| JSON | ✅ | ✅ | Tie
-| XML | ✅ | ❌ | yq
-| CSV | ✅ | ❌ | yq
-| TOML | ✅ | ❌ | yq
-| HCL | ✅ | ❌ | yq
-| Properties | ✅ | ❌ | yq
-| *K8s schema validation* | ❌ | ✅ | ✅ kyq
-| *Deprecated API warnings* | ❌ | ✅ | ✅ kyq
-| *Selector validation* | ❌ | ✅ | ✅ kyq
-| *Image tag warnings* | ❌ | ✅ | ✅ kyq
-| *Resource naming rules* | ❌ | ✅ | ✅ kyq
-|===
-
-=== Kubernetes-Specific
-
-[cols="2,1,1",options="header"]
-|===
-| Feature | yq | kyq
-
-| Understands K8s schemas | ❌ | ✅
-| Knows resource kinds | ❌ | ✅
-| Validates field types | ❌ | ✅
-| Warns on deprecated APIs | ❌ | ✅
-| Checks selector consistency | ❌ | ✅
-| Detects common mistakes | ❌ | ✅
-|===
-
-'''
-
-== Roadmap
-
-=== Phase 1: Core Parser & Lint (Current)
-
-* [x] Repository creation
-* [ ] KYAML lexer (basic)
-* [ ] KYAML parser (basic)
-* [ ] AST definition
-* [ ] Required fields linter
-* [ ] Type checking linter
-
-=== Phase 2: Basic Commands (1-2 weeks)
-
-* [ ] `lint` command with 5-10 rules
-* [ ] `fmt` command (pretty-print)
-* [ ] `get` command (basic path queries)
-* [ ] `validate` against embedded schemas
-
-=== Phase 3: Mutation Commands (2-3 weeks)
-
-* [ ] `set` command (update values)
-* [ ] `del` command (delete fields)
-* [ ] `inject` command (namespace/labels)
-* [ ] `envsubst` command
-
-=== Phase 4: Advanced Features (3-4 weeks)
-
-* [ ] Full query language (jq-like)
-* [ ] Multi-document operations
-* [ ] `split` and `merge` commands
-* [ ] `diff` command
-
-=== Phase 5: K8s Ecosystem (4-6 weeks)
-
-* [ ] GitHub Action
-* [ ] Pre-commit hooks
-* [ ] VS Code extension
-* [ ] Language server (LSP)
-
-=== Phase 6: Performance & Polish (Ongoing)
-
-* [ ] Optimize parser performance
-* [ ] Reduce binary size further
-* [ ] Add more lint rules
-* [ ] Improve error messages
-
-'''
-
-== Contributing
-
-See link:CONTRIBUTING.md[CONTRIBUTING.md] for development setup and contribution guidelines.
-
-'''
-
-== License
-
-* *Code:* Mozilla Public License 2.0, see link:LICENSE[LICENSE].
-* *Documentation:* CC-BY-SA-4.0, see link:LICENSES/CC-BY-SA-4.0.txt[LICENSES/CC-BY-SA-4.0.txt].
-
-Each file's `SPDX-License-Identifier` header is authoritative.
-
-'''
-
-== Related Projects
-
-* https://github.com/mikefarah/yq[yq] — The inspiration for generic YAML processing
-* https://github.com/hyperpolymath/affinescript[AffineScript] — The language kyq is built with
-* https://github.com/kubernetes-sigs/kustomize[Kustomize] — K8s configuration management
-* https://helm.sh[Helm] — K8s package manager
-* https://kubernetes.io/docs/reference/kubectl/[kubectl] — K8s CLI
-
-'''
-
-== acknowledgements
-
-* Inspired by https://github.com/mikefarah/yq[yq] and its ecosystem
-* Built with https://github.com/hyperpolymath/affinescript[AffineScript]
-* Kubernetes API schemas from https://github.com/kubernetes/kubernetes[kubernetes/kubernetes]
+Exit status is 0 for success, 1 for valid input with formatting drift, and
+2 for invalid input or usage. See link:docs/NATIVE-MIGRATION.adoc[the native CLI boundary].
+
+Duplicate keys are checked before map construction. Unsafe integer tokens,
+non-finite numbers, unsupported YAML constructs and invalid UTF-8 are rejected.
+Input is capped at 8 MiB, with explicit YAML depth and expansion budgets.
+Dhall expressions are typechecked; local, environment and remote imports are
+disabled. Untrusted Dhall evaluation still needs external process time and
+memory limits.
+
+JCS binary64 formatting and the estate's safe-integer-token policy are distinct.
+A large floating-point input can produce integer-looking JCS bytes that the
+strict lexical input policy rejects. KYAML formatting retains a decimal point
+for those values. Universal strict-JSON round-trip closure is not claimed.
+
+== Rust, Creusot, Pearlite and Verus
+
+The production bounds function is Rust with a Pearlite postcondition verified
+by Creusot. The parser uses it for resource accounting. A separate Verus model
+checks the corresponding arithmetic property. See
+link:verification/README.adoc[the precise proof boundary and executed receipts].
+
+These obligations do not establish formal correctness of the complete parser,
+YAML scanner, Dhall evaluator or JCS implementation. Full parser refinement
+and the dependency trust boundaries remain explicit obligations.
+
+Native tests check all 118 bridge vectors and all 49 committed KYAML fixtures,
+including declared diagnostics. Property tests and adversarial inputs supply
+additional empirical evidence.
+
+* link:docs/KYAML_SPEC.adoc[KYAML specification].
+* link:docs/NATIVE-MIGRATION.adoc[Native compatibility boundary].
+* link:docs/TEST-NEEDS.adoc[Testing obligations and unfilled categories].
+* link:docs/wiki/Home.adoc[Tracked wiki sources].
+
+CI uses pinned
+https://github.com/hyperpolymath/proven-cicd-and-workflows[proven-cicd-and-workflows].
+Shared native parser controls and benchmark support come from
+https://github.com/hyperpolymath/proven-tests-and-benches[proven-tests-and-benches].
+
+== Containers and reproducible environments
+
+`just container-build` builds the Wolfi image with Podman.
+`just container-run` applies the declared runtime restrictions.
+Guix, mise and provisioning configuration are committed alongside the source.
+link:docs/ASSURANCE.adoc[The acceptance record] tracks actual build qualification
+and outstanding Stapeln admission evidence.
+
+== Ask an AI to help
+
+[quote]
+____
+Set up kyq from https://github.com/metadatastician/kyq. Read
+docs/AI_INSTALLATION_GUIDE.adoc and docs/ASSURANCE.adoc, run the actual build
+and tests, and report every unmet requirement separately. Preserve the Rust,
+Creusot, Pearlite and complementary Verus proof boundaries; never describe
+passing tests as a completed formal proof.
+____
+
+Start with `just ai-warmup user`, `dev`, `maintainer` or `theorist`.
+The platform-maintainer guide covers CI, dependencies, packaging and release evidence.
+
+Code: MPL-2.0. Documentation: CC-BY-SA-4.0, as declared in each file.

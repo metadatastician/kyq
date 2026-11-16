@@ -144,3 +144,7 @@ verification/proofs/coq/.*.aux
 # Agda compiled proof artifacts
 verification/proofs/agda/*.agdai
 
+
+# Rebuilt Creusot intermediate verification conditions
+verification/bounds/verif/
+verification/bounds/.why3find/

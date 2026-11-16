@@ -1,112 +1,21 @@
 #!/usr/bin/env bash
-# kyq Launcher Script
 # SPDX-License-Identifier: MPL-2.0
-# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-
-# This script provides a convenient way to launch kyq
-# It handles the just-based build system and provides useful commands
-
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+# Compatibility entrypoint; launcher.sh owns provisioning and native execution.
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Print the command list and exit 0. build, build-release, test and bench
-# are listed but fail until AffineScript can compile the sources
-# (docs/status/ROADMAP.adoc, Blockers).
-usage() {
-    echo "Usage: $(basename "$0") [COMMAND] [OPTIONS]"
-    echo ""
-    echo "kyq — Kubernetes YAML Query"
-    echo "AffineScript-based KYAML processor"
-    echo ""
-    echo "Commands:"
-    echo "  build         - Build kyq (debug mode; not implemented yet)"
-    echo "  build-release - Build kyq (release mode; not implemented yet)"
-    echo "  test          - Run all tests (not implemented yet)"
-    echo "  bench         - Run benchmarks (not implemented yet)"
-    echo "  clean         - Clean build artifacts"
-    echo "  validate      - Validate the repo layout and deed"
-    echo "  install       - Install kyq system-wide (not implemented yet)"
-    echo "  just          - Run just commands directly"
-    echo ""
-    echo "Options:"
-    echo "  -h, --help    - Show this help message"
-    echo "  -v, --version - Show version information"
-    echo ""
-    echo "Examples:"
-    echo "  $(basename "$0") build"
-    echo "  $(basename "$0") test"
-    echo "  $(basename "$0") just --list"
-    exit 0
-}
-
-# Print the version, licences and repository, then exit 0.
-version() {
-    echo "kyq v0.1.0 — Kubernetes YAML Query"
-    echo "AffineScript KYAML Processor"
-    echo "License: MPL-2.0 (code) / CC-BY-SA-4.0 (docs)"
-    echo "Repository: metadatastician/kyq"
-    exit 0
-}
-
-# Parse arguments
-case "${1:-}" in
-    -h|--help|help)
-        usage
-        ;;
-    -v|--version)
-        version
-        ;;
-    build)
-        echo "Building kyq..."
-        cd "${SCRIPT_DIR}"
-        just build
-        ;;
-    build-release)
-        echo "Building kyq (release mode)..."
-        cd "${SCRIPT_DIR}"
-        just build-release
-        ;;
-    test)
-        echo "Running kyq tests..."
-        cd "${SCRIPT_DIR}"
-        just test
-        ;;
-    bench)
-        echo "Running kyq benchmarks..."
-        cd "${SCRIPT_DIR}"
-        just bench
-        ;;
-    clean)
-        echo "Cleaning kyq build artifacts..."
-        cd "${SCRIPT_DIR}"
-        just clean
-        ;;
-    validate)
-        echo "Validating kyq RSR compliance..."
-        cd "${SCRIPT_DIR}"
-        just validate
-        ;;
-    install)
-        echo "Installing kyq system-wide..."
-        cd "${SCRIPT_DIR}"
-        just install
-        ;;
-    just)
-        shift
-        echo "Running just commands: $*"
-        cd "${SCRIPT_DIR}"
-        just "$@"
-        ;;
-    "")
-        # No arguments - show help
-        usage
-        ;;
-    *)
-        echo "Error: Unknown command '${1:-}'" >&2
-        echo "Run '$(basename "$0") --help' for usage information" >&2
-        exit 1
-        ;;
+REPO_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+case "${1:---help}" in
+  -h|--help|help) exec bash "$REPO_DIR/launcher.sh" --help ;;
+  -v|--version) exec bash "$REPO_DIR/launcher.sh" --run --version ;;
+  build|build-release|test|bench|clean|install)
+    cd "$REPO_DIR"
+    exec just "$@"
+    ;;
+  just)
+    shift
+    cd "$REPO_DIR"
+    exec just "$@"
+    ;;
+  --*) exec bash "$REPO_DIR/launcher.sh" "$@" ;;
+  *) exec bash "$REPO_DIR/launcher.sh" --run "$@" ;;
 esac
-
-exit 0

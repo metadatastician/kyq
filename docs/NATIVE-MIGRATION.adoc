@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Native Rust migration contract
+
+The executable implementation now lives in src/lib.rs, src/kyaml.rs,
+src/emit.rs and src/main.rs. Cargo builds it independently of the retained
+AffineScript research sources. The prior README is preserved under docs/history.
+
+The existing JavaScript conformance gate remains an independent legacy oracle.
+The native contract tests check all 118 committed bridge vectors for canonical
+bytes or their declared diagnostics, and all 49 KYAML fixtures for verdict,
+document count and declared diagnostic code, position and path. These passed
+on Windows on 16 November 2026. Additional regressions cover every forbidden
+raw control character, escaped controls, nested diagnostic paths and implicit
+key limits. Neither the reference corpus nor its expectations were weakened.
+Corpus agreement is tested evidence, not a proof of grammar equivalence.
+Unclassified dependency failures retain the fallback code `YAML_SYNTAX`.
+
+The production resource-accounting function has a Pearlite postcondition for
+Creusot, with a complementary independent Verus model. Full parser correctness
+is still an open formal obligation; see link:../verification/README.adoc[].
+
+The block formatter preserves insertion order and semantic types. Unlike the
+legacy formatter it retains .0 for an integral float beyond the safe integer
+range when JCS would otherwise emit an unsafe integer token. This intentionally
+repairs formatting closure for that boundary; its regression test is edges.rs.
+
+The native CLI uses --from and RFC 6901 pointers. It is not a complete jq/yq
+expression engine, Kubernetes schema validator or implementation of every
+historical get/set/del/lint proposal. Existing automation must use the declared
+native command contract and pass its acceptance corpus before changing callers.
+
+Estate rollout is staged: qualify the parser and shared library, qualify the
+DocMatrix seam, exercise representative repository manifests read-only, then
+update consumers through reviewed pinned changes. No mass rewrite of estate
+configuration is part of validation.

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MPL-2.0
+[settings]
+lockfile = true
+[tools]
+rust = "latest"
+just = "latest"
+shellcheck = "latest"

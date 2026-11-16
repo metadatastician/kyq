@@ -3,7 +3,7 @@ K9!
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
 # coordination.k9 — AI Coordination Protocol for kyq
-# Kubernetes YAML Query - AffineScript KYAML processor
+# Native Rust KYAML, I-JSON/JCS and Dhall processor
 #
 # Repository: metadatastician/kyq
 # Owner: hyperpolymath
@@ -13,30 +13,29 @@ K9!
 # Facts the grammar has no field for live in kyq_chora.deed: the docs
 # licence (manifest :docs-license), the estate (ecosystem :ecosystem) and
 # the RSR tier target (playbook success-metrics). CRG grade: C.
-# Build recipes: see the Justfile. build, test, bench and wasm fail with
-# "not implemented" until AffineScript can compile the sources
-# (docs/status/ROADMAP.adoc).
+# Build and verification recipes: see the Justfile and verification/PROOF-STATUS.adoc.
+# Retained AffineScript sources are historical research, not the native runtime.
 
 metadata:
   schema: k9-coordination
   schema_version: 1.1.1
   generated_by: manual
-  last_updated: 2026-10-07
+  last_updated: 2026-11-16
 
 project:
   name: "kyq"
-  description: "Kubernetes YAML Query — AffineScript-based KYAML processor. Intended as a smaller, K8s-aware alternative to yq with compile-time safety guarantees."
+  description: "Bounded native Rust processing for KYAML, strict I-JSON/JCS and import-free Dhall; formal proof scope is recorded separately from parsing tests."
   license: MPL-2.0
   repo: metadatastician/kyq
   deed_ref: kyq_chora.deed
   languages:
-    - AffineScript
+    - Rust
   build_system: just
 
 invariants:
-  - id: affinescript-only
-    rule: "All implementation code MUST be AffineScript"
-    reason: "Primary language constraint for the project"
+  - id: rust-verification-stack
+    rule: "First-party runtime implementation MUST use Rust with Creusot verification, Pearlite contracts and complementary Verus scopes recorded in verification/PROOF-STATUS.adoc"
+    reason: "Owner instruction and standards PROOF-POLICY section 1.2; unexecuted required proofs remain OPEN"
     severity: critical
   - id: mpl-2.0-code
     rule: "All source code MUST use MPL-2.0 license"

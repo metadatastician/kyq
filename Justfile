@@ -1,256 +1,113 @@
-# SPDX-License-Identifier: CC-BY-SA-4.0
-# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-#
-# kyq Justfile — Kubernetes YAML Query
-# RSR-compliant build system for AffineScript KYAML processor
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+set shell := ["bash", "-cu"]
+set windows-shell := ["bash", "-cu"]
+mod provision 'build/just/provision.just'
 
-set shell := ["bash", "-uc"]
-
-# Project metadata
-project := "kyq"
-OWNER := "metadatastician" 
-REPO := "kyq"
-version := "0.1.0"
-tier := "2"
-
-# Directories
-BIN_DIR := "bin"
-DIST_DIR := "dist"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DEFAULT & HELP
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# Show tasks and provisioning commands
 default:
-	@echo "kyq v{{version}} — Kubernetes YAML Query"
-	@echo "AffineScript KYAML Processor"
-	@echo "License: MPL-2.0 (code) / CC-BY-SA-4.0 (docs)"
-	@echo ""
-	@just --list --unsorted
+    @just --list --list-submodules
 
-# Show project info
-info:
-	@echo "Project: {{project}}"
-	@echo "Version: {{version}}"
-	@echo "RSR Tier: {{tier}}"
-	@echo "Owner: {{OWNER}}"
-	@echo "Repository: {{OWNER}}/{{REPO}}"
+# Install the declared toolchain and run diagnostics
+setup: provision::setup
+doctor: provision::doctor
+heal: provision::heal
+dev-shell: provision::dev-shell
+toolchain-refresh: provision::toolchain-refresh
+config-show: provision::config-show
+ai-setup: provision::ai-setup
+opsm: provision::opsm
+langs: provision::langs
+eval: provision::eval
+deps: provision::deps
+search pattern:
+    @just provision::search {{quote(pattern)}}
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BUILD & COMPILE
-# ═══════════════════════════════════════════════════════════════════════════════
+# Read an audience-specific AI warm-up
+ai-warmup who="user":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case {{quote(who)}} in
+      user|dev|maintainer|theorist) cat "docs/onboarding/llm-warmup-{{who}}.adoc" ;;
+      *) echo "audience must be user, dev, maintainer or theorist" >&2; exit 2 ;;
+    esac
 
-# AffineScript 0.1.1 does not parse the sources under src/, so nothing can be
-# built, tested or benchmarked yet. These recipes fail instead of producing a
-# placeholder binary or reporting tests that never ran
-# (docs/status/ROADMAP.adoc, Blockers).
-not_implemented := "not implemented: AffineScript 0.1.1 does not parse src/ (see docs/status/ROADMAP.adoc, Blockers)"
+# Build the portable default package set
+build:
+    cargo build --locked
+build-release:
+    cargo build --locked --release
 
-# Build kyq (debug mode) — not implemented yet
-build *args:
-	@echo "{{not_implemented}}" >&2
-	@exit 1
+# Execute tests, benchmark smoke tests and documentation examples
+test:
+    cargo test --locked --all-targets
+    cargo test --locked --doc
 
-# Build in release mode — not implemented yet
-build-release *args:
-	@echo "{{not_implemented}}" >&2
-	@exit 1
-
-# Build WASM version — not implemented yet
-wasm *args:
-	@echo "{{not_implemented}}" >&2
-	@exit 1
-
-# Clean build artifacts
-clean:
-	rm -rf {{BIN_DIR}} {{DIST_DIR}}
-	@echo "Clean complete"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TEST & QUALITY
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Run all tests — not implemented yet
-test *args:
-	@echo "{{not_implemented}}" >&2
-	@exit 1
-
-# Run benchmarks — not implemented yet
+# Measure release builds; retain host/compiler information with the result
 bench:
-	@echo "{{not_implemented}}" >&2
-	@exit 1
+    cargo bench --locked
+lint:
+    cargo clippy --locked --all-targets -- -D warnings
+fmt:
+    cargo fmt --all
+fmt-check:
+    cargo fmt --all --check
+doc:
+    cargo doc --locked --no-deps
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# VALIDATION & COMPLIANCE
-# ═══════════════════════════════════════════════════════════════════════════════
+# The same local acceptance sequence used before review
+check: fmt-check lint test doc
 
-# DEED_LINT=<standards>/1-formats/deed/tools/deed_lint.js also checks the deed grammar.
-# Validate repository layout and the repo deed (fail-closed)
-validate:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	fail=0
-	for d in src tests benches templates gradings; do
-	  if [ -d "$d" ]; then echo "✓ $d/ exists"; else echo "✗ $d/ missing"; fail=1; fi
-	done
-	for f in LICENSE LICENSES/MPL-2.0.txt LICENSES/CC-BY-SA-4.0.txt coordination.k9; do
-	  if [ -f "$f" ]; then echo "✓ $f exists"; else echo "✗ $f missing"; fail=1; fi
-	done
-	mapfile -t deeds < <(find . -maxdepth 1 -name '*_chora.deed' -type f)
-	if [ "${#deeds[@]}" -ne 1 ]; then
-	  echo "✗ expected exactly one *_chora.deed, found ${#deeds[@]}"
-	  exit 1
-	fi
-	deed="${deeds[0]}"
-	grep -q ':schema-version "' "$deed" || { echo "✗ $deed: no :schema-version"; fail=1; }
-	grep -q '(status' "$deed" || { echo "✗ $deed: no (status ...) clause"; fail=1; }
-	if grep -q '#u7"' "$deed"; then echo "✗ $deed: #u7 literal (illegal, D305)"; fail=1; fi
-	a2ml="$(git ls-files '*.a2ml' 2>/dev/null || find . -name '*.a2ml' -not -path './.git/*')"
-	if [ -n "$a2ml" ]; then echo "✗ A2ML is retired; remove: $a2ml"; fail=1; fi
-	if [ -n "${DEED_LINT:-}" ]; then
-	  bun "$DEED_LINT" "$deed" || fail=1
-	else
-	  echo "note: deed grammar NOT checked (DEED_LINT unset)"
-	fi
-	if [ "$fail" -ne 0 ]; then echo "validation FAILED"; exit 1; fi
-	echo "✓ $deed"
-	echo "validation passed"
+# Run the native CLI
+run *args:
+    cargo run --locked --bin kyq -- {{args}}
 
-# Check every tracked AffineScript file. Missing tools and source failures are
-# both hard failures: this recipe never skips a strict check or prints a
-# placeholder PASS. Set AFFINESCRIPT to a pinned executable when it is not on
-# PATH (see docs/AFFINESCRIPT_STRICT_PORT.adoc A1).
-affine-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    compiler="${AFFINESCRIPT:-affinescript}"
-    if ! command -v "$compiler" >/dev/null 2>&1; then
-      echo "MISSING_TOOLCHAIN: AffineScript compiler not found: $compiler" >&2
-      echo "Set AFFINESCRIPT to a pinned affinescript executable." >&2
-      exit 2
-    fi
-    compiler="$(command -v "$compiler")"
-    if [[ "$compiler" != /* ]]; then
-      compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
-    fi
-    stdlib="${AFFINESCRIPT_STDLIB:-./stdlib}"
-    if [ ! -f "$stdlib/prelude.affine" ]; then
-      echo "MISSING_TOOLCHAIN: AffineScript standard library not found: $stdlib" >&2
-      echo "Set AFFINESCRIPT_STDLIB to the pinned v0.1.1 stdlib directory." >&2
-      exit 2
-    fi
-    export AFFINESCRIPT_STDLIB="$(cd "$stdlib" && pwd)"
-    "$compiler" --version
-    failed=0
-    while IFS= read -r file; do
-      if [[ "$file" == src/* ]]; then
-        source_path="${file#src/}"
-      else
-        source_path="../$file"
-      fi
-      if ! (cd src && "$compiler" check "$source_path"); then
-        echo "AFFINE_CHECK_FAILED: $file" >&2
-        failed=$((failed + 1))
-      fi
-    done < <(git ls-files '*.affine' | LC_ALL=C sort)
-    if [ "$failed" -ne 0 ]; then
-      echo "affine check failed for $failed tracked file(s)" >&2
-      exit 1
-    fi
-    echo "✓ affine checks passed for every tracked .affine file"
+# Print the package version
+version:
+    cargo run --locked --bin kyq -- --version
 
-# Run the non-gating A1 grammar census (same MISSING_TOOLCHAIN contract).
-affine-a1:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    export AFFINESCRIPT="${AFFINESCRIPT:-affinescript}"
-    bash scripts/affine-a1-probe.sh
+# Build the Wolfi image with Podman
+container-build:
+    podman build --file Containerfile --tag localhost/kyq:dev .
 
-# Check that every workflow `uses:` is locked/pinned (requires yq + gh)
-lock-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Checking action pinning..."
-    bash scripts/check-action-pinning.sh
-    if command -v gawk >/dev/null 2>&1; then \
-      bash scripts/check-lock-sync.sh; \
-    else \
-      echo "note: gawk not installed, skipping check-lock-sync (install with apt-get install gawk)"; \
-    fi
-    echo "Running invisible-character scan..."
-    tmp="$(mktemp -d)"; \
-    bash scripts/check-invisible-characters.sh "." "$tmp/results" "$tmp/blocking" || true; \
-    if [ -s "$tmp/results" ]; then echo "invisible-char findings:"; cat "$tmp/results"; else echo "no invisible-char findings"; fi; \
-    rm -rf "$tmp"
+# Run without network access, capabilities or a writable root filesystem
+container-run *args:
+    podman run --rm -i --network=none --read-only --cap-drop=ALL --memory=256m --cpus=1 --pids-limit=64 --security-opt=no-new-privileges localhost/kyq:dev {{args}}
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONFORMANCE GATE  (docs/CONFORMANCE_GATE.adoc)
-# ═══════════════════════════════════════════════════════════════════════════════
-#
-# The gate is a verification harness, not the kyq implementation: it is plain
-# ESM JavaScript with no dependencies, in the same role as the scripts/ tooling.
-# It fails closed — a missing toolchain or an unrun test is a red recipe, never
-# a printed PASS.
+# A container smoke test; absence of Podman is a failure
+container-test:
+    podman run --rm --network=none --read-only --cap-drop=ALL localhost/kyq:dev --version
 
-# Run the conformance gate: its test corpus, then this repo's own manifests
-conformance:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	cli=conformance/bin/kyq-conformance.mjs
-	node "$cli" --version
-	node --test conformance/test/*.test.js
-	mapfile -t manifests < <(git ls-files '*.yaml' '*.yml' \
-	  | grep -v -E '^(templates/|conformance/fixtures/kyaml/invalid/)' || true)
-	if [ "${#manifests[@]}" -eq 0 ]; then
-	  echo "no manifests found; refusing to report a vacuous pass" >&2
-	  exit 1
-	fi
-	node "$cli" validate "${manifests[@]}"
-
-# Differential run against the pinned hyperpolymath/ijson-jcs commit.
-# Requires git, cargo and network. Exits 2 (not 0, not "skipped") when the
-# oracle cannot be built, because an unavailable oracle proves nothing.
-conformance-oracle:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	node conformance/tools/ijson-jcs-diff.mjs
-
-# Build the pinned release tarball; prints dist/SHA256SUMS
-conformance-package:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	bash conformance/tools/package.sh
-
-# Gate files as KYAML: `just conformance-check a.yaml b.yaml`
-conformance-check *files:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	if [ "$#" -eq 0 ]; then
-	  echo "usage: just conformance-check FILE..." >&2
-	  exit 2
-	fi
-	node conformance/bin/kyq-conformance.mjs check "$@"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# INSTALL
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Install kyq system-wide — not implemented yet (there is no binary to install)
+# Install the locked native binary into Cargo's user bin directory
 install:
-	@echo "{{not_implemented}}" >&2
-	@exit 1
+    cargo install --locked --path .
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# DOCUMENTATION
-# ═══════════════════════════════════════════════════════════════════════════════
+# Independent legacy conformance oracle (not the native implementation)
+conformance:
+    node --test conformance/test/*.test.js
+conformance-oracle:
+    node conformance/tools/ijson-jcs-diff.mjs
+conformance-package:
+    bash conformance/tools/package.sh
+repo-map:
+    bash scripts/gen-repo-map.sh .
 
-# Generate just cookbook
-docs:
-	@echo "Generating documentation..."
-	@mkdir -p docs
-	@echo "# kyq Justfile Cookbook" > docs/just-cookbook.adoc
-	@echo "Generated: $(date)" >> docs/just-cookbook.adoc
-	@echo "" >> docs/just-cookbook.adoc
-	@echo "== Available Recipes" >> docs/just-cookbook.adoc
-	@just --list --unsorted >> docs/just-cookbook.adoc
-	@echo "Documentation generated in docs/"
+# Check production budget boundaries with the normal Rust compiler
+bounds-test:
+    cargo test --locked --manifest-path verification/bounds/Cargo.toml
+
+# Replay the production Pearlite contract using the installed Creusot toolchain
+proof-creusot:
+    cd verification/bounds && cargo +nightly-2026-08-03 creusot
+
+# Verify the separate arithmetic model; does not prove production refinement
+proof-verus:
+    verus --no-cheating --crate-type lib verification/verus/budget.rs
+
+# Show exactly which first-party obligations are proven, assumed or open
+proof-status:
+    cat verification/PROOF-STATUS.adoc
+
+# Remove Cargo build output using Cargo's own target-directory rules
+clean:
+    cargo clean

@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Verification boundary
+
+link:PROOF-STATUS.adoc[The proof-status ledger] assigns Creusot/Pearlite and
+Verus scopes, implementation connections, assumptions and outstanding work.
+
+`bounds` is the runtime resource-accounting kernel. Its Pearlite postcondition
+states that a successful consumption is the mathematical sum and stays within
+the limit, and refusal means that sum exceeds the limit. Creusot 0.14.0 checks
+these obligations; Rust tests alone do not discharge them.
+
+`verus/budget.rs` is an independent model of the same operation. A successful
+Verus run proves that model. It does not prove the YAML scanner, Dhall evaluator,
+JCS implementation or a refinement relationship between independent programs.
+
+Commands:
+
+[source,sh]
+----
+cd verification/bounds
+cargo creusot
+# From the repository root:
+verus --no-cheating --crate-type lib verification/verus/budget.rs
+----
+
+== Executed boundary, 7 November 2026
+
+The production `bounds/src/lib.rs` obligation passed the shared Creusot gate
+at proven-cicd commit `b4ba6cbf068afb4f02443d0c3289e307dcb806a9`, using
+Creusot 0.14.0 and Rust nightly-2026-08-03. The planted false contract failed,
+the true contract passed, and the gate reported one crate expected, attempted
+and completed, with proof exit status 0 and `controls_passed=true`.
+The checked source was the budget kernel in kyq commit
+`442404bb9ecd358213e3a7a12e7dc6baf53dbc6c`; that local revision was not signed
+or published when this run completed. No source-level `#[trusted]` axiom is
+present in the kernel. `bounds/why3find.json` records the replay configuration.
+
+Verus `0.2026.11.02.8bf68ee`, with `--no-cheating`, passed the shared
+`actions/verus-check/check.sh` controls and reported one verified obligation,
+zero errors for `verus/budget.rs`. The release archive SHA-256 is
+`f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c`.
+These are local proof results for the stated kernel/model. A new release must
+replay the gates against its own source revision.
+
+== Open obligations
+
+The current candidate's kernel and model were replayed successfully on
+16 November; link:REPLAY-2026-11-16.adoc[] records their exact source digests,
+tool versions, controls and scope. This local replay does not replace CI at
+the eventual published commit.
+
+Remaining obligations include duplicate-key rejection before map construction,
+alias-height preservation, complete KYAML grammar refinement, UTF-16 JCS key
+ordering, float serialization and Dhall evaluator resource bounds. The imported
+yaml-rust2, serde_dhall and ijson-jcs implementations remain in the trusted base.
+Do not describe the parser as formally verified on the strength of the budget lemma.

@@ -1,19 +1,16 @@
-# This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
-# Rust CI — thin wrapper calling the shared estate reusable in
-# metadatastician/standards. Configure once, propagate everywhere.
-# See: docs/CI-REUSABLE-WORKFLOWS.adoc in standards.
+# The reusable workflow and its action dependencies are recorded in actions.lock.
 name: Rust CI
 on:
   push:
     branches: [main, master]
   pull_request:
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
 permissions:
-  actions: read
   contents: read
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   rust-ci:
-    uses: metadatastician/standards/.github/workflows/rust-ci-reusable.yml@7641c7fdb01420696b5420ab85d88f599f32f609
+    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/rust-ci.yml@9eb0bbf9bd80b7964ce5b9957e75821b3cd4a55b

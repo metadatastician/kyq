@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Native integration status
+:revdate: 2026-11-16
+
+The current implementation direction is Rust with Creusot/Pearlite contracts and
+a Verus model. Earlier AffineScript milestones remain historical research.
+The authoritative native feature boundary is README.adoc; the admission checklist
+is docs/ASSURANCE.adoc and the full taxonomy record is docs/TEST-NEEDS.adoc.
+
+Implemented: native parsing of KYAML, strict JSON and import-free Dhall;
+deterministic block formatting, JCS bytes, RFC 6901 queries and CLI exit statuses.
+Shared support: ijson-jcs, the DocMatrix structured-data adapter, and reusable
+parser-contract tests/benchmarks contributed to proven-tests-and-benches.
+
+All 118 committed bridge vectors and 49 fixture diagnostic contracts pass in
+native Windows and Debian Rust tests. Explicit-tag numeric limits and exact
+Core Schema non-finite spellings have additional regression tests.
+
+Creusot/Pearlite and Verus replays passed their stated scopes on 2026-11-16;
+see link:../../verification/REPLAY-2026-11-16.adoc[the source-hash-bound record].
+
+Outstanding: broader independent grammar corpus,
+sustained fuzz/mutation campaigns, production refinement, all-platform CI,
+hermetic Guix builds, Stapeln bundle admission and all-forge/local-estate canaries.
+Kubernetes schema validation, arbitrary jq/yq expressions, mutation commands and
+TOML parsing are not implemented by this candidate.
+
+No percentage-complete or production-ready claim follows from this status file.

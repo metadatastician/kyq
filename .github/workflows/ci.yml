@@ -1,10 +1,10 @@
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 #
-# CI for kyq. It runs only the checks that can run today. The source census
-# and compiler controls are not build, test, runtime, or release gates. A7 host
-# I/O and an end-to-end compiled CLI are not established, so no placeholder
-# artifact is uploaded (docs/status/ROADMAP.adoc, Blockers).
+# Metadata, shell checks and retained AffineScript research controls.
+# Native Rust runtime tests run in rust-ci.yml and native-platforms.yml.
+# Creusot/Pearlite and Verus run in their dedicated workflows; consult
+# verification/PROOF-STATUS.adoc for the scope of each proof.
 name: CI
 
 on:
