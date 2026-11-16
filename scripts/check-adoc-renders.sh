@@ -37,15 +37,25 @@ fi
 
 # Subject list read NUL-delimited so a path containing a space cannot split.
 FILES=()
+subjects=$(mktemp) || exit 2
+trap 'rm -f "$subjects"' EXIT
 if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git -C "$REPO_ROOT" ls-files -z -- '*.adoc' >"$subjects"; then
+        echo "ERROR: git subject enumeration failed" >&2
+        exit 2
+    fi
     while IFS= read -r -d '' f; do
         FILES+=("$REPO_ROOT/$f")
-    done < <(git -C "$REPO_ROOT" ls-files -z -- '*.adoc' 2>/dev/null || true)
+    done < "$subjects"
 else
+    if ! find "$REPO_ROOT" -type f -name '*.adoc' \
+        -not -path '*/.git/*' -not -path '*/node_modules/*' -print0 >"$subjects"; then
+        echo "ERROR: find subject enumeration failed" >&2
+        exit 2
+    fi
     while IFS= read -r -d '' f; do
         FILES+=("$f")
-    done < <(find "$REPO_ROOT" -type f -name '*.adoc' \
-        -not -path '*/.git/*' -not -path '*/node_modules/*' -print0 2>/dev/null || true)
+    done < "$subjects"
 fi
 
 # An empty subject list is a PASS, not a failure. This is a TEMPLATE: a stripped

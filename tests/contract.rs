@@ -118,6 +118,8 @@ fn every_forbidden_raw_control_is_located_and_escaped_controls_remain_data() {
         let escaped = format!("value: \"\\u{codepoint:04x}\"\n");
         let docs = parse(escaped.as_bytes(), Format::Kyaml).unwrap();
         assert_eq!(docs[0]["value"], character.to_string());
+        let rendered = kyq::format_documents(&docs).unwrap();
+        assert_eq!(parse(&rendered, Format::Kyaml).unwrap(), docs);
     }
 }
 

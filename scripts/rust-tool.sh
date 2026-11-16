@@ -25,8 +25,21 @@ src="$scripts_dir/$name.rs"
 
 [ -f "$src" ] || { echo "rust-tool: no such tool: $src" >&2; exit 2; }
 
-cache="${RSR_MINT_TOOL_CACHE:-${TMPDIR:-/tmp}/rsr-mint-tools}"
-mkdir -p "$cache"
+cache="${RSR_MINT_TOOL_CACHE:-${TMPDIR:-/tmp}/rsr-mint-tools-$(id -u)}"
+umask 077
+if [ ! -e "$cache" ] && [ ! -L "$cache" ]; then
+    mkdir -m 700 -- "$cache" || exit 2
+fi
+private_owned() {
+    [ ! -L "$1" ] && [ -O "$1" ] || return 1
+    local mode
+    mode=$(stat -c %a -- "$1" 2>/dev/null) || mode=$(stat -f %Lp "$1") || return 1
+    (( (8#$mode & 077) == 0 ))
+}
+if [ ! -d "$cache" ] || ! private_owned "$cache"; then
+    echo "rust-tool: unsafe cache directory: $cache" >&2
+    exit 2
+fi
 # The binary is named by the CONTENT of its source, not by the tool name and
 # a modification time. Keyed by name with an mtime check, two checkouts with
 # different versions of a tool shared one binary, and a source whose mtime
@@ -44,6 +57,12 @@ bin="$cache/$name-$digest"
 # Compile only when no binary exists for this exact source, so the common
 # case is a straight exec. Build to a temporary name and rename, so a
 # concurrent mint never executes a half-written binary.
+if [ -e "$bin" ] || [ -L "$bin" ]; then
+    if [ ! -f "$bin" ] || ! private_owned "$bin"; then
+        echo "rust-tool: unsafe cached executable: $bin" >&2
+        exit 2
+    fi
+fi
 if [ ! -x "$bin" ]; then
     # The toolchain is needed to BUILD, not to RUN. Checking for rustc up
     # front made a cached binary unusable on a machine without one, which is
@@ -55,7 +74,7 @@ if [ ! -x "$bin" ]; then
         echo "           Install one from https://rustup.rs, then re-run." >&2
         exit 2
     }
-    tmp_bin="$bin.tmp.$$"
+    tmp_bin=$(mktemp "$cache/.build.XXXXXXXX") || exit 2
     rustc -O -o "$tmp_bin" "$src" >&2 || {
         rm -f "$tmp_bin"
         echo "rust-tool: failed to compile $src" >&2

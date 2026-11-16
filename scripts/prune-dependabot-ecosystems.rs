@@ -74,7 +74,10 @@ fn main() {
 
     let text = match fs::read_to_string(path) {
         Ok(t) => t,
-        Err(_) => return,
+        Err(error) => {
+            eprintln!("dependabot: cannot read {path}: {error}");
+            std::process::exit(1);
+        },
     };
 
     // Split the document at each entry start, keeping the preamble separate.
@@ -82,22 +85,43 @@ fn main() {
     // anything we do not drop.
     let mut head = String::new();
     let mut entries: Vec<String> = Vec::new();
+    let mut prefixes: Vec<String> = Vec::new();
+    let mut pending = String::new();
+    let mut tail = String::new();
+    let mut entry_indent = None;
+    let mut in_tail = false;
     for line in text.split_inclusive('\n') {
-        if is_entry_start(line) {
-            entries.push(String::new());
-        }
-        match entries.last_mut() {
-            Some(e) => e.push_str(line),
-            None => head.push_str(line),
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if !in_tail && is_entry_start(line) {
+            entries.push(line.to_string());
+            prefixes.push(std::mem::take(&mut pending));
+            entry_indent = Some(indent);
+        } else if in_tail {
+            tail.push_str(line);
+        } else if let Some(marker_indent) = entry_indent {
+            if !trimmed.trim().is_empty() && !trimmed.starts_with('#') && indent < marker_indent {
+                in_tail = true;
+                tail.push_str(&std::mem::take(&mut pending));
+                tail.push_str(line);
+            } else if trimmed.trim().is_empty() || trimmed.starts_with('#') {
+                pending.push_str(line);
+            } else {
+                let entry = entries.last_mut().unwrap();
+                entry.push_str(&std::mem::take(&mut pending));
+                entry.push_str(line);
+            }
+        } else {
+            head.push_str(line);
         }
     }
+    tail.push_str(&pending);
 
     if entries.is_empty() {
         println!("  dependabot: no ecosystem entries found");
         return;
     }
 
-    let mut kept: Vec<String> = Vec::new();
     let mut kept_names: Vec<String> = Vec::new();
     let mut dropped_names: Vec<String> = Vec::new();
 
@@ -105,13 +129,12 @@ fn main() {
         let name = ecosystem_name(entry);
         if keep.contains(&name.as_str()) {
             kept_names.push(name);
-            kept.push(entry.clone());
         } else {
             dropped_names.push(name);
         }
     }
 
-    if kept.is_empty() {
+    if kept_names.is_empty() {
         println!("  dependabot: refusing to prune every entry; left unchanged");
         return;
     }
@@ -121,11 +144,16 @@ fn main() {
     }
 
     let mut out = head;
-    for k in &kept {
-        out.push_str(k);
+    for (prefix, entry) in prefixes.iter().zip(&entries) {
+        out.push_str(prefix);
+        if keep.contains(&ecosystem_name(entry).as_str()) {
+            out.push_str(entry);
+        }
     }
-    if fs::write(path, out).is_err() {
-        return;
+    out.push_str(&tail);
+    if let Err(error) = fs::write(path, out) {
+        eprintln!("dependabot: cannot write {path}: {error}");
+        std::process::exit(1);
     }
     println!(
         "  dependabot: kept {} / dropped {}",

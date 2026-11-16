@@ -14,9 +14,11 @@ fi
 case "${1:---help}" in
   --run)
     shift
-    cd "$REPO_DIR" || exit 2
     command -v cargo >/dev/null 2>&1 || { printf '%s\n' 'Install Rust using ./launcher.sh --setup.' >&2; exit 2; }
-    exec cargo run --locked --bin kyq -- "$@"
+    (cd "$REPO_DIR" && cargo build --locked --bin kyq) || exit $?
+    binary=$(cd "$REPO_DIR" && cargo metadata --locked --no-deps --format-version 1 | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+    [ -n "$binary" ] || exit 2
+    exec "$binary/debug/kyq" "$@"
     ;;
   --help)
     hp_help
