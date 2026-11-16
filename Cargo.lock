@@ -599,7 +599,7 @@ dependencies = [
 [[package]]
 name = "ijson-jcs"
 version = "0.1.0"
-source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=1735d68768920f6f59667c9ba2c84769d8d45336#1735d68768920f6f59667c9ba2c84769d8d45336"
+source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=c7091491ad48b64c19ee9bb754a28186f8e94042#c7091491ad48b64c19ee9bb754a28186f8e94042"
 dependencies = [
  "ryu-js",
  "serde",

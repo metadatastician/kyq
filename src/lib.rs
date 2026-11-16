@@ -24,6 +24,8 @@ pub enum Format {
     Kyaml,
     /// Strict I-JSON, including duplicate and integer-token checks.
     Json,
+    /// JSON with explicit RFC 8785 binary64 number semantics, including rounding.
+    Jcs,
     /// Dhall expressions with imports disabled.
     Dhall,
 }
@@ -87,6 +89,11 @@ pub fn parse(input: &[u8], format: Format) -> Result<Vec<Value>, Error> {
         Format::Json => {
             let value = ijson_jcs::parse_json(text, ijson_jcs::JsonMode::Canonical)
                 .map_err(|e| Error::new("INVALID_IJSON", e.to_string()))?;
+            Ok(vec![value])
+        }
+        Format::Jcs => {
+            let value =
+                ijson_jcs::parse_jcs(text).map_err(|e| Error::new("INVALID_JCS", e.to_string()))?;
             Ok(vec![value])
         }
         Format::Dhall => {

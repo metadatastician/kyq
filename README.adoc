@@ -121,3 +121,18 @@ Start with `just ai-warmup user`, `dev`, `maintainer` or `theorist`.
 The platform-maintainer guide covers CI, dependencies, packaging and release evidence.
 
 Code: MPL-2.0. Documentation: CC-BY-SA-4.0, as declared in each file.
+== JSON ingress and JCS wire numbers
+
+Use `--from json` (or `ijson`) for strict integer-token ingress: integer tokens
+outside ±(2^53−1) are rejected. Use `--from jcs` to read RFC 8785's binary64
+numeric model, including canonical output containing larger integral doubles.
+For example, JSON input `1e16` canonicalizes to `10000000000000000`; read those
+bytes with `--from jcs`. The explicit JCS reader rounds numeric tokens to
+binary64, so `9007199254740993` becomes `9007199254740992`. Preserve identifiers
+and arbitrary-precision values as strings. Duplicate keys, invalid Unicode,
+non-finite values, trailing input and size limits remain errors in both modes.
+
+In Rust, select `Format::Json` or `Format::Jcs` explicitly. `check --from jcs`
+uses the estate-file byte profile: canonical JCS plus exactly one LF. `canon`
+always emits library bytes without LF. These input policies do not change the
+KYAML core schema or Dhall's type system.

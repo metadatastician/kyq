@@ -13,7 +13,7 @@ categories = ["command-line-utilities", "encoding"]
 
 [dependencies]
 kyq-bounds = { path = "verification/bounds" }
-ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", rev = "1735d68768920f6f59667c9ba2c84769d8d45336" }
+ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", rev = "c7091491ad48b64c19ee9bb754a28186f8e94042" }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 serde_dhall = { version = "0.13", default-features = false }
 yaml-rust2 = "0.11"

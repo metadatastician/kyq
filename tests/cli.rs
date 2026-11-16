@@ -99,3 +99,18 @@ fn non_utf8_arguments_are_errors_not_panics() {
     assert!(out.stdout.is_empty());
     assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
 }
+
+#[test]
+fn explicit_jcs_input_preserves_the_numeric_wire_format() {
+    let canonical = invoke(&["canon", "--from", "json"], b"1e16");
+    assert!(canonical.status.success());
+    assert_eq!(canonical.stdout, b"10000000000000000");
+    let strict = invoke(&["canon", "--from", "json"], &canonical.stdout);
+    assert_eq!(strict.status.code(), Some(2));
+    let wire = invoke(&["canon", "--from", "jcs"], &canonical.stdout);
+    assert!(wire.status.success());
+    assert_eq!(wire.stdout, canonical.stdout);
+    let checked = invoke(&["check", "--from", "jcs"], b"10000000000000000\n");
+    assert_eq!(checked.status.code(), Some(0));
+    assert!(checked.stdout.is_empty());
+}

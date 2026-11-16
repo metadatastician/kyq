@@ -84,3 +84,21 @@ proptest! {
         prop_assert_eq!(kyq::format_documents(&parse(&yaml, Format::Kyaml).unwrap()).unwrap(), yaml);
     }
 }
+
+#[test]
+fn jcs_reader_round_trips_integral_doubles_without_relaxing_json() {
+    for (input, format) in [
+        ("1e16", Format::Json),
+        ("!!float 9007199254740993", Format::Kyaml),
+        ("1.0e16", Format::Dhall),
+    ] {
+        let canonical = canonicalize(input.as_bytes(), format).unwrap();
+        assert!(parse(&canonical, Format::Json).is_err());
+        assert_eq!(canonicalize(&canonical, Format::Jcs).unwrap(), canonical);
+        let yaml = kyq::format_documents(&parse(&canonical, Format::Jcs).unwrap()).unwrap();
+        assert_eq!(canonicalize(&yaml, Format::Kyaml).unwrap(), canonical);
+    }
+    for input in [r#"{"a":1,"a":2}"#, r#""\ud800""#, "1e400", "0 1"] {
+        assert!(parse(input.as_bytes(), Format::Jcs).is_err());
+    }
+}

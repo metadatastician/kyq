@@ -4,7 +4,7 @@
 
 == Implemented surfaces
 
-Native Rust KYAML parsing, strict JSON/JCS delegation, import-free typed Dhall,
+Native Rust KYAML parsing, strict JSON ingress and explicit binary64 JCS delegation, import-free typed Dhall,
 JSON Pointer queries, deterministic block formatting, a standalone CLI and
 the DocMatrix structured-data API. The production node-budget operation uses
 verification/bounds, whose Pearlite contract is checked separately from Rust tests.
@@ -29,7 +29,7 @@ iterations, input bytes and elapsed time; debug timings are not release targets.
 
 == Recorded executions
 
-The 2026-11-16 Debian and Windows native suites pass, including the corpus,
+At revision `9df66eb`, the 2026-11-16 Debian and Windows native suites passed, including the corpus,
 Clippy and formatting. The source-hash-bound Creusot/Pearlite production-budget
 proof and complementary Verus arithmetic model both passed with positive and
 negative controls; see link:../verification/REPLAY-2026-11-16.adoc[the proof record].
@@ -56,3 +56,8 @@ Template: hyperpolymath/rsr-template-repo at e67ee0013777509a198977b840c0f0fabfa
 Stapeln: metadatastician/stapeln at 33d7e5ee28d8de2170fe8671323c41c8bae221d7.
 The existing Proven-Tests v2 evidence contract has its own pinned taxonomy;
 do not confuse that historical contract with every category in current standards.
+
+The explicit JCS-reading follow-up pins ijson-jcs to
+c7091491ad48b64c19ee9bb754a28186f8e94042. Its new reader and round-trip
+regressions await hosted validation; local heavy validation is held by the
+host-memory coordinator. No prior receipt is promoted to cover this follow-up.

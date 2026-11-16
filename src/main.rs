@@ -20,7 +20,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     }
     if command == "--help" || command == "help" {
         println!(
-            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|dhall] [--pointer /path] [FILE|-]\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\nDhall imports are disabled. check compares formatted bytes without modifying files."
+            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall] [--pointer /path] [FILE|-]\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. check compares formatted bytes without modifying files."
         );
         return Ok(0);
     }
@@ -35,9 +35,10 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
             "--from" => {
                 format = match args.next().as_deref() {
                     Some("kyaml" | "yaml") => Format::Kyaml,
-                    Some("json" | "ijson" | "jcs") => Format::Json,
+                    Some("json" | "ijson") => Format::Json,
+                    Some("jcs") => Format::Jcs,
                     Some("dhall") => Format::Dhall,
-                    _ => return Err("--from requires kyaml, json or dhall".into()),
+                    _ => return Err("--from requires kyaml, json, jcs or dhall".into()),
                 }
             }
             "--pointer" => {
@@ -79,7 +80,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         "check" => {
             let expected = match format {
                 Format::Kyaml => kyq::format_documents(&docs)?,
-                Format::Json => {
+                Format::Json | Format::Jcs => {
                     let mut bytes = kyq::canonicalize_documents(&docs)?;
                     bytes.push(b'\n');
                     bytes
