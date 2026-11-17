@@ -232,6 +232,31 @@ conformance-check *files:
 	node conformance/bin/kyq-conformance.mjs check "$@"
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PROOFS  (verification/proofs/README.adoc, docs/status/PROOF-STATUS.adoc)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Every leg asserts its toolchain version and fails on a mismatch; another
+# version must be named (KYQ_AGDA_VERSION, KYQ_COQ_VERSION) and recorded as a
+# deviation in PROOF-STATUS. Exit 2 = toolchain, 1 = proof or control failed,
+# 3 = a leg is OPEN. A missing leg is never a pass.
+
+# Every proof leg and every negative control; red while any leg is OPEN
+proofs:
+	bash verification/proofs/run-proofs.sh all
+
+# Agda spine (--safe --without-K --cubical-compatible --no-libraries), coverage, scans, controls
+proofs-agda:
+	bash verification/proofs/run-proofs.sh agda
+
+# Rocq recheck leg (re-proved, BRIDGE-PENDING; prints DEVIATION DEV-2) and its controls
+proofs-rocq:
+	bash verification/proofs/run-proofs.sh rocq
+
+# Lean recheck leg (OPEN: exits 3 until a Lean leg exists)
+proofs-lean:
+	bash verification/proofs/run-proofs.sh lean
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # INSTALL
 # ═══════════════════════════════════════════════════════════════════════════════
 

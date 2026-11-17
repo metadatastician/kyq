@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Proof Status — kyq
+:revdate: 2026-11-17
+
+The per-claim proof record for kyq in the sense of
+`hyperpolymath/standards` `3-practice/PROOF-POLICY.adoc` §8.5. A row says
+only what a run in this repository supports. Obligations are listed in
+`docs/PROOF_OBLIGATIONS.adoc`; the proofs and how to run them are in
+`verification/proofs/`.
+
+*State in one paragraph.* The P1 proof spine exists as an Agda development
+(9 modules, 0 development postulates) and a Rocq recheck leg. Both were
+checked in this session on an *uncommitted* working tree, with Agda 2.6.3
+rather than the estate pin 2.7.0.1 (deviation DEV-1) and with coqc 8.18.0,
+which is not a Guix pin (deviation DEV-2). There is no Lean leg. There is no
+machine-readable receipt (§8.5.1). So every theory row is `ungraded`. Nothing
+about kyq's code, the JS conformance oracle or ijson-jcs is proven.
+
+*Home.* The spine is theory, and kyq is not meant to be its home. It is
+placed here *provisionally* until owner decision D13 names the theory home
+(open; see `verification/proofs/agda/README.adoc` for the arms and the
+verify-canon M8 caveat). §8.5 records a grade in the theorem's home
+repository, so these rows, the controls and any receipts move with the
+spine when D13 is ruled.
+
+== Vocabulary
+
+* Status tokens (§5): `proven`, `proven-with-postulates`, `tested-only`,
+  `argued` (= ASSUMED), `open`.
+* Recheck routes (§2, §8.5): `transported`, `re-proved`, `waived`,
+  `unavailable`, each with a §2.2 correspondence state (`BRIDGE-PENDING`,
+  `RECONCILED`, ...). A leg with no route yet is written "route unset".
+* Proof Witness Grades (§8): `PWG-3` < `PWG-2i` < `PWG-2ii` < `PWG-1`, or
+  `ungraded`. A grade is derived from receipts and is never asserted here.
+
+== Census (with denominators)
+
+[cols="2,1,1,3",options="header"]
+|===
+| Prover | Stated | Checked | Notes
+
+| Agda (source of truth) | 93 | 93 | `agda --safe --without-K --cubical-compatible --no-libraries All.agda`, Agda *2.6.3* (DEV-1). Development postulates: 0. 9 modules. The runner checks that every module is in the cone Agda checked.
+| Rocq (recheck, `re-proved`) | 15 | 15 | `coqc` 8.18.0 (DEV-2). 15 of 15 `Print Assumptions` report "Closed under the global context". Covers 15 of the 93 Agda theorems.
+| Lean 4 (recheck) | 0 | 0 | No toolchain (see "Lean leg"). 0 of 93. Planned first tranche: the 15 theorems the Rocq leg covers.
+| Idris2 (engineering, P2) | 0 | 0 | Not started.
+| Negative controls, Agda | 9 | 9 refused | Each refused with its expected message.
+| Negative controls, Rocq | 2 | 2 refused | Each refused with its expected message.
+| Runner controls | 4 | 4 as expected | `KyqStray.agda`, `LexHidden.agda` and `Stray.v` flagged; `LexDecoys.agda` not flagged.
+|===
+
+"Stated" counts the named results listed in the Claims table, not helper
+lemmas. Recheck coverage is 15 of 93 Agda theorems: the other 78 have no
+recheck leg in either Rocq or Lean.
+
+Grade census (§8.4 rule 8): *ungraded 93 of 93; PWG-3 0 of 93; PWG-2i 0 of
+93; PWG-2ii 0 of 93; PWG-1 0 of 93.*
+
+== Claims
+
+Every row has `pwg: ungraded` and `foundation_diverse: false`. The Agda leg
+of every row: token `proven` (the kernel accepted the term under the §2.1
+flags with no escape hatch and with the coverage check passing), *checked
+with Agda 2.6.3 under DEV-1*, on an uncommitted tree, with no §8.5.1 receipt.
+The Rocq and Lean columns give route; §5 token; §2.2 state.
+
+The "Catalogue id" column cites only ids that exist in
+`docs/PROOF_OBLIGATIONS.adoc`. "Design / proposed id" cites ids from the
+phase-1 design (S1.b, S1.c, rulings) and ids proposed for the catalogue but
+not yet in it (see below).
+
+[cols="3,3,2,2,2,1",options="header"]
+|===
+| Agda result (module) | Statement (informal) | Catalogue id | Design / proposed id | Rocq leg | Lean leg
+
+| `leq-total`, `leq-antisym`, `leq-trans` (KyqOrder) | UTF-16 code-unit member order is a total order | JCS-4 (order part only) | — | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `canon-nf`, `nf-fixed` (KyqValue) | canon lands in normal forms; fixes every normal form | JCS-6 (value level) | — | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `canon-idem` (KyqValue) | `canon (canon v) ≡ canon v` | JCS-6 (value level) | — | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `nf-covered`, `image-nf`, `isort-perm`, `canon-not-id` (KyqValue) | image canon = NF; sorting permutes; canon is a proper retraction | JCS-6 (value level) | — | route unset; `open` | unavailable; `open`
+| `sorted-unique`, `isort-unique` (KyqUnique) | one object level: same members + distinct names ⇒ same sorted list | JCS-5(a), one level | — | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `no-unique-without-distinct` (KyqUnique) | without distinct names, one-level uniqueness is false | JCS-1 (necessity only) | — | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `canon-resp` (KyqRecursive) | well-formed values equal up to member order at every depth canonicalise equally | JCS-5(a), value level, recursive | — | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `canon-resp-needs-wf` (KyqRecursive) | without WF, recursive JCS-5(a) is false | JCS-1 (necessity only) | — | route unset; `open` | unavailable; `open`
+| `nf-unique` (KyqRecursive) | uniqueness of the canonical representative in each class | JCS-5(a), value level | S1.c | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `canon-wf`, `~-canon`, `ker-sound`, `ker-canon` (KyqRecursive) | ker canon = "same up to member order" on well-formed values | JCS-5(a), value level | S1.c (≈ = ker p) | route unset; `open` | unavailable; `open`
+| `canon-measure`, `canon-depth`, `canon-nodes`, `canon-bytes`, `verdict-canon`, `within-canon` (KyqMeasure) | every member-order-blind measure is invariant under canon; the R3 depth (containers), node (keys excluded) and UTF-8 string-byte budgets are closed under canon, with the same typed verdict | SEC-1 (budget closure under canon only) | ruling R3 | route unset; `open` | unavailable; `open`
+| `depth-scalar`, `depth-empty`, `depth-leaf-free`, `depth-nested`, `nodes-keys-excluded`, `bytes-keys-included` (KyqMeasure) | the three measures agree with `conformance/src/budgets.js` on small values | — | ruling R3 | route unset; `open` | unavailable; `open`
+| `tv-sound`, `tv-complete`, `tv-iff` (KyqCodec) | two-argument TV: `tv(in,out) ⇔ in ∈ Dom ∧ out = c(p in)` | — | proposed TV-1 (design P4) | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `closure`, `c-resp`, `roundtrip≈`, `canonical-gate-valid` (KyqCodec) | `c v` is in the Canonical accept set, given NormIdem, RoundTrip and DomClosed; a canonical gate is validity-sound | — | proposed JCS-10, accept-set half only; proposed JCS-11 (definition) | route unset; `open` | unavailable; `open`
+| `ref-nonmalleable`, `ref-complete`, `gate-closure` (KyqCodec.RefCheck) | the reference check is a canonical gate: `check (c v) ≡ true` derived from NormIdem, RoundTrip, DomClosed | — | proposed JCS-10, gate level, reference check only; proposed JCS-11 | route unset; `open` | unavailable; `open`
+| `free-≈-trivial`, `roundtrip-upto`, `upto-lossless`, `sem-roundtrip` (KyqCodec) | ≈ must not be free; declared losses only set the grade; under NormSeparates the round trip holds up to the independent `sem` | X-1..X-3 (abstract shape only) | S1.c; verify-logic L2 | route unset; `open` | unavailable; `open`
+| `roundtrip-compose`, `covered-compose`, `faithful-compose` (KyqCodec) | Faithful≈ composes, under Chain, BackCong, FwdCong and ImgChain | — | FID-1, Faithful≈ part only (grade composition open) | route unset; `open` | unavailable; `open`
+| `model-normidem`, `model-roundtrip`, `model-nonmalleable`, `model-complete`, `model-tv` (KyqModel) | the codec hypotheses are satisfiable, in a degenerate witness (total parser, Dom = ⊤) | — | non-vacuity | route unset; `open` | unavailable; `open`
+| `loose-validity`, `loose-not-nonmalleable`, `covered-not-enough`, `validity-not-tv-sound` (KyqModel) | F-2: validity ⇏ non-malleability; RoundTrip × Covered ⇏ Faithful; tv-sound needs NonMalleable | — | proposed JCS-11 (why it is separate); S1.b | route unset; `open` | unavailable; `open`
+| `one-arg-not-tv` (KyqModel) | a one-argument check does not give TV | — | proposed TV-1 (L1) | re-proved; `proven`; BRIDGE-PENDING | unavailable; `open`
+| `model-separates`, `coarse-gate`, `coarse-rt`, `coarse-idem`, `coarse-norm-faithful`, `coarse-not-separating`, `drop-not-faithful` (KyqModel) | a constant `norm` meets every codec law and makes a document-dropping converter Faithful≈; NormSeparates `_~_` rules it out | — | S1.c; verify-logic L2(c) | route unset; `open` | unavailable; `open`
+| `wrap-roundtrip`, `wrap-covered-image`, `wrap-not-covered`, `covered-vacuous` (KyqModel) | Covered≈ fails for an embedding at img = ⊤, holds at the image of fwd, is vacuous at ⊥ | — | Faithful≈ (Covered≈) | route unset; `open` | unavailable; `open`
+| `hole-breaks-rt`, `r3-rt`, `r3-excludes-hole`, `r3-maximal`, `toy-old-not-closed`, `toy-r3-closed` (KyqProfile) | the large-float hole is a profile RoundTrip failure; R3 restores it and is the largest closed domain | JCS-2 (profile model only) | proposed JCS-10; ruling R3 | route unset; `open` | unavailable; `open`
+| `domR3B-sound`, `domR3B-complete` (KyqProfile) | the R3 domain is decidable | JCS-2 (profile model only) | ruling R3; verify-logic L7 | route unset; `open` | unavailable; `open`
+| `value-rt`, `value-rt-old-fails`, `allnum-canon`, `profile-roundtrip`, `profile-closure`, `old-closure-fails` (KyqProfile) | the same, lifted to token trees and to a `Format`; `profile-closure` is the accept-set half | JCS-2 (profile model only) | proposed JCS-10, accept-set half | route unset; `open` | unavailable; `open`
+| `allB-sound`, `allB-complete`, `profile-gate-closure` (KyqProfile) | with decidable numeral equality, the profile's reference check is a canonical gate under R3: `check (c v) ≡ true` derived | JCS-2 (profile model only) | proposed JCS-10, gate level, reference check only; ruling R3 | route unset; `open` | unavailable; `open`
+| `toy-gate`, `toy-tv-in-dom`, `toy-tv-refused`, `toy-tv-outside-dom`, `toy-check-noncanonical`, `toy-check-canonical` (KyqProfile) | a second witness with a partial parser and a proper Dom: every hypothesis holds, and TV refuses a refused input and an input outside Dom | — | non-vacuity; proposed TV-1 | route unset; `open` | unavailable; `open`
+|===
+
+*Proposed ids.* These rows need ids that `docs/PROOF_OBLIGATIONS.adoc` does
+not have yet. None reuses an existing catalogue id:
+
+* JCS-10 (closure): `check(canon x) = OK`, ruling R3. Proven here only in its
+  accept-set half and for the reference check, never for kyq's `check`.
+* JCS-11 (non-malleability, design S1.b): `check b = OK ⇒ b ∈ Dom ∧ b = c(p b)`.
+  The design documents label this "JCS-5(c)/S1.b"; that collides with the
+  catalogue's JCS-5(c), which is the compact-form clause (minimal separators,
+  UTF-8). JCS-5(c) keeps its catalogue meaning here.
+* TV-1: two-argument translation validation.
+* FID-1: composition of Faithful≈.
+
+Adding them is a catalogue edit for a later step; it was not done here.
+
+== Catalogue status (every id in `docs/PROOF_OBLIGATIONS.adoc`)
+
+[cols="1,2,3",options="header"]
+|===
+| Id | Proved here (theory, value level) | Still `open`
+
+| GI-1, GI-2, GI-3 | nothing | all (build gating, SPDX coverage, deed/k9 carriers are not proof obligations of the spine)
+| KYAML-1..10 | nothing | all. No KYAML instance exists, and the canonical-gate definition has no header component (see "What is NOT proven")
+| K8s-1..7 | nothing | all
+| Q-1..5 | nothing | all
+| X-1..X-3 | the abstract shape: Faithful≈, FaithfulSem, declared losses | the actual KYAML↔JSON bridge, its mapping φ and its typed refusals
+| JCS-1 | necessity only (`no-unique-without-distinct`, `canon-resp-needs-wf`) | that the parser rejects duplicate names at the text boundary
+| JCS-2 | the number profile in the model: R3 domain, `readP`, decidability, closure | the actual parser, number text and path/reason diagnostics; `show-val` is assumed
+| JCS-3 | nothing | all
+| JCS-4 | the order is total | stability; byte equality with `ijson-jcs::to_jcs`
+| JCS-5(a) | value level, recursive, on WF values (`canon-resp`, `nf-unique`, `ker-canon`) | the byte level (`to_jcs`)
+| JCS-5(b) | nothing | byte injectivity
+| JCS-5(c) | nothing | minimal separators, UTF-8, compact form: no bytes are modelled
+| JCS-6 | value level (`canon-idem`, `nf-fixed`) | the byte-level `to_jcs(parse_jcs(to_jcs v)) = to_jcs v`
+| JCS-7 | nothing | all
+| JCS-8 | nothing | all; `tested-only`
+| JCS-9 | nothing | all
+| SEC-1 | budget closure under canon for depth, nodes and UTF-8 string bytes, with the same typed verdict | alias-expansion budgets (nodes and bytes), the encoded-bytes CLI limit, termination, time and memory
+| SEC-2, SEC-3 | nothing | all
+|===
+
+== Recheck legs
+
+=== Rocq leg
+
+Route `re-proved`, by hand. File `verification/proofs/rocq/KyqSpine.v`;
+theorems `leq_total`, `leq_antisym`, `leq_trans`, `sorted_unique`,
+`isort_unique`, `no_unique_without_distinct`, `canon_nf`, `nf_fixed`,
+`canon_idem`, `canon_resp`, `nf_unique`, `tv_sound`, `tv_complete`,
+`tv_iff`, `one_arg_not_tv`. It uses the Coq standard library shipped with
+coqc (List, Permutation, Bool, Arith, Lia) and no other library.
+
+*§2 reason for re-proof, and a departure from the default arm.* PROOF-POLICY
+§2 says "transport first" (Agda → Dedukti/Lambdapi → Rocq). No transport was
+tried: this session has no pinned Agda2Dedukti, Lambdapi or Dedukti→Rocq
+exporter (`agda2dedukti`, `lambdapi` and `dkcheck` are not on `PATH`, and
+there is no Guix). Re-proof is the §2 fallback where the pinned exporter has
+no route; here there is no pinned exporter at all. Transport is the default
+(elegant) arm (doctrine 15); re-proof is a departure from it, taken because
+the default arm could not be run. The transport attempt is *owed*, and the
+re-proved leg stays until a pinned exporter is available.
+
+Correspondence state: *BRIDGE-PENDING*. The statement comparison with Agda is
+written down in `verification/proofs/agda/README.adoc` ("Statement
+correspondence"), and the differences it found are listed there. It was
+drafted by an agent and has not been reviewed (doctrine 4), so the leg does
+not count towards a grade. The runner's PASS line says so.
+
+=== Lean leg
+
+Route `unavailable`, token `open`. What was tried, in the earlier session:
+
+. `elan default stable` (elan 3.1.0 at `/usr/bin/elan`) failed:
+  "error: failed to resolve latest version of 'stable' ... caused by: failed
+  to parse latest release tag". The GitHub API
+  (`api.github.com/repos/leanprover/lean4/releases/latest`) returned HTTP 403
+  through the session proxy.
+. `elan toolchain install leanprover/lean4:v4.15.0` failed: "could not
+  download file from
+  'https://github.com/leanprover/lean4/releases/expanded_assets/v4.15.0' ...
+  http request returned an unsuccessful status code: 403".
+. The release archive itself downloaded (`lean-4.15.0-linux.zip`, sha256
+  `8eceac177fe2e2828f71add0d458e6a91187ce6d4f67d0f0364061b9e3dca59b`), but
+  unpacking and linking it as an elan toolchain was refused by the session's
+  permission policy, so no Lean binary was run.
+
+No Lean source was written: an unchecked file would read as a leg that does
+not exist. §2 requires every Agda theory theorem to be rechecked, so the
+Lean target is 0 of 93. `just proofs` exits 3 until the leg exists.
+
+== Toolchains and deviations (§6)
+
+[cols="1,3",options="header"]
+|===
+| Id | Record
+
+| DEV-1 (open) | Leg: Agda (every Agda row). Tool: Agda *2.6.3*, Ubuntu package `agda-bin 2.6.3-1build1`, `/usr/bin/agda` sha256 `852806142a15951f667df303c73cfce5f4123218ce6e1f1b29acaddc242af00d`. The estate Guix pin is 2.7.0.1. Why: this session has no Guix and no Guix manifest for kyq's proofs. The runner asserts 2.7.0.1 and fails (exit 2) unless `KYQ_AGDA_VERSION` names the version actually used, and then prints `DEVIATION: DEV-1`. Closes when the spine is rechecked under Guix Agda 2.7.0.1, which also re-earns the prover trusted-base list below.
+| DEV-2 (open) | Leg: Rocq. Tool: coqc *8.18.0*, Ubuntu package `coq 8.18.0+dfsg-1build2`, `/usr/bin/coqc` sha256 `f14ab0c140bdfdb31c7e7e1f20379703973376480a4eea2d43d0fa56ddae03ec`. kyq has no Guix Rocq pin; the runner asserts 8.18.0 (`KYQ_COQ_VERSION` overrides) and prints `DEVIATION: DEV-2` on *every* Rocq run. Why: no Guix in this session. Closes when kyq's Guix manifest pins Rocq and the leg runs under it.
+|===
+
+== Receipts (human-readable; not §8.5.1 receipts)
+
+Source: branch `claude/charming-wozniak-j49yrx`, base commit
+`5e623b995a08cd183269e30f2448f9be3bad0d7a`, with the proof files *uncommitted*.
+A §8.5.1 receipt needs the exact 40-character commit, so none can exist until
+the files are committed.
+
+Input digests (sha256, paths relative to `verification/proofs/`): the spine,
+the Rocq leg, every control, the runner and its lexer.
+
+----
+a32ef5a8d03a4b8cf4c0ecee51e068c1d5fca0b6a60ed9ed014093fa83b9574d  agda/All.agda
+704d04caf46897651bad55d769e0198f6331ce6835924cb7b8656cf0f9cba5b0  agda/KyqCodec.agda
+477b532baac85076e6d49d4be3d82e11afea986ffb1e84b438ab5b528d5c30e2  agda/KyqMeasure.agda
+014c49046047efd2b2707b072c1f511307c1878f45fdc2933ed492f1681d0c7d  agda/KyqModel.agda
+c57f6010e9af8f16c144a73a7cb337f4ff655f6da1d6bba041c69e9965815c8e  agda/KyqOrder.agda
+238b40bca54721a0a917091ee7c1d106219ce94ca87c8746c66d7728ed91c110  agda/KyqPrelude.agda
+17fa2f1db6d44b1ef1429e259427513d72a9357504b84e56c83efb3813445274  agda/KyqProfile.agda
+7f8765563e31a5d2ac3a0e450a4fe0b1d99603598104e577a7f87ff24dfd86db  agda/KyqRecursive.agda
+4b3f3549f6b9a4609cd8215016fcd9c4d30f28b88fefa87338fd20826f039a13  agda/KyqUnique.agda
+0f7b5420c614da6ffc3af567ff9215d8e8353ec1a8b5fe417515efc80350cba3  agda/KyqValue.agda
+12448dcfef3a69fca18c1427d3f723dc6606471d5749125d4c2ebc4a51b59bf0  agda/controls/CanonRespNoWF.agda
+282fc8cd2f829a072b406a0fabd369e106f7a19c8d36201fd6e8fe8fdd80fe7c  agda/controls/IsortUniqueNoDistinct.agda
+748b5ff41fa840ffe0c6900bfcf39b2ebab5ace90506cef8b51052278761013e  agda/controls/KInForce.agda
+04752d01a2514386c0d549459aa13a3d6602f73b6b4f3549965e8837b56bede4  agda/controls/LargeFloatClosed.agda
+ec25185849794fbd9aa3f13ecc36759df9dc11168ceff0c65a974dc51b0168c9  agda/controls/MalleableCheck.agda
+365f45ed07ed578732bce70473c2780207638cc46b719757445b6a62cdbd7972  agda/controls/PlantedPostulate.agda
+089f08cbccb1571ecc57d4c1c7ffec50889238ad85b1dad625b746cdc0cedd42  agda/controls/PlantedTerminating.agda
+4d08774ac073db9436b451343c8e8d3fcfb63a628c8650ac26189812f03fce95  agda/controls/TvSoundValidity.agda
+6fd712dbbd3793260705d9967c8d71cca734dc10e0b36ea351659a8b23f99606  agda/controls/UnsortedIsNF.agda
+e0600447cb618e567302096b201f20dca0c8c43dddc57159242c07197adfe177  agda/controls/runner/KyqStray.agda
+99b901bfdcda4bd0a97865105b621d18b52cc205520d51485c37466bc1fc37d5  agda/controls/runner/LexDecoys.agda
+bef42eb604836cb83fa008f7599f1b43bb8dd2e0e0ceb7691b38d1566a486e44  agda/controls/runner/LexHidden.agda
+7f5423700dd53702d68043f525a9f8476b2e530f0507d292c342dbe09e843659  rocq/KyqSpine.v
+af42ed93b36831e55130b1cbad5ce0d1b9fa4d6f96b985820f0f6c456ec18414  rocq/controls/OneArgCanonOfInput.v
+10d25b660c87075e625028a7359c284410246fb4f149d906ed7a8bdfee293d9d  rocq/controls/UnsortedIsFixed.v
+5faed1eb75565e96fac133fd7fe519de0aea2b7d596984fed90652f97dc0829e  rocq/controls/runner/Stray.v
+e0de705473168c70029493d7a558c7e9e71ae4fadf53d62dfe3ff4c90c112336  run-proofs.sh
+1d798aca6cf477675b21b52ce667467b034df1e54c2778c48ceff244535a2455  agda-lex.awk
+----
+
+Agda (from `verification/proofs/agda`, clean state):
+
+----
+$ LC_ALL=C.UTF-8 agda --safe --without-K --cubical-compatible --no-libraries --dependency-graph=cone.dot All.agda
+Checking All (.../verification/proofs/agda/All.agda).
+ Checking KyqPrelude ...  Checking KyqOrder ...  Checking KyqValue ...
+ Checking KyqUnique ...  Checking KyqRecursive ...  Checking KyqMeasure ...
+ Checking KyqCodec ...  Checking KyqModel ...  Checking KyqProfile ...
+exit 0, no warnings
+----
+
+Library state: `--no-libraries`, so no library file is read; no library is
+imported. Flags: `--safe --without-K --cubical-compatible --no-libraries`.
+
+Import cone (from `--dependency-graph`, 11 modules): `All`, the 9 `Kyq*`
+modules and the prover-supplied `Agda.Primitive`
+(`/usr/share/libghc-agda-dev/lib/prim/Agda/Primitive.agda`, sha256
+`1e26fd0db40b1c10db17b0b78d64c85831e374a92990ca9b375b33b781e3907b`).
+
+Postulates: *development postulates: 0; prover trusted base: 4 named.* The
+four are the postulates of `Agda.Primitive` with their bindings: `Level`
+(`BUILTIN LEVEL`), `lzero` (`BUILTIN LEVELZERO`), `lsuc` (`BUILTIN LEVELSUC`),
+`_⊔_` (`BUILTIN LEVELMAX`). The runner checks that exact list, extracted with
+a lexing scan of every prover-supplied module in the cone (§8.4 rule 7). The
+same lexing scan finds no `postulate`, `primitive`, `primTrustMe` or
+`primEraseEquality` in the spine, and the pragma scan admits only the
+canonical `OPTIONS` line and `BUILTIN EQUALITY _≡_`/`BUILTIN NATURAL ℕ`. Each
+scan, and each coverage check, is first run on a planted control and must
+flag it. The januskey#170 reference scanner was not available in this
+session; `verification/proofs/agda-lex.awk` is a separate implementation with
+its own positive and negative controls.
+
+Rocq (from `verification/proofs/rocq`):
+
+----
+$ coqc -R . KyqProofs KyqSpine.v
+Closed under the global context        (15 times, one per Print Assumptions)
+exit 0
+----
+
+Negative controls (all refused, each with its expected message):
+
+----
+agda controls: PlantedPostulate, PlantedTerminating, KInForce, UnsortedIsNF,
+               MalleableCheck, IsortUniqueNoDistinct, CanonRespNoWF,
+               TvSoundValidity, LargeFloatClosed                     -> 9/9 refused
+rocq controls: UnsortedIsFixed, OneArgCanonOfInput                   -> 2/2 refused
+runner controls: KyqStray (both coverage checks), LexHidden, Stray.v -> flagged;
+                 LexDecoys                                           -> not flagged
+----
+
+Whole run: `KYQ_AGDA_VERSION=2.6.3 just proofs` ends with
+"RESULT: Agda and Rocq legs passed; the Lean leg is OPEN, so the spine is not
+fully rechecked (exit 3)". Without `KYQ_AGDA_VERSION` it stops at
+"TOOLCHAIN: agda is 2.6.3, asserted 2.7.0.1" (exit 2).
+
+== Proof Witness Grades
+
+No grade is asserted. Grades are derived from §8.5.1 receipts, and kyq has
+none. Rungs not yet met, for every theory row:
+
+* `PWG-3`: needs a receipt of the Agda run on a committed source, with the
+  version, the flags, the library state and pin (here: no library, under
+  `--no-libraries`), and the import cone including the prover-supplied
+  modules, with the prover's postulates listed by name and binding and
+  checked by the gate (§8.4 rule 7). The Agda check passed, under DEV-1 and
+  on an uncommitted tree, with no receipt.
+* `PWG-2i`: needs one counted recheck leg. The Rocq leg is `re-proved` but
+  `BRIDGE-PENDING`, and covers 15 of 93 theorems.
+* `PWG-2ii`: needs the Lean leg as well; it is `unavailable`.
+* `PWG-1`: needs current per-commit receipts for every counted witness.
+
+== What is NOT proven
+
+* *kyq's code.* Nothing about the AffineScript sources (`src/`). PROOF-POLICY
+  has no verifier row for AffineScript (open ruling D14). Kycore and the
+  codecs are at best `tested-only`.
+* *The JS conformance oracle* (`conformance/`). Its gates and differential
+  runs are tests: `tested-only`. The spine is a model of what the oracle
+  should satisfy, not a proof that it does.
+* *Gate-level closure for kyq's check (R3).* `check(canon x) = OK` is proved
+  only for the reference check of the model (`gate-closure`,
+  `profile-gate-closure`). For kyq's `check` it is `open` (proposed JCS-10).
+  Likewise non-malleability of kyq's `check` (proposed JCS-11) is `open`.
+* *Headers and trivia (open definitional gap).* `CanonicalGate` requires
+  `b ≡ c v` exactly. verify-logic L3 asks for `b = h ++ c v` with a
+  preserved header `h`. Without it, any KYAML instance must refuse every
+  SPDX-headed file (CORRECTIONS blocker 2, doctrine 6). The header form needs
+  a byte model, which P1 does not have. It blocks any KYAML instance.
+* *Bytes.* No parser, printer, UTF-8 encoding, escaping, whitespace or
+  newline rule is modelled; `ProfileFormat`'s texts are token trees. So
+  JCS-3, JCS-5(b), JCS-5(c), JCS-7, JCS-8, JCS-9 and the byte halves of JCS-4,
+  JCS-5(a) and JCS-6 are `open` (see "Catalogue status").
+* *Number text.* `show-val` (Number::toString round trip) is a hypothesis of
+  `NumIface`; no shortest-round-trip printer is mechanised anywhere known.
+* *KYAML, TOML, Dhall.* Only the abstract `CanonicalGate`/`ValidityGate`
+  definitions exist. KYAML-1..10, K8s-1..7, Q-1..5 are `open`.
+* *SEC-1 beyond budget closure.* Depth, node and UTF-8 string-byte budgets
+  are closed under canon. Alias-expansion budgets (KYAML), the encoded-bytes
+  CLI limit, termination, time and memory are `open`.
+* *JCS-1 itself.* Only its necessity is shown; that the parser rejects
+  duplicate names is `open`.
+* *FID-1 grade composition.* Faithful≈ composes (`faithful-compose`); that
+  the grade composes by max is `open`.
+
+== Trust boundary
+
+* `ASSUMED`: correctness of the AffineScript compiler and its JS backend (K-1
+  upstream covers a WASM model only); the JS engine's `Number::toString`;
+  `ryu_js` in ijson-jcs; the `show-val` hypothesis of `NumIface` (a module
+  parameter, not a postulate, but nothing discharges it).
+* *Format instances, `sem` and `img`.* `≈` is the kernel of a `Format`'s
+  `norm`, which the `Format` chooses. Every Faithful≈ claim is only as good
+  as an audited, exported `Format` instance, the independently defined
+  equivalence `sem` it is shown to separate (`NormSeparates`), and the image
+  predicate `img` of `Covered≈`. These are definitions, not theorems; no
+  instance for kyq's real formats exists yet. `coarse-norm-faithful` shows
+  what an unaudited instance allows.
+* *Rust.* kyq has no Rust source (`find . -name '*.rs'` finds none), so
+  *Creusot* with *Pearlite* contracts and *Verus* (PROOF-POLICY §1.2) are
+  inapplicable to kyq's own code.
+* *Rust dependency `hyperpolymath/ijson-jcs`.* Creusot/Pearlite and Verus:
+  token `open`, not run (out of repo). Scope that a proof would need for kyq:
+  `to_jcs`, number serialisation (the RFC 8785 §3.2.2.3 path through
+  `ryu_js`), and the byte-level properties kyq relies on (JCS-4 order,
+  JCS-6, JCS-8 byte equality). Next action: owned by ijson-jcs, a tracking
+  issue there (not opened from this session). ijson-jcs has no proof files;
+  its byte equality with kyq (JCS-8) stays `tested-only` until both sides are
+  proved against one specification. Running both verifiers would not make
+  two independent witnesses (§1.2).
+* Provers' trusted bases: the Agda 2.6.3 kernel and the 4 named postulates of
+  `Agda.Primitive` listed under Receipts; the Coq 8.18.0 kernel and its
+  standard library.
+* Development postulates and axioms in the spine: none.
+
+== Verification commands
+
+----
+just proofs        # every leg + controls; exit 3 while the Lean leg is OPEN
+just proofs-agda   # asserts Agda 2.7.0.1; KYQ_AGDA_VERSION=2.6.3 for DEV-1
+just proofs-rocq   # asserts coqc 8.18.0; prints DEVIATION DEV-2 on every run
+just proofs-lean   # exit 3: OPEN
+----

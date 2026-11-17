@@ -16,13 +16,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseIJson } from "../src/json.js";
+import { isUnsafeIntegerFloat, parseIJson } from "../src/json.js";
 import { toJcs, toJcsString, esNumberToString } from "../src/jcs.js";
 import { fromHex, readCorpus, utf8 } from "./helpers.js";
 
 const ijson = readCorpus("ijson/vectors.json");
 const rfc = readCorpus("rfc8785/vectors.json");
 const oracle = readCorpus("oracle/ijson-jcs.json");
+/** Rows where the gate deliberately refuses what the pinned oracle accepts (R3). */
+const divergences = new Map(
+  readCorpus("oracle/divergences.json").divergences.map((row) => [row.case, row]),
+);
 
 /**
  * Canonicalise JSON text, returning `{jcs}` or throwing.
@@ -40,13 +44,10 @@ test("I-JSON corpus: canonical byte vectors", async (t) => {
   for (const vector of vectors) {
     await t.test(vector.name, () => {
       assert.equal(canon(vector.input), vector.jcs);
-      // Canonical bytes must be a fixed point: parsing and re-canonicalising
-      // the output yields the same bytes — except where the canonical text of a
-      // float is an integer token beyond ±(2^53−1); `reflexive: false` marks
-      // those and the dedicated test below pins the behaviour.
-      if (vector.reflexive !== false) {
-        assert.equal(canon(vector.jcs), vector.jcs);
-      }
+      // Canonical bytes are a fixed point, with no exceptions since ruling R3
+      // refuses the floats whose canonical text was not strict input.
+      assert.equal(vector.reflexive, undefined, "no vector may opt out of reflexivity");
+      assert.equal(canon(vector.jcs), vector.jcs);
     });
   }
 });
@@ -77,13 +78,27 @@ test("I-JSON corpus: refusal vectors keep their code and path", async (t) => {
 });
 
 test("RFC 8785 §3.2.2.3: number tokens canonicalise with ES rules", async (t) => {
+  let refused = 0;
   for (const vector of rfc.numbers) {
     await t.test(vector.token, () => {
+      // The formatter is the RFC's algorithm for every vector.
+      assert.equal(esNumberToString(Number(vector.token)), vector.jcs);
+      if (isUnsafeIntegerFloat(Number(vector.token))) {
+        // Ruling R3: the RFC prints these as integer tokens outside ±(2^53−1),
+        // which strict I-JSON refuses, so the gate refuses them as input.
+        refused += 1;
+        for (const text of [vector.token, `[${vector.token}]`]) {
+          assert.throws(() => canon(text), (error) => error.code === "UNSAFE_FLOAT_INTEGER");
+        }
+        return;
+      }
       assert.equal(canon(vector.token), vector.jcs);
       // A number inside a container uses the same text.
       assert.equal(canon(`[${vector.token}]`), `[${vector.jcs}]`);
     });
   }
+  // 1e20, 123456789012345680000.0 and 9007199254740992.0.
+  assert.equal(refused, 3);
 });
 
 test("esNumberToString agrees with the ECMAScript algorithm", () => {
@@ -129,8 +144,13 @@ test("oracle: canonical byte vectors from the pinned ijson-jcs sources", async (
   for (const [group, vectors] of groups) {
     for (const vector of vectors) {
       await t.test(`${group}: ${vector.name}`, () => {
-        assert.equal(canon(vector.input), vector.jcs);
         assert.ok(vector.source, "every transcribed vector must cite its source");
+        const divergence = divergences.get(`oracle/${vector.name}`);
+        if (divergence) {
+          assert.throws(() => canon(vector.input), (error) => error.code === divergence.code);
+          return;
+        }
+        assert.equal(canon(vector.input), vector.jcs);
       });
     }
   }
@@ -161,30 +181,46 @@ test("oracle CLI vectors: canon bytes and exit codes", async (t) => {
   }
 });
 
-test("known upstream interaction: JCS text of a large float is not strict input", async (t) => {
-  // JCS prints 1e20 as 100000000000000000000 (no exponent, per ES rules), which
-  // strict I-JSON parsing refuses because it is an integer token outside
-  // ±(2^53−1). `ijson-jcs` behaves identically (`canon` succeeds, re-parsing the
-  // result does not), so byte equality is preserved and the difference is
-  // documented rather than silently "fixed" by inventing a second form.
-  const cases = [
-    { input: "1e20", jcs: "100000000000000000000" },
-    { input: "[18446744073709551616.0]", jcs: "[18446744073709552000]" },
+test("float closure (R3): integer-shaped floats outside ±(2^53−1) are refused", async (t) => {
+  // Before contract 0.4.0 the gate, like ijson-jcs, printed 1e20 as the integer
+  // token 100000000000000000000, which its own strict reader then refused.
+  // Ruling R3 closes the hole at the input: such a float is refused, so
+  // canon output is always valid input again.
+  const refused = [
+    ["1e20", ""],
+    ["[18446744073709551616.0]", "0"],
+    ["[1e18]", "0"],
+    ['{"n":-1e18}', "n"],
+    ["[9007199254740993.0]", "0"],
+    ["[9007199254740992.0]", "0"],
   ];
-  for (const vector of cases) {
-    await t.test(vector.input, () => {
-      assert.equal(canon(vector.input), vector.jcs);
+  for (const [input, path] of refused) {
+    await t.test(input, () => {
       assert.throws(
-        () => canon(vector.jcs),
+        () => canon(input),
         (error) => {
-          assert.equal(error.code, "UNSAFE_INTEGER");
+          assert.equal(error.code, "UNSAFE_FLOAT_INTEGER");
+          assert.equal(error.kind, "json");
+          assert.equal(error.path ?? "", path);
           return true;
         },
       );
     });
   }
-  // The escape hatch is real: a float token with an exponent stays reflexive.
-  assert.equal(canon("1e+30"), "1e+30");
+  // Accepted, and reflexive: safe integer-shaped floats, exponent forms, -0.
+  const accepted = [
+    ["[1e15]", "[1000000000000000]"],
+    ["[9007199254740991.0]", "[9007199254740991]"],
+    ["[1e21]", "[1e+21]"],
+    ["[1e+30]", "[1e+30]"],
+    ["[-0.0]", "[0]"],
+  ];
+  for (const [input, expected] of accepted) {
+    await t.test(input, () => {
+      assert.equal(canon(input), expected);
+      assert.equal(canon(expected), expected);
+    });
+  }
 });
 
 test("canonical output never carries a trailing newline", () => {

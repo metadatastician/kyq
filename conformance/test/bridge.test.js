@@ -15,7 +15,8 @@ import { test } from "node:test";
 import { bridgeDocument, bridgeStream } from "../src/bridge.js";
 import { toJcsString } from "../src/jcs.js";
 import { parseIJson } from "../src/json.js";
-import { NODE_BUDGET, parseKyaml } from "../src/kyaml.js";
+import { MAX_EXPANSION_NODES } from "../src/budgets.js";
+import { parseKyaml } from "../src/kyaml.js";
 import { readCorpus, readFixture, utf8 } from "./helpers.js";
 
 const vectors = readCorpus("bridge/vectors.json");
@@ -116,14 +117,26 @@ test("integers are checked in BigInt before any double conversion", () => {
   assert.equal(jcs("a: 0o17\n"), '{"a":15}');
 });
 
-test("float tokens outside the safe range are legal I-JSON", () => {
-  // The token, not the value, decides: 1e18 as a float is accepted, while the
-  // integer token 1000000000000000000 is refused. This mirrors ijson-jcs.
-  assert.equal(jcs("a: 1e18\n"), '{"a":1000000000000000000}');
+test("float closure (R3): integer-shaped floats outside the safe range are refused", () => {
+  // Until contract 0.3.0, 1e18 as a float was accepted (as ijson-jcs does) and
+  // canonicalised to the integer token 1000000000000000000, which the gate's
+  // own strict reader refuses. Ruling R3 refuses the float at the bridge.
+  for (const [text, path] of [["a: 1e18\n", "a"], ["- 9007199254740993.0\n", "0"], ["x: !!float 9007199254740992\n", "x"]]) {
+    assert.throws(() => jcs(text), (error) => {
+      assert.equal(error.code, "UNSAFE_FLOAT_INTEGER");
+      assert.equal(error.kind, "bridge");
+      assert.equal(error.path, path);
+      return true;
+    });
+  }
   assert.throws(() => jcs("a: 1000000000000000000\n"), (error) => {
     assert.equal(error.code, "UNSAFE_INTEGER");
     return true;
   });
+  // Safe integer-shaped floats, exponent forms and -0 stay accepted.
+  assert.equal(jcs("a: 1e15\n"), '{"a":1000000000000000}');
+  assert.equal(jcs("a: 1e21\n"), '{"a":1e+21}');
+  assert.equal(jcs("a: -0.0\n"), '{"a":0}');
 });
 
 test("anchor expansion is bounded", () => {
@@ -135,8 +148,9 @@ test("anchor expansion is bounded", () => {
       for (const document of documents) bridgeDocument(document);
     },
     (error) => {
-      assert.equal(error.code, "NODE_BUDGET_EXCEEDED");
-      assert.match(error.message, new RegExp(String(NODE_BUDGET)));
+      // 200 aliases of a 1001-node anchor add about 200 000 nodes.
+      assert.equal(error.code, "EXPANSION_BUDGET_EXCEEDED");
+      assert.match(error.message, new RegExp(String(MAX_EXPANSION_NODES)));
       return true;
     },
   );

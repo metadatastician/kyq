@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MPL-2.0
+# Checker outputs; run-proofs.sh deletes them, this keeps manual runs out of git.
+*.agdai
+_build/
+*.vo
+*.vok
+*.vos
+*.glob
+.*.aux
+.lia.cache

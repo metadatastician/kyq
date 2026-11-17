@@ -4,9 +4,9 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-11-09
-:revnumber: 0.3.0
-:status: NORMATIVE — describes `conformance/` at v0.3.0
+:revdate: 2026-11-17
+:revnumber: 0.4.0
+:status: NORMATIVE — describes `conformance/` at v0.4.0
 
 This document is the manual for the executable gate that enforces
 `docs/KYAML_SPEC.adoc` (KYAML) and `docs/IJSON_JCS_INTEGRATION.adoc`
@@ -80,15 +80,15 @@ The gate is distributed as a **versioned tarball attached to a git tag**, not as
 a floating branch and not (yet) through a package registry. Pinning has three
 parts, and all three are required for a consumer's claim to be honest:
 
-. a **tag** — `kyq-conformance-v0.3.0`;
+. a **tag** — `kyq-conformance-v0.4.0`;
 . a **SHA-256** of the tarball, from that release's `SHA256SUMS`;
-. the gate's own `--version` output (`kyq-conformance 0.3.0`), asserted in CI so
+. the gate's own `--version` output (`kyq-conformance 0.4.0`), asserted in CI so
   a silently different artifact cannot pass as the pinned one.
 
 "Available now" and "available at the first tag" are different claims, so here is
 the boundary. `conformance/VERSION`, the corpus and the tooling are in-tree at
-v0.3.0, and they are what the self-test job exercises on every push. A *release
-artifact* exists once the `kyq-conformance-v0.3.0` tag is pushed. Until then, a
+v0.4.0, and they are what the self-test job exercises on every push. A *release
+artifact* exists once the `kyq-conformance-v0.4.0` tag is pushed. Until then, a
 consumer that vendors the gate pins the **commit** plus the digest it builds
 itself, and MUST NOT describe that as a released version:
 
@@ -106,7 +106,7 @@ installation:
 [source,bash]
 ----
 # 1. fetch the release artifact and verify it against the published digest
-tag=kyq-conformance-v0.3.0
+tag=kyq-conformance-v0.4.0
 gh release download "$tag" \
   --repo metadatastician/kyq \
   --pattern 'kyq-conformance-*.tar.gz' \
@@ -116,7 +116,7 @@ sha256sum --check --strict SHA256SUMS
 # 2. unpack and assert the version the tarball claims
 tar -xzf "kyq-conformance-${tag#kyq-conformance-v}.tar.gz"
 cd "kyq-conformance-${tag#kyq-conformance-v}"
-node bin/kyq-conformance.mjs --version   # kyq-conformance 0.3.0
+node bin/kyq-conformance.mjs --version   # kyq-conformance 0.4.0
 ----
 
 `--check --strict` matters: without `--strict`, `sha256sum` skips files it cannot
@@ -219,7 +219,61 @@ Error codes include `DUPLICATE_KEY`, `NON_STRING_KEY`, `UNSAFE_INTEGER`,
 `NON_FINITE_NUMBER`, `UNEXPECTED_INDENT`, `UNSUPPORTED_TAG`,
 `UNSUPPORTED_MERGE_KEY`, `UNKNOWN_ANCHOR`, `NONCHARACTER`, `LONE_SURROGATE`,
 `INVALID_UTF8`, `JSON_PARSE_ERROR`, `MULTI_DOC_STREAM`, `EMPTY_STREAM`,
-`NODE_BUDGET`.
+`COMMENTS_WOULD_BE_LOST`, `UNSAFE_FLOAT_INTEGER` and the budget codes
+`DEPTH_BUDGET_EXCEEDED`, `NODE_BUDGET_EXCEEDED`, `STRING_BUDGET_EXCEEDED`,
+`EXPANSION_BUDGET_EXCEEDED`, `INPUT_BUDGET_EXCEEDED` (§"Resource budgets and
+float closure").
+
+== Resource budgets and float closure (0.4.0, ruling R3)
+
+Every limit is defined once, in `conformance/src/budgets.js`, on *value*
+measures of the JSON data-model image (aliases expanded, keys not counted as
+values), so that `check(canon x) = OK` and `canon(canon x) = canon x` hold for
+every input on which `canon` succeeds: canonicalising changes the bytes, never
+the value. `canon` is partial on accepted inputs: it refuses an empty stream, and
+a multi-document stream that fits as separate documents but not as one array
+(`canon --array` adds a container level, `DEPTH_BUDGET_EXCEEDED` at depth 127). For
+KYAML, `check(fix x) = OK` and `fix(fix x) = fix x` hold for every input `fix`
+accepts, headed files included.
+
+[cols="2,1,3",options="header"]
+|===
+| Budget | Default | Code
+
+| containers on the longest path | 127 | `DEPTH_BUDGET_EXCEEDED` (JSON: serde_json's `recursion limit exceeded` line, byte-identical to ijson-jcs)
+| values (containers and scalars) | 500 000 | `NODE_BUDGET_EXCEEDED`
+| decoded UTF-8 bytes of strings and keys | 8 MiB | `STRING_BUDGET_EXCEEDED`
+| nodes / string bytes that alias expansion adds | 100 000 / 1 MiB | `EXPANSION_BUDGET_EXCEEDED`
+| raw input bytes, CLI edge only | 256 MiB | `INPUT_BUDGET_EXCEEDED`
+|===
+
+The depth limit is an explicit counter, so the verdict no longer depends on
+the runtime's stack. The same holds for the string and node budgets: the KYAML
+parser counts decoded bytes and value slots while it reads (including block and
+quoted scalar accumulation, blank-line runs counted rather than stored), as the
+JSON reader does, so an input near the input budget is refused with a typed code
+and not by memory exhaustion. The input guard is set above the largest canonical
+text an accepted value can have, so it never refuses `canon` output or the
+output of a headerless `fix`. `fix` writes the header verbatim, which the bound does not
+cover, so `fix` itself refuses (`INPUT_BUDGET_EXCEEDED`, file untouched) when
+header and body would pass the guard.
+A finite float whose RFC 8785 text is an integer token outside ±(2^53−1)
+(`1e18`, `9007199254740993.0`, `1e20`) is refused as `UNSAFE_FLOAT_INTEGER`;
+`1e15`, `1e21` and `-0.0` (which canonicalises to `0`) stay accepted. Here the
+gate deliberately differs from `ijson-jcs` (pinned and main), pending the
+proposal in `docs/proposals/STANDARDS-BUDGETS-FLOATS.adoc`.
+
+Evidence: `conformance/test/budgets.test.js` (limits, closure over the corpus,
+the L6 number-growth rows and seeded values) and `conformance/test/tv.test.js`
+(test-time translation validation with an independent checker in
+`conformance/tv/`, plus producer-side fault injection). The TV checker is
+*unverified*; it is the executable design for the later verified checker. Its
+KYAML half is *semantic only on the flow profile* (1 of the 131 accepted corpus
+KYAML rows, plus the 600 generated ones); for block-style KYAML it checks the
+output's strict I-JSON and JCS form only and reports `{semantic: false}`. A
+checker written from the specification in different source code is not a
+different runtime: number parsing and printing, UTF-8 decoding and UTF-16
+ordering are shared with the gate.
 
 == The corpus
 
@@ -303,7 +357,7 @@ jobs:
           persist-credentials: false
       - name: Fetch the pinned gate
         env:
-          TAG: kyq-conformance-v0.3.0
+          TAG: kyq-conformance-v0.4.0
           SHA256SUMS: <sha256 of SHA256SUMS from the release>
         run: |
           set -euo pipefail
@@ -314,7 +368,7 @@ jobs:
           tar -xzf "kyq-conformance-${TAG#kyq-conformance-v}.tar.gz"
           echo "KYQ_CONFORMANCE=$PWD/kyq-conformance-${TAG#kyq-conformance-v}" >> "$GITHUB_ENV"
       - name: Assert the pinned version
-        run: test "$(node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" --version)" = 'kyq-conformance 0.3.0'
+        run: test "$(node "$KYQ_CONFORMANCE/bin/kyq-conformance.mjs" --version)" = 'kyq-conformance 0.4.0'
       - name: Gate every manifest
         run: |
           set -euo pipefail
@@ -369,9 +423,23 @@ node conformance/tools/ijson-jcs-diff.mjs --bin ./ijson-jcs    # diff against a 
 ----
 
 The tool collects every canonicalisation, refusal and `check` case from
-`fixtures/ijson/`, `fixtures/oracle/` and the transcribed `cliVectors` — 76 as of
-v0.3.0 — and fails if the oracle and the gate disagree on bytes, on exit status,
-or on the printed line. A pinned-commit mismatch, an unavailable toolchain or an
+`fixtures/ijson/`, `fixtures/oracle/` and the transcribed `cliVectors` — 87 as of
+v0.4.0 — and fails if the oracle and the gate disagree on bytes, on exit status,
+or on the printed line. Eleven of them are *known divergences* listed in
+`fixtures/oracle/divergences.json`, in two classes: nine float-closure rows
+(ruling R3 and J-4, refused as `UNSAFE_FLOAT_INTEGER`) and two generated
+budget rows one step over a J-3 limit (an array of 500 000 elements,
+`NODE_BUDGET_EXCEEDED`; a string of 8 MiB + 1 byte, `STRING_BUDGET_EXCEEDED`),
+which ijson-jcs accepts because it has no value budgets. For each the tool
+requires that the oracle still accepts and the gate refuses with the listed
+code, and it fails if a row has gone stale. The depth budget is not a
+divergence. The 256 MiB input budget is enforced at the CLI edge only and is not
+probed by the tool. Measured on
+2026-11-17 against binaries built at the pin `2c880594` and at main `1735d68`:
+78 agree and 11 known divergences hold (9 float closure, 2 budgets), under node and under bun.
+With `--bin` the tool prints the binary path and "build commit unverified", not the
+pin: the commit a binary was built from is recorded by whoever built it, not
+read by the tool. A pinned-commit mismatch, an unavailable toolchain or an
 unbuildable crate exits **2**; none of them can produce a green run.
 
 It also re-validates the corpus itself: if the pinned bytes in the fixtures no
@@ -413,9 +481,13 @@ off on first contact teaches the next reader that red is normal.
 | `INVALID … (line L, column C)` on a file a YAML 1.1 reader accepts | KYAML is a YAML 1.2 core-schema subset: duplicate keys, merge keys, complex keys, and unsupported tags are refusals by design (`docs/KYAML_SPEC.adoc` §5)
 | `MULTI_DOC_STREAM` from `canon` | pass `--array` to bridge the stream as one array, or split the documents
 | `EMPTY_STREAM` | a stream with no documents has no JSON image
-| `NODE_BUDGET` | alias expansion exceeded the budget; the document is refused rather than expanded
+| `EXPANSION_BUDGET_EXCEEDED` | aliases add more than the expansion budget; the stream is refused without being expanded
+| `DEPTH_BUDGET_EXCEEDED`, `NODE_BUDGET_EXCEEDED`, `STRING_BUDGET_EXCEEDED` | the value is over a budget; split the file or ask for a ruling, do not raise the limit locally
+| `UNSAFE_FLOAT_INTEGER` | a float such as `1e18` would canonicalise to an unsafe integer token; write a safe value, an exponent of 21 or more, or a string
 | `unknown option: --…` | exit 2 by design; `--help` lists the accepted flags
-| exit 1 from `check` in CI | valid but unformatted: run `fix`, commit the result
+| exit 1 from `check` in CI | valid but unformatted: run `fix`, commit the result. A file with a comment outside its leading header block stays `NOT CANONICAL` and `fix` refuses it (`COMMENTS_WOULD_BE_LOST`): move the comment into the header or remove it
+| `COMMENTS_WOULD_BE_LOST` from `fix` | a comment outside the leading header block would be dropped by formatting; `fix` leaves the file untouched
+| `INPUT_BUDGET_EXCEEDED` from `fix` | header plus formatted body would pass 256 MiB; the file is untouched
 |===
 
 == Reproducibility and provenance
@@ -432,10 +504,11 @@ off on first contact teaches the next reader that red is normal.
 == Known limits
 
 * **Byte-compatibility is not oracle correctness.** The gate reproduces
-  `ijson-jcs` exactly, and `ijson-jcs` has at least one round-trip gap (JCS text
-  of a large float is not strict input). The gate pins the behaviour and names
-  the gap (`docs/IJSON_JCS_INTEGRATION.adoc` §"Known upstream interaction")
-  instead of inventing a divergent canonical form.
+  `ijson-jcs` byte for byte except where a ruling says otherwise. `ijson-jcs`
+  has a round-trip gap (JCS text of a large float is not strict input); since
+  0.4.0 the gate refuses those floats at the input (ruling R3) and lists each
+  such row in `fixtures/oracle/divergences.json`
+  (`docs/IJSON_JCS_INTEGRATION.adoc` §"Known upstream interaction").
 * **The KYAML surface is deliberately small.** No anchors-as-structure beyond
   one-pass aliases, no merge keys, no tags beyond the core schema; see the
   rejected-construct table in the spec. A gate over a subset is honest; a gate

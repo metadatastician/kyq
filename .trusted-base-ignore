@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MPL-2.0
+# Path-fragment exemptions for standards scripts/check-trusted-base.sh.
+#
+# The two directories below hold planted NEGATIVE CONTROLS. Each file contains
+# an escape hatch (postulate, TERMINATING, K, an unsound lemma...) on purpose,
+# and verification/proofs/run-proofs.sh FAILS unless the prover or the scanner
+# refuses every one of them. They are never imported by the spine and are not
+# part of its trusted base. The spine itself carries 0 postulates and 0
+# escape-hatch pragmas (docs/status/PROOF-STATUS.adoc). Nothing else may be
+# added here without the same argument.
+verification/proofs/agda/controls/
+verification/proofs/rocq/controls/

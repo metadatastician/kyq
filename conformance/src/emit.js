@@ -154,12 +154,13 @@ function emitNode(node, indent, lines) {
         lines.push(`${pad}- ${formatInline(item)}`);
         continue;
       }
-      /** @type {string[]} */
-      const child = [];
-      emitNode(item, indent + 2, child);
-      // Pull the first line up onto the dash line: `- key: value`.
-      child[0] = `${pad}- ${child[0].slice(indent + 2)}`;
-      lines.push(...child);
+      // Emit in place, then pull the first line up onto the dash line
+      // (`- key: value`). No child array is spread into `lines`: a spread of
+      // more than about 10^5 lines overflows the call stack (RangeError), which
+      // a value within the node budget can reach (ruling R3 closure).
+      const first = lines.length;
+      emitNode(item, indent + 2, lines);
+      lines[first] = `${pad}- ${lines[first].slice(indent + 2)}`;
     }
     return;
   }

@@ -18,11 +18,15 @@
 // core-schema type; integers are `BigInt` so the bridge can test the I-JSON
 // range before any precision is lost.
 
+import { MAX_DEPTH, MAX_NODES, MAX_STRING_BYTES, budgetError, budgetMessage, utf8Length } from "./budgets.js";
 import { ConformanceError, joinPath } from "./errors.js";
 import { BOM, assertIJsonString, decodeUtf8 } from "./utf8.js";
 
-/** Maximum number of nodes after alias expansion (SEC-1 / anchor bombs). */
-export const NODE_BUDGET = 100000;
+// Resource budgets live in budgets.js (ruling R3). The parser enforces the two
+// that bound its own work: nesting depth (an explicit counter, so the verdict
+// never depends on the JS stack) and the number of value slots it fills. A
+// slot holding an alias counts once here and its full size later in the
+// bridge, so a refusal here implies the bridge would refuse too.
 
 /** Longest implicit mapping key, in characters (YAML 1.2 §7.4.2). */
 const MAX_IMPLICIT_KEY = 1024;
@@ -58,6 +62,7 @@ const CORE_TAGS = new Set([
   "!",
 ]);
 
+const PLAIN_NONSTRING_FIRST = new Set([..."nN~tTfF0123456789-+."].map((c) => c.charCodeAt(0)));
 const NULL_WORDS = new Set(["null", "Null", "NULL", "~", ""]);
 const TRUE_WORDS = new Set(["true", "True", "TRUE"]);
 const FALSE_WORDS = new Set(["false", "False", "FALSE"]);
@@ -74,6 +79,26 @@ const NAN = /^\.(?:nan|NaN|NAN)$/;
 const ANCHOR_NAME = /[^ \t\n,[\]{}]+/y;
 const ALIAS_NAME = /[^ \t\n,[\]{}]+/y;
 
+/** Linear-time equivalent of `s.replace(/[ \t]+$/, "")`. */
+export function trimBlanksEnd(s) {
+  let end = s.length;
+  while (end > 0) { const c = s.charCodeAt(end - 1); if (c !== 0x20 && c !== 0x09) break; end -= 1; }
+  return end === s.length ? s : s.slice(0, end);
+}
+/** Linear-time equivalent of `s.replace(/^[ \t]+|[ \t]+$/g, "")`. */
+export function trimBlanks(s) {
+  let start = 0;
+  while (start < s.length) { const c = s.charCodeAt(start); if (c !== 0x20 && c !== 0x09) break; start += 1; }
+  const t = trimBlanksEnd(s);
+  return start === 0 ? t : t.slice(start);
+}
+/** Linear-time equivalent of `s.replace(/\n+$/, "")`. */
+export function trimNewlinesEnd(s) {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 0x0a) end -= 1;
+  return end === s.length ? s : s.slice(0, end);
+}
+
 /**
  * Resolve a plain scalar with the YAML 1.2 Core Schema.
  *
@@ -85,6 +110,12 @@ const ALIAS_NAME = /[^ \t\n,[\]{}]+/y;
  * @returns {{type: ScalarNode["kind"], value: ScalarNode["value"]}}
  */
 export function resolvePlainScalar(text) {
+  // Fast path: every non-string resolution starts with one of these
+  // characters (null/Null/NULL/~, true/True/TRUE, false/False/FALSE, digits,
+  // sign, '.', and the empty string). Anything else is a string.
+  if (text !== "" && !PLAIN_NONSTRING_FIRST.has(text.charCodeAt(0))) {
+    return { type: "string", value: text };
+  }
   if (NULL_WORDS.has(text)) return { type: "null", value: null };
   if (TRUE_WORDS.has(text)) return { type: "bool", value: true };
   if (FALSE_WORDS.has(text)) return { type: "bool", value: false };
@@ -161,6 +192,118 @@ export class KyamlParser {
     this.flowMin = null;
     /** @type {string[]} */
     this.tags = [];
+    /**
+     * Comments are not data (spec §7.3): the formatter drops them, so `fix`
+     * must refuse a rewrite that would lose one. Memory stays O(1): the parser
+     * keeps only the position of the first comment that lies after line
+     * `headerLines`, and only when a caller asked (`headerLines` is a
+     * number). `check` and `canon` pass nothing and record nothing.
+     *
+     * @type {number|null}
+     */
+    this.headerLines = null;
+    /** @type {{line: number, column: number}|null} */
+    this.lostComment = null;
+    /** @type {number} Collections currently open (budgets.js MAX_DEPTH). */
+    this.depth = 0;
+    /** @type {number} Value slots filled so far in the stream (MAX_NODES). */
+    this.slots = 0;
+    /** @type {number} UTF-8 bytes of decoded strings and keys so far (MAX_STRING_BYTES). */
+    this.stringBytes = 0;
+  }
+
+  /**
+   * Note one comment: keep only the earliest one past the header block, and
+   * only when the caller set `headerLines`.
+   *
+   * @param {number} line
+   * @param {number} column
+   * @returns {void}
+   */
+  noteComment(line, column) {
+    if (this.headerLines === null || line <= this.headerLines) return;
+    const first = this.lostComment;
+    if (first === null || line < first.line || (line === first.line && column < first.column)) {
+      this.lostComment = { line, column };
+    }
+  }
+
+  /**
+   * Open one collection, refusing the one past MAX_DEPTH.
+   *
+   * @param {Loc} loc  Where the collection starts.
+   * @returns {void}
+   */
+  enterCollection(loc) {
+    this.depth += 1;
+    if (this.depth > MAX_DEPTH) {
+      throw budgetError("depth", budgetMessage.depth(this.depth), {
+        kind: "kyaml",
+        line: loc.line,
+        column: loc.column,
+      });
+    }
+  }
+
+  /**
+   * Count one filled value slot against MAX_NODES.
+   *
+   * @param {Loc} loc
+   * @returns {void}
+   */
+  countSlot(loc) {
+    this.slots += 1;
+    if (this.slots > MAX_NODES) {
+      throw budgetError("nodes", budgetMessage.nodes(), {
+        kind: "kyaml",
+        line: loc.line,
+        column: loc.column,
+      });
+    }
+  }
+
+  /**
+   * Count one decoded string (or key) against MAX_STRING_BYTES. The parser's
+   * total never exceeds the bridge's expanded total, so refusing here is sound;
+   * it stops a stream of huge strings before it is all in memory.
+   *
+   * @param {string} text
+   * @param {Loc} loc
+   * @returns {void}
+   */
+  countString(text, loc) {
+    this.stringBytes += utf8Length(text);
+    if (this.stringBytes > MAX_STRING_BYTES) {
+      throw budgetError("stringBytes", budgetMessage.stringBytes(), {
+        kind: "kyaml",
+        line: loc.line,
+        column: loc.column,
+      });
+    }
+  }
+
+  /**
+   * Take the rest of the current line (up to, not including, the line break)
+   * in one slice and move the cursor past it.
+   *
+   * @returns {string}
+   */
+  takeRestOfLine() {
+    let end = this.text.indexOf("\n", this.i);
+    if (end === -1) end = this.text.length;
+    const segment = this.text.slice(this.i, end);
+    let points = segment.length;
+    for (let k = 0; k < segment.length; k += 1) {
+      const unit = segment.charCodeAt(k);
+      if (unit >= 0xd800 && unit <= 0xdbff && k + 1 < segment.length) {
+        points -= 1;
+        k += 1;
+      }
+    }
+    this.i = end;
+    this.column += points;
+    this.atContent = false;
+    return segment;
   }
 
   /**
@@ -240,14 +383,14 @@ export class KyamlParser {
         if (this.eof) {
           // A final `---` with no content starts an empty document: null, as
           // YAML reads it (the YAML test suite's 6XDY, PUW8).
-          documents.push(this.nullNode(this.loc()));
+          this.pushDocument(documents, this.nullNode(this.loc()));
           break;
         }
         if (this.atMarker("---") || this.atMarker("...")) {
-          documents.push(this.nullNode(this.loc()));
+          this.pushDocument(documents, this.nullNode(this.loc()));
           continue;
         }
-        documents.push(this.parseContentDocument());
+        this.pushDocument(documents, this.parseContentDocument());
         continue;
       }
       if (sawDirective) {
@@ -265,10 +408,22 @@ export class KyamlParser {
         );
       }
       ended = false;
-      documents.push(this.parseContentDocument());
+      this.pushDocument(documents, this.parseContentDocument());
     }
 
     return documents;
+  }
+
+  /**
+   * Append one document root, counting its slot.
+   *
+   * @param {Node[]} documents
+   * @param {Node} node
+   * @returns {void}
+   */
+  pushDocument(documents, node) {
+    this.countSlot(node.loc);
+    documents.push(node);
   }
 
   // ── cursor primitives ────────────────────────────────────────────────────
@@ -328,10 +483,13 @@ export class KyamlParser {
    */
   bump() {
     if (this.eof) return "";
-    const char = String.fromCodePoint(this.text.codePointAt(this.i));
+    const unit = this.text.charCodeAt(this.i);
+    const char = unit >= 0xd800 && unit <= 0xdbff
+      ? String.fromCodePoint(this.text.codePointAt(this.i))
+      : this.text[this.i];
     this.i += char.length;
     this.column += 1;
-    if (char === "\n") {
+    if (unit === 0x0a) {
       this.line += 1;
       this.column = 1;
     }
@@ -500,6 +658,7 @@ export class KyamlParser {
         "a comment must be separated from what precedes it by white space",
       );
     }
+    this.noteComment(this.line, this.column);
     this.skipToEndOfLine();
   }
 
@@ -591,10 +750,16 @@ export class KyamlParser {
     }
     // YAML separates directive fields with spaces and tabs only (s-separate-
     // in-line): `%YAML` + U+00A0 + `1.2` is one unknown directive name.
-    const fields = line.replace(/^[ \t]+|[ \t]+$/g, "");
+    const fields = trimBlanks(line);
     const [name, ...words] = fields.split(/[ \t]+/);
     // A comment may follow a directive's arguments (`%YAML 1.2 # note`).
     const comment = words.findIndex((word) => word.startsWith("#"));
+    if (comment !== -1) {
+      // The `#` is the first one that follows a blank (the loop above is the
+      // only place a directive line can carry a comment).
+      const hash = line.search(/[ \t]#/) + 1;
+      this.noteComment(loc.line, loc.column + [...line.slice(0, hash)].length);
+    }
     const args = comment === -1 ? words : words.slice(0, comment);
     if (name === "%YAML") {
       if (args.length !== 1 || args[0] !== "1.2") {
@@ -812,6 +977,7 @@ export class KyamlParser {
    */
   parseMap(indent, path) {
     const loc = this.loc();
+    this.enterCollection(loc);
     /** @type {{key: ScalarNode, value: Node, loc: Loc}[]} */
     const entries = [];
     /** @type {Map<string, Loc>} */
@@ -845,6 +1011,7 @@ export class KyamlParser {
         );
       }
       seen.set(identity, keyLoc);
+      this.countSlot(keyLoc);
       entries.push({ key, value, loc: keyLoc });
 
       this.skipGap();
@@ -865,6 +1032,7 @@ export class KyamlParser {
       }
     }
 
+    this.depth -= 1;
     return { kind: "map", entries, loc };
   }
 
@@ -877,6 +1045,7 @@ export class KyamlParser {
    */
   parseSeq(indent, path) {
     const loc = this.loc();
+    this.enterCollection(loc);
     /** @type {Node[]} */
     const items = [];
 
@@ -906,6 +1075,7 @@ export class KyamlParser {
         }
         item = this.parseBlock(itemIndent, itemPath, indent);
       }
+      this.countSlot(item.loc);
       items.push(item);
 
       this.skipGap();
@@ -925,6 +1095,7 @@ export class KyamlParser {
       }
     }
 
+    this.depth -= 1;
     return { kind: "seq", items, loc };
   }
 
@@ -974,15 +1145,15 @@ export class KyamlParser {
       while (this.peek() === " " || this.peek() === "\t") this.bump();
       return node;
     }
-    let raw = "";
+    const rawStart = this.i;
     while (!this.eof) {
       const char = this.peek();
       if (char === ":" && this.isSeparatorAfter(this.i + 1)) break;
       if (char === "\n") break;
-      if (char === "#" && /[ \t]$/.test(raw)) break;
-      raw += this.bump();
+      if (char === "#" && this.prevBlankFrom(rawStart)) break;
+      this.bump();
     }
-    raw = raw.replace(/[ \t]+$/, "");
+    let raw = trimBlanksEnd(this.text.slice(rawStart, this.i));
     if (raw === "") {
       throw this.error("EMPTY_KEY", "empty mapping key", loc);
     }
@@ -1234,15 +1405,15 @@ export class KyamlParser {
    */
   parsePlainBlockScalar(indent, path, context) {
     const loc = this.loc();
-    let raw = "";
+    const rawStart = this.i;
     for (;;) {
       if (this.eof) break;
       const char = this.peek();
       if (char === "\n") break;
       // A comment is separated by white space: a space or a tab (YAML 1.2 §6.6).
-      if (char === "#" && (raw === "" || /[ \t]$/.test(raw))) break;
+      if (char === "#" && (this.i === rawStart || this.prevBlankFrom(rawStart))) break;
       if (char === ":" && this.isSeparatorAfter(this.i + 1)) {
-        if (raw !== "" && context !== "root") {
+        if (this.i !== rawStart && context !== "root") {
           throw this.error(
             "MAPPING_IN_VALUE",
             "a nested mapping cannot start on the same line as its parent value; put it on the next line",
@@ -1250,7 +1421,7 @@ export class KyamlParser {
             path,
           );
         }
-        if (raw === "") {
+        if (this.i === rawStart) {
           throw this.error(
             "MAPPING_IN_VALUE",
             "a nested mapping cannot start on the same line as its parent value",
@@ -1259,10 +1430,10 @@ export class KyamlParser {
           );
         }
       }
-      if (char === "#" && raw.endsWith(" ")) break;
-      raw += this.bump();
+      if (char === "#" && this.i !== rawStart && this.text.charCodeAt(this.i - 1) === 0x20) break;
+      this.bump();
     }
-    raw = raw.replace(/[ \t]+$/, "");
+    let raw = trimBlanksEnd(this.text.slice(rawStart, this.i));
     if (raw === "") {
       throw this.error("EMPTY_VALUE", "empty scalar in value position", loc, path);
     }
@@ -1301,6 +1472,7 @@ export class KyamlParser {
       style,
     });
     if (resolved.type === "string") {
+      this.countString(String(resolved.value), loc);
       assertIJsonString(String(resolved.value), "", "kyaml", loc);
     }
     return node;
@@ -1337,7 +1509,16 @@ export class KyamlParser {
         continue;
       }
       out += char;
+      // UTF-16 units never outnumber UTF-8 bytes, so this is a sound early stop.
+      if (out.length > MAX_STRING_BYTES) {
+        throw budgetError("stringBytes", budgetMessage.stringBytes(), {
+          kind: "kyaml",
+          line: loc.line,
+          column: loc.column,
+        });
+      }
     }
+    this.countString(out, loc);
     assertIJsonString(out, "", "kyaml", loc);
     return { kind: "string", type: "string", value: out, raw: out, loc, style: "quoted" };
   }
@@ -1435,8 +1616,56 @@ export class KyamlParser {
       this.bump(); // header line break
     }
 
-    /** @type {{text: string, moreIndented: boolean, blank: boolean, spaces?: number}[]} */
-    const lines = [];
+    // The body is built while the lines are read, so no per-line object is
+    // kept and a run of blank lines is one counter. Every piece is measured
+    // before it is appended and the scalar is refused the moment it passes
+    // MAX_STRING_BYTES, as json.js does (typed STRING_BUDGET_EXCEEDED, never an
+    // out-of-memory abort).
+    let body = "";
+    /** @type {number} Exact UTF-8 bytes of `body` so far. */
+    let size = 0;
+    /** @type {number} Blank lines seen since the last text line. */
+    let pending = 0;
+    let firstLine = true;
+    let previousMoreIndented = false;
+    /** @type {number} The most spaces on a blank line before the content indent is known. */
+    let maxBlankSpaces = 0;
+    const tooBig = () =>
+      budgetError("stringBytes", budgetMessage.stringBytes(), {
+        kind: "kyaml",
+        line: loc.line,
+        column: loc.column,
+      });
+    /**
+     * Append one text line. Literal style joins every line with `\n` (an
+     * interior blank line is an empty line). Folded style (YAML 1.2 §8.1.3):
+     * a break between two ordinary text lines becomes a space; breaks next to
+     * a blank or more-indented line are kept, and N consecutive breaks become
+     * N−1 newlines.
+     *
+     * @param {string} text
+     * @param {boolean} moreIndented
+     */
+    const append = (text, moreIndented) => {
+      let breaks;
+      if (firstLine) {
+        breaks = pending;
+      } else if (style === "literal") {
+        breaks = pending + 1;
+      } else if (moreIndented || previousMoreIndented) {
+        breaks = pending + 1;
+      } else {
+        breaks = pending;
+      }
+      const joiner = !firstLine && style === "folded" && breaks === 0 ? " " : "";
+      const add = breaks + joiner.length + utf8Length(text);
+      if (size + add > MAX_STRING_BYTES) throw tooBig();
+      body += (breaks > 0 ? "\n".repeat(breaks) : joiner) + text;
+      size += add;
+      pending = 0;
+      firstLine = false;
+      previousMoreIndented = moreIndented;
+    };
     // The document root sits at indentation -1; its content counts from 0.
     let contentIndent = explicitIndent === null ? null : Math.max(parentIndent, 0) + explicitIndent;
 
@@ -1463,9 +1692,10 @@ export class KyamlParser {
         if (contentIndent !== null && spaces > contentIndent) {
           // Spaces past the content indentation are content, even on an
           // otherwise empty line (YAML 1.2 §8.1.3).
-          lines.push({ text: " ".repeat(spaces - contentIndent), moreIndented: true, blank: false });
+          append(" ".repeat(spaces - contentIndent), true);
         } else {
-          lines.push({ text: "", moreIndented: false, blank: true, spaces });
+          pending += 1;
+          if (contentIndent === null && spaces > maxBlankSpaces) maxBlankSpaces = spaces;
         }
         continue;
       }
@@ -1477,7 +1707,7 @@ export class KyamlParser {
         // A detected indentation must cover the leading blank lines: one with
         // more spaces than the first content line is an error (YAML 1.2
         // §8.1.1.1), not silently dropped spaces.
-        if (lines.some((line) => line.blank && line.spaces > spaces)) {
+        if (maxBlankSpaces > spaces) {
           throw this.error(
             "BAD_BLOCK_SCALAR",
             "a leading blank line is indented past the block scalar's content",
@@ -1489,63 +1719,24 @@ export class KyamlParser {
         this.rewind(lineStart);
         break;
       }
-      let text = " ".repeat(spaces - contentIndent);
-      while (!this.eof && this.peek() !== "\n") text += this.bump();
+      const text = " ".repeat(spaces - contentIndent) + this.takeRestOfLine();
       if (!this.eof) this.bump();
       // A line that starts with white space after the indentation, a tab
       // included, is "spaced" and is not folded (YAML 1.2 §8.1.3).
-      lines.push({ text, moreIndented: spaces > contentIndent || text.startsWith("\t"), blank: false });
+      append(text, spaces > contentIndent || text.startsWith("\t"));
     }
 
-    // Drop trailing blank lines from the content; chomping decides their fate.
-    let trailingBreaks = 0;
-    while (lines.length > 0 && lines[lines.length - 1].blank) {
-      lines.pop();
-      trailingBreaks += 1;
-    }
-    // The end of input ends the last line as a line break would: the YAML test
-    // suite reads `x: |\n  a` as "a\n" (L24T/01, JEF9/02).
-    const finalBreak = lines.length > 0;
-
-    let body;
-    if (style === "literal") {
-      body = lines.map((line) => line.text).join("\n");
-      if (lines.length > 0) body += "\n";
-    } else {
-      // Folded style: a line break between two ordinary text lines becomes a
-      // space; breaks next to a blank or more-indented line are kept, and N
-      // consecutive breaks become N−1 newlines (YAML 1.2 §8.1.3).
-      body = "";
-      let pendingBreaks = 0;
-      let firstLine = true;
-      let previousMoreIndented = false;
-      for (const line of lines) {
-        if (line.blank) {
-          pendingBreaks += 1;
-          continue;
-        }
-        if (firstLine) {
-          body += "\n".repeat(pendingBreaks) + line.text;
-          firstLine = false;
-        } else if (line.moreIndented || previousMoreIndented) {
-          body += "\n".repeat(pendingBreaks + 1) + line.text;
-        } else if (pendingBreaks > 0) {
-          body += "\n".repeat(pendingBreaks) + line.text;
-        } else {
-          body += ` ${line.text}`;
-        }
-        pendingBreaks = 0;
-        previousMoreIndented = line.moreIndented;
-      }
-      if (lines.length > 0 && !firstLine) body += "\n";
-    }
-
-    body = body.replace(/\n+$/, "");
-    if (chomp === "clip" && finalBreak) {
-      body += "\n";
-    } else if (chomp === "keep") {
-      body += "\n".repeat((finalBreak ? 1 : 0) + trailingBreaks);
-    }
+    // Blank lines after the last text line are the trailing breaks; chomping
+    // decides their fate. The end of input ends the last line as a line break
+    // would: the YAML test suite reads `x: |\n  a` as "a\n" (L24T/01, JEF9/02).
+    const trailingBreaks = pending;
+    const finalBreak = !firstLine;
+    // The final `\n` of the body is trimmed and restored by chomping, so only
+    // `keep` can add more than the one newline of `clip`.
+    const tail = chomp === "clip" ? (finalBreak ? 1 : 0) : chomp === "keep" ? (finalBreak ? 1 : 0) + trailingBreaks : 0;
+    if (size + tail > MAX_STRING_BYTES) throw tooBig();
+    if (tail > 0) body += "\n".repeat(tail);
+    this.countString(body, loc);
 
     assertIJsonString(body, "", "kyaml", loc);
     return { kind: "string", type: "string", value: body, raw: body, loc, style: "block" };
@@ -1560,6 +1751,7 @@ export class KyamlParser {
   parseFlowNode(path) {
     const loc = this.loc();
     const opener = this.peek();
+    this.enterCollection(loc);
     if (opener === "[") {
       this.bump();
       /** @type {Node[]} */
@@ -1577,7 +1769,9 @@ export class KyamlParser {
           // A `,` must follow an entry: `[1,,2]` and `[,]` have an empty one.
           throw this.error("EMPTY_VALUE", "empty flow sequence entry", this.loc(), path);
         }
-        items.push(this.parseFlowItem(joinPath(path, String(items.length))));
+        const item = this.parseFlowItem(joinPath(path, String(items.length)));
+        this.countSlot(item.loc);
+        items.push(item);
         this.skipFlowGap();
         if (this.peek() === ",") {
           // YAML 1.2 allows a final `,`; KYAML (KEP-5295) writes one after every
@@ -1599,6 +1793,7 @@ export class KyamlParser {
           path,
         );
       }
+      this.depth -= 1;
       return { kind: "seq", items, loc };
     }
 
@@ -1651,6 +1846,7 @@ export class KyamlParser {
         );
       }
       seen.set(identity, keyLoc);
+      this.countSlot(keyLoc);
       entries.push({ key, value, loc: keyLoc });
       this.skipFlowGap();
       if (this.peek() === ",") {
@@ -1671,6 +1867,7 @@ export class KyamlParser {
         path,
       );
     }
+    this.depth -= 1;
     return { kind: "map", entries, loc };
   }
 
@@ -1800,15 +1997,15 @@ export class KyamlParser {
     } else if (this.eof || /[,\]}\n]/.test(this.peek())) {
       node = this.nullNode(loc);
     } else {
-      let raw = "";
+      const rawStart = this.i;
       while (!this.eof) {
         const char = this.peek();
         if (/[,[\]{}\n]/.test(char)) break;
         if (char === ":" && this.isFlowSeparatorAfter(this.i + 1)) break;
-        if (char === "#" && (raw === "" || /[ \t]$/.test(raw))) break;
-        raw += this.bump();
+        if (char === "#" && (this.i === rawStart || this.prevBlankFrom(rawStart))) break;
+        this.bump();
       }
-      raw = raw.replace(/[ \t]+$/, "");
+      let raw = trimBlanksEnd(this.text.slice(rawStart, this.i));
       if (raw === "") {
         throw this.error(
           "EMPTY_VALUE",
@@ -1845,24 +2042,40 @@ export class KyamlParser {
       this.checkKeyLength(this.text.slice(start, this.i), loc);
       return node;
     }
-    let raw = "";
+    const rawStart = this.i;
     while (!this.eof) {
       const char = this.peek();
       // A `:` before a safe character is part of the key: `{http://x: 1}`.
       if ((char === ":" && this.isFlowSeparatorAfter(this.i + 1)) || /[,[\]{}\n]/.test(char)) break;
       // A `#` after white space starts a comment, which ends the key's line.
-      if (char === "#" && /[ \t]$/.test(raw)) break;
-      raw += this.bump();
+      if (char === "#" && this.prevBlankFrom(rawStart)) break;
+      this.bump();
     }
     // YAML white space is space and tab only (s-white); a no-break space is
     // part of the key.
-    raw = raw.replace(/^[ \t]+|[ \t]+$/g, "");
+    let raw = trimBlanks(this.text.slice(rawStart, this.i));
     if (raw === "") throw this.error("EMPTY_KEY", "empty flow mapping key", loc);
     this.checkKeyLength(raw, loc);
     return this.scalarFromRaw(raw, loc, "plain");
   }
 
   // ── small helpers ────────────────────────────────────────────────────────
+
+  /**
+   * O(1) replacement for `/[ \t]$/.test(raw)` where `raw` is exactly the
+   * source text consumed since the scalar began (so its last character is
+   * the one just before the cursor).
+   *
+   * @param {string} raw
+   * @returns {boolean}
+   */
+  prevBlankFrom(start) {
+    if (this.i === start) return false;
+    const c = this.text.charCodeAt(this.i - 1);
+    return c === 0x20 || c === 0x09;
+  }
+
+
 
   /**
    * Whether the line at the cursor belongs to an enclosing collection rather
@@ -1892,6 +2105,8 @@ export class KyamlParser {
    * @returns {void}
    */
   checkKeyLength(text, loc) {
+    // A string's code-point count never exceeds its UTF-16 length.
+    if (text.length <= MAX_IMPLICIT_KEY) return;
     const length = [...text].length;
     if (length > MAX_IMPLICIT_KEY) {
       throw this.error(
@@ -1983,8 +2198,26 @@ export class KyamlParser {
  * @throws {ConformanceError}
  */
 export function parseKyaml(bytes, source) {
+  return parseKyamlWithComments(bytes, source).documents;
+}
+
+/**
+ * Parse a KYAML stream and also report the first comment after the header.
+ *
+ * @param {Uint8Array} bytes
+ * @param {string} [source]
+ * @param {number|null} [headerLines]  Lines of the leading header block; when a
+ *   number, the earliest comment on a later line is reported. When null (the
+ *   default) no comment is recorded.
+ * @returns {{documents: Node[], lostComment: {line: number, column: number}|null}}
+ * @throws {ConformanceError}
+ */
+export function parseKyamlWithComments(bytes, source, headerLines = null) {
   const text = decodeUtf8(bytes, "kyaml");
-  return new KyamlParser(text, source).parseStream();
+  const parser = new KyamlParser(text, source);
+  parser.headerLines = headerLines;
+  const documents = parser.parseStream();
+  return { documents, lostComment: parser.lostComment };
 }
 
 export { BOM };

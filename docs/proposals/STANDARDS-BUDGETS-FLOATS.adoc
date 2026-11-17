@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= Proposal: value budgets and float closure for JSON-POLICY and ijson-jcs
+:revdate: 2026-11-17
+:status: PROPOSAL — pending standards. Not in force in standards or ijson-jcs. Implemented in kyq's oracle at contract 0.4.0 (owner ruling R3, 2026-11-17).
+
+This text is for the owner to file upstream: as an amendment to
+`hyperpolymath/standards` `3-practice/JSON-POLICY.adoc`, and as a change
+request to `hyperpolymath/ijson-jcs`. kyq cannot push to either. Nothing here
+is in force until standards rules on it; until then kyq lists every row where
+it differs from ijson-jcs in `conformance/fixtures/oracle/divergences.json`.
+
+== 1. The problem: canonical output that is not valid input
+
+JSON-POLICY J-1 requires I-JSON serialised by JCS. Two gaps break the property
+every gate needs, *closure*: `check(canon x) = OK` and `canon(canon x) = canon x`.
+
+. *Large floats.* I-JSON refuses an integer token outside ±(2^53−1), but
+  accepts any finite float token. RFC 8785 §3.2.2.3 prints a float with the
+  ECMAScript algorithm, which writes an integer-valued double below 10^21
+  without an exponent. So `1e18` canonicalises to `1000000000000000000`,
+  which the same tool's strict reader refuses. Measured 2026-11-17 with
+  binaries built at ijson-jcs `2c880594` (kyq's pin) and `1735d68` (main):
+  both canonicalise `[1e18]` to `[1000000000000000000]` (exit 0), and both
+  refuse that output with "Number outside safe integer range" (exit 2).
+. *Unbounded resources.* No budget is ruled. The kyq oracle (contract ≤ 0.3.0)
+  expanded a 64 108-byte KYAML input with aliases to 81 984 110 bytes, and a
+  125 548-byte input crashed node with `RangeError: Invalid string length`
+  (kyq-phase1 optim §4). Its JSON depth limit was the JS stack, so the verdict
+  on 128 to about 1 800 nested arrays differed between node and bun, and
+  between JIT states.
+
+A budget on *encoded bytes* would not fix closure: `canon` grows text by up to
+3.4× (`[1e15,…]`) and 4.4× (`[1e20,…]`) (kyq-phase1 verify-logic L6), so an
+input under a byte limit can have canonical output over it.
+
+== 2. Proposed rule J-3: value budgets
+
+A JSON value (and, for kyq, the JSON image of a KYAML stream after alias
+expansion) MUST satisfy every budget below. Budgets are measured on the
+*value*, never on the encoded text, so canonicalising cannot cross one.
+
+[cols="3,1,3",options="header"]
+|===
+| Measure | Default | Code
+
+| Depth: containers on the longest root-to-leaf path (a scalar adds nothing; `[]` is 1) | 127 | `DEPTH_BUDGET_EXCEEDED`
+| Nodes: values, containers and scalars, keys excluded | 500 000 | `NODE_BUDGET_EXCEEDED`
+| String bytes: decoded UTF-8 bytes of all strings and member names | 8 MiB | `STRING_BUDGET_EXCEEDED`
+| Expansion (YAML-family inputs only): nodes / string bytes that aliases add to the expanded value | 100 000 / 1 MiB | `EXPANSION_BUDGET_EXCEEDED`
+| Raw input bytes, at a CLI edge only | 256 MiB | `INPUT_BUDGET_EXCEEDED`
+|===
+
+Rules:
+
+* Every limit is checked with an explicit counter. A verdict MUST NOT depend on
+  a stack overflow, a runtime or a JIT state.
+* The only encoded-bytes limit is the CLI input guard. It MUST be at least the
+  largest canonical text any value within the other budgets can have, so it
+  never refuses a canonical output. kyq uses the bound
+  `300 × nodes + 6 × string bytes` (at most 254 bytes of KYAML indentation
+  plus punctuation and a 25-byte ES number per value; at most 6 bytes per
+  string byte for `\u00XX` escapes), which is 200 331 648 bytes at the
+  defaults, below 256 MiB; the guard is also below V8's string-length limit
+  (2^29 − 24), so huge inputs get the typed code on every runtime.
+* A tool that emits a stream as one array (kyq `canon --array`) MUST check the
+  budgets on the emitted value, which has one more level and one more node.
+
+Rationale for the defaults:
+
+* *Depth 127.* It is what ijson-jcs already enforces on text. At the pin
+  `2c880594`, text goes through `serde_json::Deserializer::from_str`
+  (`src/strict.rs:121-125`) with serde_json 1.0.151 (`Cargo.lock:82-84`),
+  whose deserializer starts at `remaining_depth: 128` (serde_json
+  `src/de.rs:63`) and fails when a `[` or `{` brings it to 0
+  (`src/de.rs:1372-1378`): 127 containers are accepted and the 128th is
+  "recursion limit exceeded at line L column C". Measured on the pinned binary:
+  depth 126 and 127 exit 0; 128, 129, 200, 1000, 5000 and 200 000 exit 2 with
+  that message. Main `1735d68` keeps the same text limit (serde_json 1.0.154,
+  same `de.rs` lines) and adds `MAX_DEPTH = 128` for *constructed* values
+  (`src/lib.rs:79-81`, checked as `depth >= MAX_DEPTH` from a root depth of 0
+  in `src/ijson.rs:96-108`), which admits 128 containers. *The two limits in
+  main disagree by one; this proposal asks ijson-jcs to use 127 for both.*
+* *Nodes 500 000 and string bytes 8 MiB.* About 1.4× and 2× the largest
+  realistic input measured for kyq: a 10 MB stream of 9 801 Kubernetes
+  documents with 352 836 nodes and 4 250 147 string bytes. Estate
+  configuration files are orders of magnitude smaller. Both are also chosen so
+  the output bound fits under the input guard.
+* *Expansion 100 000 nodes / 1 MiB.* 100 000 was kyq's anchor-bomb limit; it
+  now counts only what aliases add, so an alias-free document is never
+  refused by it. 1 MiB of added string bytes refuses the 64 108-byte and
+  125 548-byte probes above in 23–49 ms (measured, node 22 and bun 1.4.4)
+  without expanding them.
+
+== 3. Proposed rule J-4: float closure
+
+A finite float whose RFC 8785 serialisation is integer-shaped (`-?[0-9]+`) and
+whose value is outside ±(2^53−1) MUST be refused, with the code
+`UNSAFE_FLOAT_INTEGER`. Equivalently: an integer-valued double `v` with
+2^53 − 1 < |v| < 10^21.
+
+[cols="2,2,3",options="header"]
+|===
+| Input | Canonical text | Verdict
+
+| `1e15` | `1000000000000000` | accepted
+| `9007199254740991.0` | `9007199254740991` | accepted
+| `1e21` | `1e+21` | accepted (ES writes an exponent from 10^21)
+| `-0.0` | `0` | accepted; RFC 8785 §3.2.2.3 maps −0 to `0`, so the sign is not preserved. That is a property of JCS, not a closure failure: `0` is valid input and canonicalises to itself.
+| `9007199254740992.0` | (`9007199254740992`) | `UNSAFE_FLOAT_INTEGER`
+| `9007199254740993.0` | (`9007199254740992`, rounded) | `UNSAFE_FLOAT_INTEGER`
+| `1e18`, `-1e18` | (`±1000000000000000000`) | `UNSAFE_FLOAT_INTEGER`
+| `1e20`, `18446744073709551616.0` | (`100000000000000000000`, `18446744073709552000`) | `UNSAFE_FLOAT_INTEGER`
+|===
+
+Rationale: this narrows the domain and keeps one canonical form. The
+alternatives each break something else: accepting the integer token when it
+came from a float makes validity depend on history the text does not carry;
+printing an exponent breaks RFC 8785 byte equality; keeping the gap breaks
+closure. With J-3 and J-4 together, kyq's oracle passes `check(canon x) = OK`
+and `canon(canon x) = canon x` on every input it accepts in its corpus and on
+seeded random values (`conformance/test/budgets.test.js`).
+
+== 4. RFC 8785 tie vector: bump the pin before using ijson-jcs as the number oracle
+
+JSON-POLICY §5 records that ijson-jcs `0fdeea71` passes 23 of 24 RFC 8785
+Appendix B number vectors: for the double `43143ff3c1cb0959` it emits
+`1424953923781206.3`, where ECMAScript (and RFC 8785) gives
+`1424953923781206.2`. Measured 2026-11-17: the kyq pin `2c880594` still emits
+`[1424953923781206.3]` for input `[1424953923781206.2]`; main `1735d68` emits
+`[1424953923781206.2]`, which is correct. kyq should move its oracle pin to a
+commit at or after `1735d68` once standards has ruled on this proposal, and
+JSON-POLICY §5 should record the fix.
+
+== 5. Asks
+
+. standards: add J-3 and J-4 to JSON-POLICY (or rule different defaults), and
+  record the codes so kyq, kyX and ijson-jcs share them.
+. ijson-jcs: refuse J-4 floats in `check`, `fix` and `canon`; use one depth
+  limit (127) for text and for constructed values; add the node, string-byte
+  and input budgets with typed errors.
+. kyq: when ijson-jcs adopts this, `tools/ijson-jcs-diff.mjs` reports each row
+  of `fixtures/oracle/divergences.json` as stale; remove them and bump the pin.
+
+== 6. Evidence in kyq
+
+* `conformance/src/budgets.js` — the single definition of the budgets.
+* `conformance/test/budgets.test.js` — limits at their exact boundaries,
+  closure over the corpus, the L6 growth rows and seeded values, and the
+  amplification probes.
+* `conformance/test/tv.test.js` and `conformance/tv/tv.js` — test-time
+  translation validation with an independent checker (unverified; semantic only
+  for JSON and the KYAML flow profile, cert-only for block-style KYAML, and independent
+  in source code but not in the runtime's number parse and print).
+* `conformance/fixtures/oracle/divergences.json` and
+  `conformance/tools/ijson-jcs-diff.mjs` — the 11 rows where kyq refuses what
+  ijson-jcs accepts: the 9 float-closure rows (J-4) and 2 generated J-3 budget
+  rows (nodes, string bytes; the 256 MiB input budget is not probed). The other 78
+  differential cases agree with both the pin and main.

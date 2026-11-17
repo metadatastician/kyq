@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Example
+
+# Free-form header note.
+apiVersion: v1
+kind: Namespace
+metadata: {name: demo, labels: {tier: "web"}}

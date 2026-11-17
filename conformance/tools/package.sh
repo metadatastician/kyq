@@ -58,6 +58,7 @@ cp -R \
   "$root/conformance/src" \
   "$root/conformance/test" \
   "$root/conformance/tools" \
+  "$root/conformance/tv" \
   "$root/conformance/fixtures" \
   "$stage/$name/"
 cp "$root/conformance/VERSION" "$root/conformance/package.json" "$stage/$name/"
