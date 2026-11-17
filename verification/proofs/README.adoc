@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= kyq verification/proofs
+
+How `hyperpolymath/standards` `3-practice/PROOF-POLICY.adoc` maps onto kyq.
+The per-claim record is `docs/status/PROOF-STATUS.adoc`.
+
+[cols="1,1,2",options="header"]
+|===
+| Directory | Prover (policy role) | Content
+
+| `agda/` | Agda (theory, source of truth; §2.1 invocation) | The P1 spine. *Provisional* until the theory home is ruled (D13); see `agda/README.adoc`.
+| `rocq/` | Rocq/Coq (theory recheck, `re-proved`, BRIDGE-PENDING) | Canon idempotence, uniqueness (one level and every depth), the two-argument TV theorem, the one-argument countermodel. Transport through Dedukti was not tried (PROOF-STATUS, "Rocq leg").
+| (`lean/`, absent) | Lean 4, core only (theory recheck) | No Lean leg: no Lean toolchain could be installed here (PROOF-STATUS, "Lean leg").
+| — | Idris2 (engineering: kyq's interface) | Not started (P2).
+|===
+
+== The two kinds of gate
+
+kyq gates four formats, and they are not all the same kind of gate
+(verify-logic L3; CORRECTIONS blocker 5):
+
+* *Canonical gates*, KYAML and I-JSON/JCS: `check` accepts exactly the
+  canonical text of a value in the profile domain. Obligations: RoundTrip,
+  NonMalleable(check), Complete(check). Complete(check) is gate-level
+  closure, `check(canon x) = OK`. `closure` in `agda/KyqCodec.agda` gives
+  only its accept-set half (`c v` is in the Canonical set) from RoundTrip,
+  NormIdem and DomClosed; `RefCheck.gate-closure` derives Complete for the
+  reference check (parse, decide Dom, compare with the canonical text). For
+  kyq's own check it is open.
+* The canonical-gate definition has no header or trivia component, so a
+  KYAML instance would have to refuse SPDX-headed files. That is an open
+  definitional gap (PROOF-STATUS, "What is NOT proven").
+* *Validity gates*, TOML and Dhall: these formats are preserved, not
+  canonicalised. Obligation: `check b ⇔ b ∈ dom p` only, plus RoundTrip for any
+  emitter. No non-malleability obligation is planned for them.
+
+Both are defined in `agda/KyqCodec.agda` (`CanonicalGate`, `ValidityGate`).
+Only the canonical-gate theory has theorems here; there is no TOML or Dhall
+instance.
+
+== Running
+
+----
+just proofs        # every leg + every negative control; exits 3 while the Lean leg is OPEN
+just proofs-agda   # Agda leg (asserts Agda 2.7.0.1 unless KYQ_AGDA_VERSION names another)
+just proofs-rocq   # Rocq leg (asserts coqc 8.18.0; always prints DEVIATION DEV-2: no Guix pin)
+just proofs-lean   # exits 3: OPEN
+----
+
+Exit codes: 0 pass, 1 a proof or control failed, 2 toolchain missing or not
+the asserted version, 3 a leg is OPEN. A missing leg or tool is never a pass.
+In this session Agda is 2.6.3, so the Agda leg runs only as
+`KYQ_AGDA_VERSION=2.6.3 just proofs-agda`, which prints the deviation
+(PROOF-STATUS, DEV-1). The Rocq leg's PASS line says it is `re-proved` and
+BRIDGE-PENDING, so it does not count towards a grade.
+
+What the runner checks besides the provers' verdicts (coverage of every
+source file, a lexing escape-hatch scan, the prover's exact trusted base,
+and a planted control for each of those checks) is listed in
+`agda/README.adoc`, "Invocation and import cone". The lexer is
+`agda-lex.awk`.

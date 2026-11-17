@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= kyq proof spine (P1): Agda source of truth
+:toc: macro
+
+[IMPORTANT]
+====
+*Provisional placement.* This is theory: statements true of any
+implementation of the I-JSON/JCS canoniser (PROOF-POLICY §1). Its home is not
+yet ruled (owner decision D13). It lives here only until D13 is ruled, and
+then *moves to the theory home* with its Rocq leg, its negative controls and
+its receipts. kyq would then keep a pointer, not a copy.
+
+D13 is open. design.md offered (a) `hyperpolymath/autoformal-fidelity`, which
+already owns `Crossing`, labelled the elegant arm; (b) resource-algebra;
+(c) the mathesis theory shelf. verify-canon M8 found that (c) was misstated:
+the mathesis deed's IS-NOT is about being a checker, while its `:owns` and
+`:purpose` include "the theory that no single system owns" (THY-1), which
+Faithful≈/FID-1 plausibly is. M8 asks for the elegant arm to be re-assessed.
+This README therefore recommends no arm.
+====
+
+toc::[]
+
+== What the spine models
+
+* `V_J`, the I-JSON value algebra (`KyqValue`): null, bool, number, string
+  (UTF-16 code units, each a `ℕ`), array, and object as an association list in
+  the order the producer wrote it. Numbers are an abstract module parameter
+  `Num`.
+* `canon`, the value-level canoniser: object members sorted by name in UTF-16
+  code-unit order (RFC 8785 §3.2.3), recursively.
+* An abstract codec (`KyqCodec.Format`): texts, a partial parser
+  `p : Bytes → Maybe V` (refusal is `nothing`, fail-closed), a printer, the
+  value canoniser `norm`, and a profile domain `Dom`. Nothing about `p` or
+  `print` is built in: each law is a separate named hypothesis, and each
+  theorem lists the ones it uses.
+* The I-JSON number profile (`KyqProfile`) over an abstract number interface
+  `NumIface` whose only hypothesis, `show-val`, is a record field. Its
+  `Bytes` are token trees (value trees with numerals at the leaves), not
+  bytes.
+
+It does *not* model bytes, UTF-8 encoding, escaping, number text, headers or
+trivia, KYAML, TOML, Dhall, the JS conformance oracle or the AffineScript
+code. See `docs/status/PROOF-STATUS.adoc`, "What is NOT proven".
+
+== Modules and theorems
+
+[cols="1,3",options="header"]
+|===
+| Module | Main results
+
+| `KyqPrelude` | Local prelude (no library). `+`/`max` laws used by the measures; `∧` lemmas.
+| `KyqOrder` | `leq-total`, `leq-antisym`, `leq-trans`: the member order is a total order.
+| `KyqValue` | `canon-nf`, `nf-fixed`, `canon-idem` (c∘c = c), `nf-covered` + `image-nf` (image canon = NF), `isort-perm`, `canon-not-id`.
+| `KyqUnique` | `sorted-unique`, `isort-unique` (one object level); `no-unique-without-distinct` (the distinct-name proviso is necessary).
+| `KyqRecursive` | `_~_` (same value up to member order, at every depth, defined independently of `canon`); `canon-resp` (recursive JCS-5(a)); `nf-unique` (uniqueness of the canonical representative); `~-canon`, `ker-sound`, `ker-canon` (ker canon = `~` on well-formed values); `canon-wf`; `canon-resp-needs-wf` (WF is necessary).
+| `KyqMeasure` | A generic `Measure` (any member-order-blind fold) and `canon-measure`; the three R3 measures as the oracle defines them: `depth` (containers on the longest path), `nodes` (values, keys excluded), `bytes` (UTF-8 bytes of strings and member names); `canon-depth`, `canon-nodes`, `canon-bytes`; `verdict-canon` (the typed budget verdict is unchanged by canon) and `within-canon`; sanity checks `depth-*`, `nodes-keys-excluded`, `bytes-keys-included`. Alias expansion is not modelled.
+| `KyqCodec` | `≈` (the kernel of `norm`); `RoundTrip`, `NonMalleable`, `Complete`, `CanonicalGate`, `ValidityGate`, `NormSeparates`; `closure` (the accept-set half of JCS-10); `RefCheck.gate-closure` (the reference check is a canonical gate, so `check (c v) ≡ true` is derived for it); the two-argument TV theorem `tv-sound`, `tv-complete`, `tv-iff`; `Faithful≈ = RoundTrip≈ × Covered≈(img) × NonMalleable(check)`, `FaithfulSem`, `sem-roundtrip`; declared losses `DeclaredLoss` (`roundtrip-upto`, `upto-lossless`); `free-≈-trivial`; FID-1 for Faithful≈ under its hypotheses (`roundtrip-compose`, `covered-compose`, `faithful-compose`).
+| `KyqModel` | A concrete `Format` over `V_J` in which every hypothesis holds (`model-*`, `model-tv`; degenerate: total parser, `Dom = ⊤`), plus countermodels: `loose-not-nonmalleable` (F-2), `covered-not-enough` (L2(a)), `one-arg-not-tv` (L1), `validity-not-tv-sound` (ablation), `coarse-norm-faithful` and `coarse-not-separating` (L2(c): a constant `norm`), `drop-not-faithful`, `wrap-not-covered` (Covered≈ has content).
+| `KyqProfile` | `hole-breaks-rt`, `r3-rt`, `r3-excludes-hole`, `r3-maximal`; `domR3B-sound`/`-complete` (the R3 domain is decidable); a concrete toy profile with a hole (`toy-*`); the lift to value trees (`value-rt`, `value-rt-old-fails`); `ProfileFormat` with `profile-roundtrip`, `profile-closure` and `Gate.profile-gate-closure`; the second non-vacuity witness `toy-gate`, `toy-tv-in-dom`, `toy-tv-refused`, `toy-tv-outside-dom`, `toy-check-*`.
+|===
+
+=== The translation-validation theorem (verify-logic L1)
+
+`tv-sound`: for any `check` with `NonMalleable check`, any input `i` with
+`p i ≡ just vi` and `Dom vi`, and any output `o` with `check o ≡ true` and
+`p o ≡ just vo`, `vo ≈ vi`, it follows that `o ≡ c vi`.
+
+Assumed about `p`/`print`: *nothing* beyond `NonMalleable check` and the
+definition `c v = print (norm v)` (so `c` respects `≈`). `tv-complete` adds
+`RoundTrip`, `Complete check` and idempotence of `norm`. `tv-iff` combines
+them: `TV check i o ⇔ ∃ vi. p i ≡ just vi ∧ Dom vi ∧ o ≡ c vi`.
+
+`one-arg-not-tv` shows why the one-argument form `check b ⇔ b = c(p b)` is
+not translation validation. `validity-not-tv-sound` shows that `tv-sound`
+needs `NonMalleable`: with a validity gate in its place the statement is
+false.
+
+The hypotheses are satisfiable in two witnesses. `KyqModel.model` is
+degenerate (total parser, `Dom = ⊤`). `KyqProfile.toy-gate` has a partial
+parser and a proper domain: there `toy-tv-refused` (the parser refuses the
+input) and `toy-tv-outside-dom` (the input parses, but its value is the
+large-float hole) show that the refusal and `Dom` parts of TV bite.
+
+=== Closure: what is derived and what is assumed (ruling R3)
+
+* `closure : NormIdem → RoundTrip → DomClosed → ∀ v → Dom v → Canonical (c v)`
+  gives the *accept-set half* of JCS-10: `c v` lies in the set a canonical
+  gate must accept. It says nothing about a given `check`.
+* `check (c v) ≡ true` for a given `check` is `Complete check`. In `tv-complete`
+  and `tv-iff` it is a hypothesis.
+* For the *reference check* `RefCheck.checkRef` (parse, decide `Dom`, compare
+  with `c`), `gate-closure` derives `CanonicalGate checkRef`, so
+  `check (c v) ≡ true` is proved from `NormIdem`, `RoundTrip` and `DomClosed`.
+  `Gate.profile-gate-closure` instantiates it for the I-JSON number profile
+  under R3, for any `NumIface` with decidable numeral equality.
+* For kyq's *actual* `check`, gate-level closure is `open`.
+
+=== Faithful≈, ≈ and declared losses (verify-logic L2)
+
+* `≈` is the kernel of `norm`. A `Crossing` takes no `≈` parameter, so a
+  converter cannot pick one. But `norm` is a field of the `Format`, so `≈` is
+  only as good as the `Format` instance: `coarse-norm-faithful` builds a
+  `Format` with a constant `norm` that meets `CanonicalGate`, `RoundTrip` and
+  `NormIdem`, and with it a converter that drops the whole document is
+  `Faithful≈`. `free-≈-trivial` has moved into the choice of `Format`.
+* The fix is `NormSeparates sem`: `norm` identifies only what an
+  independently defined equivalence `sem` identifies. For JSON, `sem` is
+  `KyqRecursive._~_`, and `model-separates` proves it (via `ker-sound`);
+  `coarse-not-separating` refutes it for the constant `norm`. `FaithfulSem`
+  adds it to `Faithful≈`, and `sem-roundtrip` concludes the round trip up to
+  `sem`.
+* Every `Faithful≈` claim is therefore only as good as an audited, exported
+  `Format` instance and its `sem`. That is a trust-boundary row in
+  PROOF-STATUS.
+* `Covered≈ img` is relative to an image predicate `img`, not to the target's
+  `check`. It is vacuous at `img = ⊥` (`covered-vacuous`) and trivial at the
+  image of `fwd`; `wrap-not-covered` shows it failing for an embedding into a
+  larger target at `img = ⊤`. A crossing fixes `img` per output as its "no
+  invented field" predicate; that choice is audited with the instances.
+* `NonMalleable check` is its own component; `covered-not-enough` exhibits a
+  crossing with `RoundTrip≈` and `Covered≈` but a malleable check.
+* Declared losses are a separate quotient `_≋_ ⊇ ≈_S`. They set the grade
+  (`GradeEvidence`), never `≈`.
+* FID-1: `faithful-compose` composes `Faithful≈` under `Chain`, `BackCong`,
+  `FwdCong` and `ImgChain`. Composition of grades (by max) is not proved.
+
+=== Canonical gates and validity gates (verify-logic L3, CORRECTIONS blocker 5)
+
+[cols="1,1,2",options="header"]
+|===
+| Kind | Formats | Obligation in `KyqCodec`
+
+| Canonical gate | KYAML, I-JSON/JCS | `CanonicalGate check = NonMalleable check × Complete check`, plus `RoundTrip` (which gives `closure`, the accept-set half).
+| Validity gate | TOML, Dhall | `ValidityGate check = ∀ b. check b ≡ true ⇔ b ∈ Dom` only, plus `RoundTrip` for any emitter. No non-malleability.
+|===
+
+`canonical-gate-valid` shows a canonical gate is also sound as a validity
+gate; `loose-validity` with `loose-not-nonmalleable` shows the converse fails.
+No TOML or Dhall instance is built here.
+
+*Open definitional gap: headers and trivia.* `NonMalleable` requires
+`b ≡ c v` exactly. verify-logic L3 asks for `b = h ++ c v` with a preserved
+header `h`. Without that component, any KYAML instance would have to refuse
+every file that starts with an SPDX line, which is the root of CORRECTIONS
+blocker 2 and doctrine 6. The header form needs a byte model with
+concatenation, which P1 does not have; it is recorded as `open` in
+PROOF-STATUS and blocks any KYAML instance.
+
+=== The large-float hole (verify-logic L7, ruling R3)
+
+The hole is a failure of `RoundTrip` of the *profile* reader `readP`, which
+classifies a numeral as integer form or not and refuses integer-form numerals
+outside the safe range. It is not a hypothesis on `Num`: `NumIface` keeps only
+`show-val`. `hole-breaks-rt` refutes RoundTrip on the pre-R3 domain whenever
+a hole exists; `toy-hole` exhibits one in a concrete interface (`expTok 4` plays
+`1e18`); `r3-rt` proves RoundTrip on the R3 domain; `r3-maximal` shows R3
+refuses nothing that closure does not force it to refuse; `domR3B-sound` and
+`domR3B-complete` show the R3 domain is decidable.
+
+=== Value budgets (ruling R3)
+
+`canon-measure` holds for every `Measure`, that is, every fold whose member
+combination is left-commutative. `depth`, `nodes` and `bytes` are its
+instances, defined as `conformance/src/budgets.js` defines them: depth counts
+containers only (`[]` is 1, `[[1]]` is 2, a scalar adds nothing), so a budget
+of 127 matches the ijson-jcs text limit and the oracle's `MAX_DEPTH`; nodes
+exclude keys; bytes are UTF-8 bytes of strings and member names (a valid
+surrogate pair is 4 bytes, a lone surrogate 3). `verdict-canon` shows the
+typed verdict (which budget is exceeded first) is the same for `v` and
+`canon v`. The two alias-expansion budgets and the encoded-bytes CLI limit are
+not modelled.
+
+== Invocation and import cone
+
+----
+LC_ALL=C.UTF-8 agda --safe --without-K --cubical-compatible --no-libraries All.agda
+----
+
+`LC_ALL=C.UTF-8` is needed because Agda 2.6.3 aborts on the UTF-8 source
+without a UTF-8 locale. `--no-libraries` keeps a user's `~/.agda/defaults`
+out of the include path. `verification/proofs/run-proofs.sh agda` (or
+`just proofs-agda`) runs it from a clean state and also checks:
+
+* coverage: every `./*.agda` is imported by `All.agda`, and the cone Agda
+  reports with `--dependency-graph` is exactly `All`, the local modules and the
+  prover-supplied modules, so a stray module cannot go unchecked;
+* escape hatches, with a lexing scan (`../agda-lex.awk`) that strips nested
+  comments, strings and character literals and reads pragma bodies as Agda
+  does: no `postulate`, `primitive`, `primTrustMe` or `primEraseEquality`, and
+  no pragma outside an exact allowlist;
+* the prover's trusted base (PROOF-POLICY §8.4 rule 7): the postulates of the
+  prover-supplied modules in the cone are exactly `Level`, `lzero`, `lsuc` and
+  `_⊔_`, bound by `BUILTIN LEVEL`, `LEVELZERO`, `LEVELSUC` and `LEVELMAX`;
+* each scanner and coverage check is first run, with the same function, on a
+  planted control under `controls/runner/`, and must flag it.
+
+Import cone (from `--dependency-graph`): `All`, `KyqPrelude`, `KyqOrder`,
+`KyqValue`, `KyqUnique`, `KyqRecursive`, `KyqMeasure`, `KyqCodec`,
+`KyqModel`, `KyqProfile`, and the prover-supplied `Agda.Primitive`. No
+standard library or other library is imported. Pragmas: the canonical
+`OPTIONS` line and `BUILTIN EQUALITY _≡_`/`BUILTIN NATURAL ℕ`. Development
+postulates: 0. Prover trusted base: 4 named postulates of `Agda.Primitive`,
+listed above.
+
+== Negative controls
+
+Each file under `controls/` must be refused, with the stated reason; the
+runner fails if one is accepted or refused for another reason. A refusal
+shows that the checker rejects that proof of that claim; where the claim is
+also false, the spine proves its negation, named in the table.
+
+[cols="2,3,2",options="header"]
+|===
+| Control | Claims (and the theorem that refutes it) | Expected refusal
+
+| `PlantedPostulate.agda` | `true ≡ false` by postulate | `Cannot postulate cheat with safe flag`
+| `PlantedTerminating.agda` | a non-terminating loop under `TERMINATING` | `Cannot use TERMINATING pragma with safe flag`
+| `KInForce.agda` | uniqueness of identity proofs | `... because K has been disabled`
+| `UnsortedIsNF.agda` | one unsorted object is a normal form (`unsorted-moved`) | `false != true of type Bool`
+| `MalleableCheck.agda` | F-2: `NonMalleable checkLoose`, a validity gate is non-malleable (`loose-not-nonmalleable`) | `b != canon b of type Value`
+| `IsortUniqueNoDistinct.agda` | ablation: `isort-unique` without `DistinctKeys` (`no-unique-without-distinct`) | `⊤ !=< (DistinctKeys xs)`
+| `CanonRespNoWF.agda` | ablation: `canon-resp` without `WF` (`canon-resp-needs-wf`) | `⊤ !=< (WF v)`
+| `TvSoundValidity.agda` | ablation: the `tv-sound` proof term with `ValidityGate` for `NonMalleable` (`validity-not-tv-sound`) | `(InDom o → check o ≡ true) should be a` function type
+| `LargeFloatClosed.agda` | the pre-R3 toy profile reads back the printed `4` (`toy-old-not-closed`) | `nothing != just 4`
+|===
+
+Runner controls under `controls/runner/` are not Agda controls: they test the
+runner. `KyqStray.agda` (an unimported, false module) must be flagged by both
+coverage checks; `LexHidden.agda` (a postulate after a nested comment on the
+same line) must be found by the lexing scan; `LexDecoys.agda` (the word
+`postulate` only in comments, a nested comment, a string and inside a name)
+must not be.
+
+== Recheck legs
+
+* Rocq: `../rocq/KyqSpine.v`, re-proved by hand (correspondence below). Its
+  controls are `../rocq/controls/UnsortedIsFixed.v` (one unsorted object is
+  a fixed point of canon) and `OneArgCanonOfInput.v` (the universally
+  quantified one-argument statement, refuted there by `one_arg_not_tv`).
+* Lean: none. See `docs/status/PROOF-STATUS.adoc`.
+
+=== Statement correspondence, Agda ↔ Rocq (drafted by an agent; BRIDGE-PENDING)
+
+[cols="1,1,3",options="header"]
+|===
+| Agda | Rocq | Differences found by reading
+
+| `leq-total`, `leq-antisym`, `leq-trans` | `leq_total`, `leq_antisym`, `leq_trans` | Agda's `leq` goes through `cmpN`/`leqStep`; Rocq's through `Nat.ltb`/`Nat.eqb`. Same function by reading; not proved equal.
+| `canon-nf`, `nf-fixed`, `canon-idem` | `canon_nf`, `nf_fixed`, `canon_idem` | Agda `NF` is a recursive predicate; Rocq `NF` an inductive predicate over `Forall`. Rocq objects are `list (key * value)` sorted with `isort ∘ map canonM`, Agda's `isort ∘ canonO`.
+| `sorted-unique`, `isort-unique` | `sorted_unique`, `isort_unique` | Agda `DistinctKeys` vs Rocq `NoDup (map fst _)`; Agda `SameEl` (pair of inclusions, Σ-valued) vs Rocq `∀ z, In z xs ↔ In z ys`. Rocq's sort is generic in the member payload.
+| `no-unique-without-distinct` | `no_unique_without_distinct` | Rocq states it for any payload type with two distinct elements; Agda for `Value` with `bool true`/`bool false`.
+| `canon-resp`, `nf-unique` | `canon_resp`, `nf_unique` | Agda `_~_` via `AllIn`/`Match`; Rocq `sim` via `Forall`/`Exists`/`Forall2`. Agda `bool a ~ bool b = a ≡ b`; Rocq `sim_bool b b`. Agda `WF` via `DistinctKeys`; Rocq via `NoDup`.
+| `tv-sound`, `tv-complete`, `tv-iff` | `tv_sound`, `tv_complete`, `tv_iff` | Agda existentials are Σ in `Set`; Rocq's are `exists` in `Prop`. No computational content is used. The hypotheses are the same set.
+| `one-arg-not-tv` | `one_arg_not_tv` | Agda states it over the decidable check `isNF` (`checkNF o ≡ true`) in the model format; Rocq over the inductive `NF o`, with `canon` directly. The counterexample is the same (`null` against `{"\u0000": null}`).
+|===
+
+Residual assumptions in both legs: `Num` is a parameter (Agda module parameter;
+Rocq section variable), no axiom. The Rocq leg uses only the Coq standard
+library shipped with coqc 8.18.0.
