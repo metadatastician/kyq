@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { budgetDivergenceRows, budgetRowBytes } from "./budget-divergence-rows.mjs";
 
 const REPO_URL = "https://github.com/hyperpolymath/ijson-jcs.git";
 const gateRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -110,7 +111,11 @@ function parseArgs(argv) {
  * @returns {{status: number, stdout: Buffer, stderr: Buffer}}
  */
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { cwd: options.cwd, input: options.input });
+  const result = spawnSync(command, args, {
+    cwd: options.cwd,
+    input: options.input,
+    maxBuffer: 64 * 1024 * 1024, // the J-3 string row prints 8 MiB
+  });
   if (result.error) {
     return { status: 127, stdout: Buffer.alloc(0), stderr: Buffer.from(String(result.error)) };
   }
@@ -239,6 +244,63 @@ function collectCases() {
 }
 
 /**
+ * Rows where the gate deliberately refuses what the oracle accepts (ruling R3,
+ * `fixtures/oracle/divergences.json`), keyed by case name.
+ *
+ * @returns {Map<string, {case: string, code: string}>}
+ */
+function divergences() {
+  const file = fixture("fixtures", "oracle", "divergences.json");
+  return new Map([...file.divergences, ...file.budgetDivergences].map((row) => [row.case, row]));
+}
+
+/**
+ * The generated J-3 budget rows (a second divergence class), as cases.
+ *
+ * @returns {{name: string, kind: "canon", bytes: Buffer, expected: string}[]}
+ */
+function budgetCases() {
+  return budgetDivergenceRows().map((row) => ({
+    name: row.case,
+    kind: "canon",
+    bytes: budgetRowBytes(row),
+    expected: "",
+  }));
+}
+
+/**
+ * Check one known-divergence case: the oracle still accepts it (otherwise the
+ * row is stale and must be removed), and the gate refuses it with the ruled
+ * code on the `INVALID <stdin>:` line.
+ *
+ * @param {string} bin
+ * @param {{name: string, bytes: Buffer}} testCase
+ * @param {{code: string}} row
+ * @param {string} dir scratch directory for the `check --report json` probe
+ * @returns {string[]}
+ */
+function diffDivergence(bin, testCase, row, dir) {
+  const problems = [];
+  const oracleResult = run(bin, ["canon"], { input: testCase.bytes });
+  const gateResult = run(process.execPath, [gateCli, "canon", "--format", "json"], {
+    input: testCase.bytes,
+  });
+  if (oracleResult.status !== 0) {
+    problems.push(
+      `known divergence is stale: the oracle now refuses (exit ${oracleResult.status}); remove it from fixtures/oracle/divergences.json`,
+    );
+  }
+  const file = join(dir, `divergence-${testCase.name.replace(/[^a-z0-9]+/gi, "-")}.json`);
+  writeFileSync(file, testCase.bytes);
+  const report = run(process.execPath, [gateCli, "check", "--report", "json", file]);
+  const code = report.status === 2 ? JSON.parse(report.stdout.toString("utf8") || "{}").error?.code : null;
+  if (gateResult.status !== 2 || !gateResult.stderr.toString("utf8").startsWith("INVALID <stdin>:") || code !== row.code) {
+    problems.push(`gate does not refuse with ${row.code} (exit ${gateResult.status}, code ${code})`);
+  }
+  return problems;
+}
+
+/**
  * Diff one case on both CLIs.
  *
  * @param {string} bin
@@ -327,7 +389,7 @@ function main() {
     return 2;
   }
 
-  const cases = collectCases();
+  const cases = [...collectCases(), ...budgetCases()];
   if (cases.length === 0) {
     process.stderr.write("ijson-jcs-diff: no cases collected; refusing to report a pass\n");
     return 2;
@@ -335,9 +397,13 @@ function main() {
 
   const dir = mkdtempSync(join(tmpdir(), "ijson-jcs-cases-"));
   const failures = [];
+  const known = divergences();
+  let diverged = 0;
   try {
     for (const testCase of cases) {
-      const problems = diffCase(bin, testCase, dir);
+      const row = known.get(testCase.name);
+      if (row) diverged += 1;
+      const problems = row ? diffDivergence(bin, testCase, row, dir) : diffCase(bin, testCase, dir);
       if (problems.length > 0) failures.push(`${testCase.name}\n  ${problems.join("\n  ")}`);
     }
   } finally {
@@ -352,8 +418,21 @@ function main() {
     return 2;
   }
 
+  if (diverged !== known.size) {
+    process.stderr.write(
+      `ijson-jcs-diff: ${known.size - diverged} rows of fixtures/oracle/divergences.json name no collected case\n`,
+    );
+    return 2;
+  }
+  const budgetRows = budgetDivergenceRows().length;
+  // With --bin the binary's build commit is not known to this tool, so the line
+  // names the binary, not the pin (the pin applies only to a build it made).
+  const subject =
+    options.bin === null
+      ? `${options.crate} at ${options.commit}`
+      : `${options.crate} binary ${options.bin} (build commit unverified; pin is ${options.commit})`;
   process.stdout.write(
-    `ijson-jcs-diff: ${cases.length} cases agree with ${options.crate} at ${options.commit}\n`,
+    `ijson-jcs-diff: ${cases.length - diverged} cases agree with ${subject}; ${diverged} known divergences hold (${diverged - budgetRows} float closure R3, ${budgetRows} budgets J-3)\n`,
   );
   return 0;
 }

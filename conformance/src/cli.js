@@ -17,14 +17,16 @@
 //           optionally followed by no newline, i.e. the same rule applied to
 //           the formatter's single trailing newline.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync, writeFileSync } from "node:fs";
+
+import { MAX_INPUT_BYTES, budgetError, budgetMessage } from "./budgets.js";
 
 import { formatStream } from "./emit.js";
 import { ConformanceError } from "./errors.js";
 import { toJcs } from "./jcs.js";
 import { parseIJson } from "./json.js";
-import { bridgeDocument, bridgeStream } from "./bridge.js";
-import { parseKyaml } from "./kyaml.js";
+import { bridgeDocuments, bridgeStream } from "./bridge.js";
+import { parseKyaml, parseKyamlWithComments } from "./kyaml.js";
 import { VERSION } from "./version.js";
 
 /** Exit status: every input valid and canonical (or fixed). */
@@ -61,7 +63,9 @@ CANONICAL FORM:
     KYAML  The canonical KYAML form produced by \`fix\`, optionally with its single
            trailing newline removed.
 
-    \`fix\` always writes the canonical form plus exactly one newline. \`canon\`
+    \`fix\` always writes the canonical form plus exactly one newline, except that a
+    leading header comment block (e.g. the SPDX line) is kept byte for byte; any other
+    comment makes \`fix\` refuse the file (COMMENTS_WOULD_BE_LOST, exit 2). \`canon\`
     writes no trailing newline, because its output is the byte string to hash or
     sign.
 
@@ -184,7 +188,7 @@ function canonicalJson(bytes) {
  */
 function canonicalYaml(bytes) {
   const documents = parseKyaml(bytes);
-  for (const document of documents) bridgeDocument(document);
+  bridgeDocuments(documents);
   return { text: formatStream(documents), documents, format: "yaml" };
 }
 
@@ -205,6 +209,111 @@ function canonicalForm(bytes, format) {
 }
 
 /**
+ * The leading header comment block of a KYAML stream: every comment and blank
+ * line before the first content line (spec §7.3). A stream whose prefix holds
+ * no comment has no header (blank lines alone are not preserved). A leading
+ * BOM is not part of the header; it is dropped, as before.
+ *
+ * @param {string} text  The decoded input as read (not newline-normalised).
+ * @returns {{header: string, lines: number}} The header bytes, verbatim, and
+ *   the number of source lines it spans.
+ */
+function headerBlock(text) {
+  const start = text.startsWith("\uFEFF") ? 1 : 0;
+  let end = start;
+  let lines = 0;
+  let sawComment = false;
+  while (end < text.length) {
+    let next = text.indexOf("\n", end);
+    const lineEnd = next === -1 ? text.length : next;
+    next = next === -1 ? text.length : next + 1;
+    // A header line is blank, or a comment (`#` after only blanks).
+    let k = end;
+    while (k < lineEnd && (text[k] === " " || text[k] === "\t")) k += 1;
+    const isComment = text[k] === "#";
+    const isBlank = k === lineEnd || (k === lineEnd - 1 && text[k] === "\r");
+    if (!isComment && !isBlank) break;
+    end = next;
+    lines += 1;
+    if (isComment) sawComment = true;
+  }
+  if (!sawComment) return { header: "", lines: 0 };
+  // Blank lines around the comments are kept verbatim: the header is every
+  // byte up to the first content line.
+  return { header: text.slice(start, end), lines };
+}
+
+/**
+ * The canonical text of a KYAML input: the header comment block verbatim (with
+ * a terminating newline when it has none), then the formatted body. This is
+ * the one definition both `fix` (writes it) and `check` (accepts it) use, so
+ * `check(fix x) = OK` holds by construction.
+ *
+ * @param {Uint8Array} bytes
+ * @param {boolean} recordLost  `fix` passes true: the first comment outside the
+ *   header is then reported in `lost`. `check` records nothing (O(1) memory).
+ * @returns {{text: string, lost: {line: number, column: number}|null}}
+ * @throws {ConformanceError}
+ */
+function yamlCanonicalText(bytes, recordLost) {
+  const input = Buffer.from(bytes).toString("utf8");
+  const { header, lines } = headerBlock(input);
+  const { documents, lostComment } = parseKyamlWithComments(
+    bytes,
+    undefined,
+    recordLost ? lines : null,
+  );
+  bridgeDocuments(documents);
+  const head = header === "" || header.endsWith("\n") ? header : `${header}\n`;
+  return { text: head + formatStream(documents), lost: lostComment };
+}
+
+/**
+ * The text `fix` writes for a KYAML input: the header comment block verbatim,
+ * then the canonical body. Refuses (`COMMENTS_WOULD_BE_LOST`) when a comment
+ * outside the header would be dropped, and (`INPUT_BUDGET_EXCEEDED`) when the
+ * result would be over the input budget, so `fix` never writes a file the
+ * gate would then refuse.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ * @throws {ConformanceError}
+ */
+function fixedYamlText(bytes) {
+  const { text, lost } = yamlCanonicalText(bytes, true);
+  if (lost) {
+    throw new ConformanceError({
+      code: "COMMENTS_WOULD_BE_LOST",
+      kind: "kyaml",
+      message:
+        "formatting would drop this comment (comments are not data; only the leading header comment block is kept); move it into the header or remove it",
+      line: lost.line,
+      column: lost.column,
+    });
+  }
+  return assertOutputBudget(text, "yaml");
+}
+
+/**
+ * Refuse a `fix` result longer than the input budget (the header is written
+ * verbatim and is not covered by `outputBound`).
+ *
+ * @param {string} text
+ * @param {"yaml"|"json"} format
+ * @returns {string}
+ * @throws {ConformanceError}
+ */
+function assertOutputBudget(text, format) {
+  const size = Buffer.byteLength(text);
+  if (size > MAX_INPUT_BYTES) {
+    throw budgetError("input", budgetMessage.output(size), {
+      kind: format === "json" ? "json" : "kyaml",
+    });
+  }
+  return text;
+}
+
+/**
  * Whether `bytes` are the canonical form, allowing exactly one final newline.
  *
  * @param {Uint8Array} bytes
@@ -222,9 +331,55 @@ function isCanonical(bytes, canonicalText, format) {
     const stripped = input.endsWith("\n") ? input.slice(0, -1) : input;
     return stripped === body;
   }
-  // KYAML canonical text ends with exactly one newline: accept it, or the same
-  // text without that newline.
+  // KYAML canonical text (header + body) ends with a newline: accept it, or the
+  // same text without that final newline.
   return input === canonicalText || input === canonicalText.replace(/\n$/, "");
+}
+
+/**
+ * The `check` verdict for one buffer, as the CLI computes it (exported so the
+ * closure tests exercise exactly the code the CLI runs).
+ *
+ * @param {Uint8Array} bytes
+ * @param {"yaml"|"json"} format
+ * @returns {{status: "ok"|"not-canonical"|"invalid", error: ConformanceError|null}}
+ */
+export function checkVerdict(bytes, format) {
+  try {
+    const { text } =
+      format === "yaml" ? yamlCanonicalText(bytes, false) : canonicalForm(bytes, format);
+    return isCanonical(bytes, text, format)
+      ? { status: "ok", error: null }
+      : { status: "not-canonical", error: null };
+  } catch (error) {
+    return { status: "invalid", error: asConformanceError(error, format) };
+  }
+}
+
+/**
+ * The bytes `canon` writes for one buffer (no trailing newline), or a throw.
+ *
+ * @param {Uint8Array} bytes
+ * @param {"yaml"|"json"} format
+ * @param {boolean} [array]
+ * @returns {Uint8Array}
+ * @throws {ConformanceError}
+ */
+export function canonBytes(bytes, format, array = false) {
+  const value = format === "json" ? parseIJson(bytes) : bridgeStream(parseKyaml(bytes), { array });
+  return toJcs(value);
+}
+
+/**
+ * The text `fix` writes for one buffer, or a throw.
+ *
+ * @param {Uint8Array} bytes
+ * @param {"yaml"|"json"} format
+ * @returns {string}
+ * @throws {ConformanceError}
+ */
+export function fixText(bytes, format) {
+  return format === "yaml" ? fixedYamlText(bytes) : canonicalForm(bytes, format).text;
 }
 
 /**
@@ -262,30 +417,68 @@ function emitResult(result, report) {
 }
 
 /**
- * Read one file, converting an I/O failure into a diagnostic result.
+ * The CLI-edge input guard (budgets.js MAX_INPUT_BYTES): the only limit on
+ * encoded bytes. It is set above the largest canonical text any accepted value
+ * can have, so it never refuses `canon` output of an accepted input. `fix` also
+ * writes the header verbatim, so it refuses by itself (INPUT_BUDGET_EXCEEDED)
+ * when header + body would pass the budget.
+ */
+class InputTooLarge extends Error {
+  /** @param {number} size */
+  constructor(size) {
+    super(budgetMessage.input(size));
+    this.size = size;
+  }
+}
+
+/**
+ * Read one file, converting an I/O failure into a diagnostic result. A file
+ * over the input budget is refused from its size, before it is read.
  *
  * @param {string} file
- * @returns {Uint8Array|null}
+ * @returns {Uint8Array|null|InputTooLarge}
  */
 function readInput(file) {
+  let fd;
   try {
-    return readFileSync(file);
+    fd = openSync(file, "r");
+    const { size } = fstatSync(fd);
+    if (size > MAX_INPUT_BYTES) return new InputTooLarge(size);
+    const bytes = readFileSync(fd);
+    // A file that grew (or a device with no size) is checked again after reading.
+    if (bytes.length > MAX_INPUT_BYTES) return new InputTooLarge(bytes.length);
+    return bytes;
   } catch (error) {
     return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
+}
+
+/**
+ * The diagnostic for an input over the budget.
+ *
+ * @param {InputTooLarge} tooLarge
+ * @param {"yaml"|"json"} format
+ * @returns {ConformanceError}
+ */
+function inputBudgetError(tooLarge, format) {
+  return budgetError("input", tooLarge.message, { kind: format === "json" ? "json" : "kyaml" });
 }
 
 /**
  * Wrap an arbitrary exception as a `ConformanceError`.
  *
  * @param {unknown} error
+ * @param {"yaml"|"json"} [format]  The input format, so an unexpected failure
+ *   (stack overflow, internal error) reports the contract that was running.
  * @returns {ConformanceError}
  */
-function asConformanceError(error) {
+function asConformanceError(error, format = "yaml") {
   if (error instanceof ConformanceError) return error;
   return new ConformanceError({
     code: "INTERNAL_ERROR",
-    kind: "kyaml",
+    kind: format === "json" ? "json" : "kyaml",
     message: error instanceof Error ? error.message : String(error),
   });
 }
@@ -320,21 +513,15 @@ function commandCheck(files, forcedFormat, report) {
       code = EXIT_INVALID;
       continue;
     }
-    try {
-      const { text } = canonicalForm(bytes, format);
-      if (isCanonical(bytes, text, format)) {
-        emitResult({ file, format, status: "ok", error: null }, report);
-      } else {
-        emitResult({ file, format, status: "not-canonical", error: null }, report);
-        code = Math.max(code, EXIT_NOT_CANONICAL);
-      }
-    } catch (error) {
-      emitResult(
-        { file, format, status: "invalid", error: asConformanceError(error) },
-        report,
-      );
+    if (bytes instanceof InputTooLarge) {
+      emitResult({ file, format, status: "invalid", error: inputBudgetError(bytes, format) }, report);
       code = EXIT_INVALID;
+      continue;
     }
+    const verdict = checkVerdict(bytes, format);
+    emitResult({ file, format, ...verdict }, report);
+    if (verdict.status === "not-canonical") code = Math.max(code, EXIT_NOT_CANONICAL);
+    if (verdict.status === "invalid") code = EXIT_INVALID;
   }
   return code;
 }
@@ -369,12 +556,17 @@ function commandFix(files, forcedFormat, report) {
       code = EXIT_INVALID;
       continue;
     }
+    if (bytes instanceof InputTooLarge) {
+      emitResult({ file, format, status: "invalid", error: inputBudgetError(bytes, format) }, report);
+      code = EXIT_INVALID;
+      continue;
+    }
     let canonicalText;
     try {
-      canonicalText = canonicalForm(bytes, format).text;
+      canonicalText = fixText(bytes, format);
     } catch (error) {
       emitResult(
-        { file, format, status: "invalid", error: asConformanceError(error) },
+        { file, format, status: "invalid", error: asConformanceError(error, format) },
         report,
       );
       code = EXIT_INVALID;
@@ -429,19 +621,17 @@ function commandCanon(forcedFormat, array) {
     );
     return EXIT_INVALID;
   }
+  if (bytes.length > MAX_INPUT_BYTES) {
+    const error = inputBudgetError(new InputTooLarge(bytes.length), format);
+    process.stderr.write(`INVALID <stdin>: ${error.reason}\n`);
+    return EXIT_INVALID;
+  }
   try {
-    let value;
-    if (format === "json") {
-      value = parseIJson(bytes);
-    } else {
-      const documents = parseKyaml(bytes);
-      value = bridgeStream(documents, { array });
-    }
-    const canonical = toJcs(value);
+    const canonical = canonBytes(bytes, format, array);
     process.stdout.write(Buffer.from(canonical));
     return EXIT_OK;
   } catch (error) {
-    process.stderr.write(`INVALID <stdin>: ${asConformanceError(error).reason}\n`);
+    process.stderr.write(`INVALID <stdin>: ${asConformanceError(error, format).reason}\n`);
     return EXIT_INVALID;
   }
 }
@@ -474,13 +664,18 @@ function commandValidate(files, report) {
       code = EXIT_INVALID;
       continue;
     }
+    if (bytes instanceof InputTooLarge) {
+      emitResult({ file, format: "yaml", status: "invalid", error: inputBudgetError(bytes, "yaml") }, report);
+      code = EXIT_INVALID;
+      continue;
+    }
     try {
       const documents = parseKyaml(bytes);
-      for (const document of documents) bridgeDocument(document);
+      bridgeDocuments(documents);
       emitResult({ file, format: "yaml", status: "ok", error: null }, report);
     } catch (error) {
       emitResult(
-        { file, format: "yaml", status: "invalid", error: asConformanceError(error) },
+        { file, format: "yaml", status: "invalid", error: asConformanceError(error, "yaml") },
         report,
       );
       code = EXIT_INVALID;

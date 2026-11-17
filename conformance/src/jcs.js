@@ -15,8 +15,12 @@
 //     exactly what RFC 8785 §3.2.2.3 mandates — JavaScript's `String(n)` is the
 //     normative algorithm, not an approximation of it.
 
+import { assertValueBudgets } from "./budgets.js";
 import { ConformanceError } from "./errors.js";
 import { JNumber, validateValue } from "./json.js";
+
+/** Characters `escapeJsonString` rewrites: `"`, `\\` and the C0 controls. */
+const NEEDS_ESCAPE = /["\\\u0000-\u001f]/;
 
 /** Escape one string as a JSON string literal, serde_json-compatible. */
 const SHORT_ESCAPES = new Map([
@@ -36,6 +40,8 @@ const SHORT_ESCAPES = new Map([
  * @returns {string} The quoted literal.
  */
 export function escapeJsonString(value) {
+  // Fast path: nothing to escape, so the literal is the value in quotes.
+  if (!NEEDS_ESCAPE.test(value)) return `"${value}"`;
   let out = '"';
   for (const char of value) {
     const short = SHORT_ESCAPES.get(char);
@@ -156,13 +162,17 @@ function writeCanonical(value, out) {
  * Canonicalise a value to JCS bytes.
  *
  * Validation runs first, exactly as `ijson_jcs::to_jcs` does, so a value that
- * is not I-JSON can never be quietly emitted in canonical form.
+ * is not I-JSON can never be quietly emitted in canonical form. Before that,
+ * the value budgets (`budgets.js`) are checked on the value itself: every
+ * value this function emits is therefore one the JSON reader accepts again,
+ * which is the closure property `check(canon x) = OK`.
  *
  * @param {unknown} value
  * @returns {Uint8Array}
  * @throws {ConformanceError}
  */
 export function toJcs(value) {
+  assertValueBudgets(value, "jcs");
   try {
     validateValue(value);
   } catch (error) {

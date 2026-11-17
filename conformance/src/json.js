@@ -17,6 +17,14 @@
 // I-JSON validation, and the canonical form must agree with `ijson-jcs` for
 // both.
 
+import {
+  MAX_DEPTH,
+  MAX_NODES,
+  MAX_STRING_BYTES,
+  budgetError,
+  budgetMessage,
+  utf8Length,
+} from "./budgets.js";
 import { ConformanceError, joinPath } from "./errors.js";
 import { assertIJsonString, decodeUtf8 } from "./utf8.js";
 
@@ -24,6 +32,33 @@ import { assertIJsonString, decodeUtf8 } from "./utf8.js";
 export const SAFE_INT_MAX = 9007199254740991n;
 /** Most negative safe integer: −(2^53 − 1). */
 export const SAFE_INT_MIN = -9007199254740991n;
+
+/**
+ * Whether a finite double is refused by the float-closure rule (ruling R3): its
+ * ECMAScript / RFC 8785 text is integer-shaped (`-?[0-9]+`) and its value is
+ * outside ±(2^53−1). Such a float would canonicalise to an integer token that
+ * strict I-JSON refuses, so `check(canon x)` would fail. That is exactly the
+ * integers with 2^53−1 < |v| < 1e21; from 1e21 up, ES prints an exponent.
+ * `-0` is not refused: it canonicalises to `0` (RFC 8785 §3.2.2.3).
+ *
+ * @param {number} value
+ * @returns {boolean}
+ */
+export function isUnsafeIntegerFloat(value) {
+  if (!Number.isFinite(value) || Number.isSafeInteger(value)) return false;
+  return /^-?[0-9]+$/.test(String(value));
+}
+
+/**
+ * The detail text of an UNSAFE_FLOAT_INTEGER diagnostic.
+ *
+ * @param {string} token
+ * @param {number} value
+ * @returns {string}
+ */
+export function unsafeFloatDetail(token, value) {
+  return `Float ${token} canonicalises to the integer token ${String(value)}, which is outside the safe integer range [-(2^53)+1, (2^53)-1], so the canonical form would not be valid I-JSON`;
+}
 
 /**
  * A JSON number that remembers which grammar production produced it.
@@ -112,6 +147,50 @@ class JsonReader {
     this.line = 1;
     /** @type {number} 1-based. */
     this.column = 1;
+    /** @type {number} Containers currently open (budgets.js MAX_DEPTH). */
+    this.depth = 0;
+    /** @type {number} Values read so far (budgets.js MAX_NODES). */
+    this.nodes = 0;
+    /** @type {number} Decoded UTF-8 bytes of strings and keys so far. */
+    this.stringBytes = 0;
+  }
+
+  /**
+   * Open one container, refusing the one past MAX_DEPTH. The message is
+   * serde_json's, so the line matches ijson-jcs byte for byte: serde_json
+   * reports the position of the bracket that exceeded the limit.
+   *
+   * @returns {void}
+   */
+  enterContainer() {
+    this.depth += 1;
+    if (this.depth > MAX_DEPTH) {
+      throw new ConformanceError({
+        code: "DEPTH_BUDGET_EXCEEDED",
+        kind: "json",
+        message: parseMessage("recursion limit exceeded", this.line, this.column),
+        line: this.line,
+        column: this.column,
+      });
+    }
+  }
+
+  /**
+   * Count one value against MAX_NODES.
+   *
+   * @param {string} path
+   * @returns {void}
+   */
+  countNode(path) {
+    this.nodes += 1;
+    if (this.nodes > MAX_NODES) {
+      throw budgetError("nodes", `I-JSON budget error: ${budgetMessage.nodes()}`, {
+        kind: "json",
+        line: this.line,
+        column: this.column,
+        path,
+      });
+    }
   }
 
   /** @returns {boolean} True at end of input. */
@@ -219,6 +298,7 @@ class JsonReader {
   parseValue(path) {
     this.skipWhitespace();
     if (this.eof) this.failEof("EOF while parsing a value");
+    this.countNode(path);
     const char = this.peek();
     if (char === "{") return this.parseObject(path);
     if (char === "[") return this.parseArray(path);
@@ -256,6 +336,7 @@ class JsonReader {
    * @returns {Map<string, unknown>}
    */
   parseObject(path) {
+    this.enterContainer();
     this.next(); // `{`
     /** @type {Map<string, unknown>} */
     const object = new Map();
@@ -264,6 +345,7 @@ class JsonReader {
     this.skipWhitespace();
     if (this.peek() === "}") {
       this.next();
+      this.depth -= 1;
       return object;
     }
     for (;;) {
@@ -291,7 +373,10 @@ class JsonReader {
       object.set(key, this.parseValue(childPath));
       this.skipWhitespace();
       const separator = this.next();
-      if (separator === "}") return object;
+      if (separator === "}") {
+        this.depth -= 1;
+        return object;
+      }
       if (separator !== ",") this.fail("expected `,` or `}`");
     }
   }
@@ -303,12 +388,14 @@ class JsonReader {
    * @returns {unknown[]}
    */
   parseArray(path) {
+    this.enterContainer();
     this.next(); // `[`
     /** @type {unknown[]} */
     const array = [];
     this.skipWhitespace();
     if (this.peek() === "]") {
       this.next();
+      this.depth -= 1;
       return array;
     }
     for (;;) {
@@ -316,7 +403,10 @@ class JsonReader {
       array.push(this.parseValue(joinPath(path, String(index))));
       this.skipWhitespace();
       const separator = this.next();
-      if (separator === "]") return array;
+      if (separator === "]") {
+        this.depth -= 1;
+        return array;
+      }
       if (separator !== ",") this.fail("expected `,` or `]`");
     }
   }
@@ -331,7 +421,22 @@ class JsonReader {
     const start = { line: this.line, column: this.column };
     this.next(); // opening quote
     let out = "";
+    const text = this.text;
     for (;;) {
+      // Fast path: copy a run of ordinary characters in one slice. The run
+      // stops before `"`, `\\` and every C0 control (so it holds no line
+      // break), which is exactly where the per-character path below acts.
+      let run = this.index;
+      while (run < text.length) {
+        const unit = text.charCodeAt(run);
+        if (unit === 0x22 || unit === 0x5c || unit < 0x20) break;
+        run += 1;
+      }
+      if (run > this.index) {
+        out += text.slice(this.index, run);
+        this.column += run - this.index;
+        this.index = run;
+      }
       if (this.eof) this.fail("EOF while parsing a string", start);
       const char = this.next();
       if (char === '"') break;
@@ -348,6 +453,15 @@ class JsonReader {
       out += char;
     }
     this.assertString(out, path, start);
+    this.stringBytes += utf8Length(out);
+    if (this.stringBytes > MAX_STRING_BYTES) {
+      throw budgetError("stringBytes", `I-JSON budget error: ${budgetMessage.stringBytes()}`, {
+        kind: "json",
+        line: start.line,
+        column: start.column,
+        path,
+      });
+    }
     return out;
   }
 
@@ -512,6 +626,16 @@ class JsonReader {
     if (!Number.isFinite(value)) {
       this.fail("number out of range", start);
     }
+    if (isUnsafeIntegerFloat(value)) {
+      throw new ConformanceError({
+        code: "UNSAFE_FLOAT_INTEGER",
+        kind: "json",
+        message: validationMessage(unsafeFloatDetail(token, value), path),
+        line: start.line,
+        column: start.column,
+        path,
+      });
+    }
     return new JNumber(value, false, token);
   }
 }
@@ -590,6 +714,14 @@ export function validateValue(value, path = "") {
         code: "NON_FINITE_NUMBER",
         kind: "json",
         message: validationMessage(`Non-finite number: ${value.token}`, path),
+        path,
+      });
+    }
+    if (isUnsafeIntegerFloat(value.value)) {
+      throw new ConformanceError({
+        code: "UNSAFE_FLOAT_INTEGER",
+        kind: "json",
+        message: validationMessage(unsafeFloatDetail(value.token, value.value), path),
         path,
       });
     }

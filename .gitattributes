@@ -117,3 +117,6 @@ package-lock.json text eol=lf -diff linguist-generated=true
 flake.lock text eol=lf -diff linguist-generated=true
 
 # Unified-diff context must preserve upstream whitespace; source is checked in the paired repo.
+
+# Byte-exact CRLF fixture for the fix header rule; never normalise.
+conformance/fixtures/kyaml/fix/spdx-header-crlf.yaml -text

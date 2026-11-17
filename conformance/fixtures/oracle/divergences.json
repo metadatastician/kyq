@@ -1,0 +1,81 @@
+{
+  "schema": "kyq-conformance-corpus-v1",
+  "kind": "oracle-divergences",
+  "note": "Rows where the gate deliberately differs from hyperpolymath/ijson-jcs at the pinned commit (fixtures/oracle/ijson-jcs.json, 2c880594) and at main 1735d68. Owner ruling R3 (2026-11-17): a finite float whose RFC 8785 text is an integer token outside +-(2^53-1) is refused (UNSAFE_FLOAT_INTEGER), because ijson-jcs's own strict reader refuses that text, so canon output would not be valid input. ijson-jcs accepts and canonicalises these inputs. The divergence is proposed upstream in docs/proposals/STANDARDS-BUDGETS-FLOATS.adoc (pending standards); until it lands, these rows are reported as known divergences by tools/ijson-jcs-diff.mjs and pinned by test/json.test.js. The transcribed oracle file is left as the oracle's own behaviour.",
+  "ruling": "R3 (2026-11-17)",
+  "divergences": [
+    {
+      "case": "oracle/number-serialisation",
+      "oracle": "canon exit 0, [1e+30,4.5,0.002,0,0,1,1e+21,100000000000000000000,1e-7]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 7 (1e20)",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "oracle/float-token-beyond-u64",
+      "oracle": "canon exit 0, [18446744073709552000]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 0",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "oracle/float-tokens",
+      "oracle": "canon exit 0, [1e+30,1.5,0,0,0,100000000000000000000,0.002]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 5 (1e+20)",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "vectors/float-token-beyond-u64",
+      "oracle": "canon exit 0, [18446744073709552000]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 0",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "vectors/float-1e18-integer-shaped",
+      "oracle": "canon exit 0, [1000000000000000000]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 0",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "vectors/float-negative-1e18-integer-shaped",
+      "oracle": "canon exit 0, {\"n\":-1000000000000000000}",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path n",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "vectors/float-2p53-plus-1",
+      "oracle": "canon exit 0, [9007199254740992]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 0",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "vectors/float-2p53",
+      "oracle": "canon exit 0, [9007199254740992]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 0",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    },
+    {
+      "case": "vectors/float-1e20-integer-shaped",
+      "oracle": "canon exit 0, [100000000000000000000]",
+      "gate": "refuse UNSAFE_FLOAT_INTEGER at path 0",
+      "code": "UNSAFE_FLOAT_INTEGER"
+    }
+  ],
+  "budgetDivergencesNote": "Second divergence class (proposal J-3): value budgets that ijson-jcs does not have. Measured 2026-11-17 on binaries built at the pin 2c880594 and at main 1735d68: both print OK for these inputs; the gate refuses them. Rows are generated (tools/budget-divergence-rows.mjs), one step over the limit. Not probed here: the 256 MiB input budget (a file over 256 MiB), which is enforced at the CLI edge only. The depth budget (127) is NOT a divergence: it matches serde_json's text limit at the pin byte for byte.",
+  "budgetDivergences": [
+    {
+      "case": "budgets/nodes-over-500000",
+      "generator": "array-of-zeros",
+      "size": 500000,
+      "oracle": "canon exit 0",
+      "gate": "refuse NODE_BUDGET_EXCEEDED (500 001 nodes)",
+      "code": "NODE_BUDGET_EXCEEDED"
+    },
+    {
+      "case": "budgets/string-bytes-over-8MiB",
+      "generator": "string-of-x",
+      "size": 8388609,
+      "oracle": "canon exit 0",
+      "gate": "refuse STRING_BUDGET_EXCEEDED (8 MiB + 1 byte)",
+      "code": "STRING_BUDGET_EXCEEDED"
+    }
+  ]
+}

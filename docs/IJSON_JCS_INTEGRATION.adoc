@@ -6,7 +6,7 @@
 :icons: font
 :revdate: 2026-10-25
 :revnumber: 0.1.0
-:status: NORMATIVE — executable gate in `conformance/` (v0.3.0; I-JSON/JCS contract unchanged)
+:status: NORMATIVE — executable gate in `conformance/` (v0.4.0; R3 budgets and float closure, see §"Known upstream interaction")
 
 This is the normative home for "guaranteed works for the ijson-jcs scheme,
 canonical format". It states the contract `kyq` inherits from
@@ -158,19 +158,31 @@ So `ijson-jcs canon` (and `kyq-conformance canon`) succeeds while re-reading the
 resulting bytes strictly does not. `ijson-jcs fix` has the same round-trip gap:
 it will write such a file, and `check` will then call it `INVALID`.
 
-`kyq` **does not invent a second canonical form to paper over this.** Byte
-equality with the oracle is the contract, so the gate reproduces the behaviour
-and pins it:
+Until contract 0.3.0 the gate reproduced this behaviour byte for byte. Owner
+ruling R3 (2026-11-17) closes the gap at the input instead: since 0.4.0 a
+finite float whose RFC 8785 text is an integer token outside ±(2^53−1) is
+refused as `UNSAFE_FLOAT_INTEGER`, at the JSON reader and at the KYAML bridge,
+so `check(canon x) = OK` and `canon(canon x) = canon x` hold for every accepted
+input. `kyq` still does not invent a second canonical form; it narrows the
+domain instead.
 
-* `fixtures/ijson/vectors.json` marks these two vectors `"reflexive": false`;
-* `conformance/test/json.test.js` has a dedicated test named
-  "known upstream interaction", asserting both the bytes and the refusal;
-* practical guidance: hash `canon` output (do not re-read it), or keep
-  magnitudes that large as strings. A future `ijson-jcs` revision that accepts
-  an integer token when its value came from a float token would remove the gap;
-  until then the gate reports exactly what the oracle reports.
+* The gate now differs from `ijson-jcs` (pin `2c880594` and main `1735d68`) on two
+  classes of input. (1) The nine float-closure rows above. (2) The J-3 value
+  budgets, which ijson-jcs does not have: an input with more than 500 000
+  nodes, or more than 8 MiB of decoded string bytes (or more than 256 MiB of
+  input), is refused by the gate and accepted by both ijson-jcs binaries
+  (measured). Both classes are listed in `fixtures/oracle/divergences.json`
+  (the budget rows are generated, one step over the limit), which
+  `tools/ijson-jcs-diff.mjs`, `conformance/test/json.test.js` and
+  `conformance/test/budgets.test.js` enforce; the 256 MiB input guard is not probed
+  by the tool. The depth budget (127) is not a divergence.
+* The upstream change is proposed in
+  `docs/proposals/STANDARDS-BUDGETS-FLOATS.adoc` (pending standards). When
+  ijson-jcs adopts it, the divergence rows go stale and the diff tool fails
+  until they are removed.
+* Practical guidance is unchanged: keep magnitudes that large as strings.
 
-(This is a finding from building the gate, not a kyq defect. It is also the
+(This was a finding from building the gate, not a kyq defect. It is also the
 reason `docs/CONFORMANCE_GATE.adoc` says the gate makes byte-compatibility
 *testable*, not that the oracle is bug-free.)
 
