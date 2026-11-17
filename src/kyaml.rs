@@ -979,6 +979,24 @@ impl Reader<'_> {
         Ok((value, size))
     }
 }
+/// Why `ch` may not appear raw inside a KYAML stream, if it may not.
+///
+/// A carriage return is allowed only before a line feed and a byte-order mark
+/// only as the first character; callers handle those positions. The emitter
+/// escapes every character this rejects, so the two cannot drift apart.
+pub(crate) fn forbidden_raw(ch: char) -> Option<&'static str> {
+    match ch {
+        '\u{feff}' => Some("BOM_MIDSTREAM"),
+        '\u{fffe}' | '\u{ffff}' => Some("NONCHARACTER"),
+        '\0'..='\u{8}'
+        | '\u{b}'..='\u{c}'
+        | '\u{e}'..='\u{1f}'
+        | '\u{7f}'..='\u{84}'
+        | '\u{86}'..='\u{9f}' => Some("CONTROL_CHARACTER"),
+        _ => None,
+    }
+}
+
 pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
     // Validate the original stream before stripping its optional BOM. Positions
     // count Unicode scalar values, including astral characters, rather than bytes.
@@ -987,14 +1005,8 @@ pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
     while let Some(ch) = chars.next() {
         let code = match ch {
             '\r' if chars.peek() != Some(&'\n') => Some("INVALID_NEWLINE"),
-            '\u{feff}' if index != 0 => Some("BOM_MIDSTREAM"),
-            '\u{fffe}' | '\u{ffff}' => Some("NONCHARACTER"),
-            '\0'..='\u{8}'
-            | '\u{b}'..='\u{c}'
-            | '\u{e}'..='\u{1f}'
-            | '\u{7f}'..='\u{84}'
-            | '\u{86}'..='\u{9f}' => Some("CONTROL_CHARACTER"),
-            _ => None,
+            '\u{feff}' if index == 0 => None,
+            ch => forbidden_raw(ch),
         };
         if let Some(code) = code {
             return Err(

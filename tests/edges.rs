@@ -211,3 +211,39 @@ fn document_marker_prefixes_round_trip_as_keys_and_values() {
         .unwrap()
     );
 }
+
+/// docmatrix fuzz findings (json, jcs targets): U+FEFF was emitted raw. At the
+/// start of the stream the reader strips it as a byte-order mark (the value
+/// silently changed); elsewhere the reader rejects it (BOM_MIDSTREAM).
+#[test]
+fn byte_order_marks_in_strings_round_trip() {
+    for json in [
+        "\"\u{feff}qqqqqqq`0\"",
+        "{\"a1\u{feff}006i\":2}",
+        "[\"\u{feff}\", \"a\u{feff}b\"]",
+        "{\"\u{feff}\":\"\u{feff}\"}",
+    ] {
+        let docs = parse(json.as_bytes(), Format::Json).unwrap();
+        let yaml = format_documents(&docs).unwrap();
+        assert_eq!(
+            canonicalize(&yaml, Format::Kyaml).unwrap(),
+            canonicalize(json.as_bytes(), Format::Json).unwrap(),
+            "{:?}",
+            String::from_utf8_lossy(&yaml)
+        );
+    }
+}
+
+/// Noncharacters have no KYAML spelling; the JSON reader must refuse them so
+/// the emitter is never asked to write one.
+#[test]
+fn noncharacters_are_rejected_before_emission() {
+    for json in [
+        "\"\\ufdd0\"",
+        "\"\\uffff\"",
+        "\"\u{fffe}\"",
+        "\"\u{1fffe}\"",
+    ] {
+        assert!(parse(json.as_bytes(), Format::Json).is_err(), "{json}");
+    }
+}
