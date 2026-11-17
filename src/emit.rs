@@ -10,8 +10,10 @@ fn string(value: &str) -> String {
             .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
         || value == "-"
         || value.starts_with("- ")
-        || value == "..."
-        || value == "---"
+        // A line beginning with a document marker followed by a blank is read
+        // as that marker, so quote every string that starts with one.
+        || value.starts_with("...")
+        || value.starts_with("---")
         || value.contains(" #")
         || value.contains(": ")
         || value.ends_with(':')
