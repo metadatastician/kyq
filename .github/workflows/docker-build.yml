@@ -55,6 +55,9 @@ jobs:
       - name: Scan image
         run: |
           command -v trivy >/dev/null 2>&1 || { echo "::error::trivy required on the container runner"; exit 1; }
-          trivy image --severity HIGH,CRITICAL --exit-code 1 localhost/kyq:dev
+          archive=$(mktemp --suffix=.tar)
+          trap 'rm -f "$archive"' EXIT
+          podman save --format docker-archive --output "$archive" localhost/kyq:dev
+          trivy image --severity HIGH,CRITICAL --exit-code 1 --input "$archive"
       # This job qualifies the OCI image. Stapeln CTP signing is a separate open
       # acceptance obligation recorded in docs/ASSURANCE.adoc; no bundle is claimed.

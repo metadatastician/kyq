@@ -556,7 +556,13 @@ cmd_doctor() {
   for l in "${LANGS[@]}"; do
     [ "$l" = docs ] && { info "no build language detected — docs/theory archetype"; continue; }
     for t in $(lang_tools "$l"); do
-      if have "$t"; then pass "$l: $t ($(command -v "$t"))"
+      if have "$t"; then
+        if [ "$t" = cargo ] || [ "$t" = rustc ]; then
+          local native_version
+          if native_version=$($T "$t" --version 2>/dev/null) && version_ge "$(printf '%s\n' "$native_version" | awk '{print $2}')" "1.99"; then
+            pass "$l: $native_version"
+          else fail "PV-E10 $l: $t is unusable or older than Rust 1.99 — run: just setup"; fi
+        else pass "$l: $t ($(command -v "$t"))"; fi
       else fail "PV-E10 $l: '$t' not found — run: just setup   (manual: $(lang_remedy "$l"))"; fi
     done
   done
@@ -716,7 +722,7 @@ cmd_dev_shell() {
   local gm; gm=$(gpath manifest.scm)
   if have guix && [ -f "$gm" ] && ! grep -q '{{' "$gm"; then
     info "entering: guix shell -m $gm  (exit to leave)"
-    exec guix shell -m "$gm"
+    exec guix shell -m "$gm" -- mise exec -- "${SHELL:-bash}"
   elif have mise; then
     info "guix/manifest.scm unavailable — entering the mise environment instead (exit to leave)"
     exec mise exec -- "${SHELL:-bash}"

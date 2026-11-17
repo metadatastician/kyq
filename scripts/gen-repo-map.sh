@@ -15,13 +15,8 @@
 #
 # Usage: bash scripts/gen-repo-map.sh [--worktree] [repo_root]
 #
-# --worktree maps the files `git add -A` would commit (tracked or untracked,
-# not ignored, still on disk) instead of the index. `just repo-init` needs it:
-# the mint runs before the child's first commit, so the index still lists
-# what the mint removed (archetypes/, the template's deed name) and lacks what
-# it created. Generated from the index there, the map was stale from birth, and
-# Estate Rules failed at its freshness step on every run of lintel until
-# lintel#8 regenerated it. On a committed tree the two modes agree.
+# --worktree maps tracked and untracked, non-ignored files still on disk.
+# Use it when generating a map before the first commit of a minted repository.
 set -euo pipefail
 
 # Byte order, everywhere. `sort` is LOCALE-DEPENDENT: under en_US.UTF-8 it
@@ -156,9 +151,7 @@ declared_only() {
   echo "  that are absent also fail."
   echo "* This map - \`just repo-map\` must produce no diff."
   echo "* Community health - GitHub reads \`.github/\` and no other path."
-  echo "* Variant divergence - \`scripts/check-variant-drift.sh\` compares a child"
-  echo "  to its parent BY PATH, so any move here invalidates every child's"
-  echo "  declared path lists until they are re-anchored."
+
 } > "$OUT"
 
 echo "repo-map: wrote $OUT"

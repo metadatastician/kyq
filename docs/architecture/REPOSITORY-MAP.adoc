@@ -200,6 +200,3 @@ your own repo - but do not read their emptiness as neglect here.
   that are absent also fail.
 * This map - `just repo-map` must produce no diff.
 * Community health - GitHub reads `.github/` and no other path.
-* Variant divergence - `scripts/check-variant-drift.sh` compares a child
-  to its parent BY PATH, so any move here invalidates every child's
-  declared path lists until they are re-anchored.

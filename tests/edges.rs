@@ -17,6 +17,8 @@ fn formatter_preserves_large_integral_floats() {
 #[test]
 fn scalar_strings_are_not_retyped() {
     for value in [
+        "...",
+        "---",
         "yes",
         "On",
         "0o7",
@@ -150,4 +152,26 @@ fn nonfinite_spellings_follow_core_schema_exactly() {
             "{input}"
         );
     }
+}
+
+#[test]
+fn hyphen_key_at_limit_round_trips() {
+    let input = format!("-{}: value\n", "x".repeat(1023));
+    let docs = parse(input.as_bytes(), Format::Kyaml).unwrap();
+    assert_eq!(
+        parse(&format_documents(&docs).unwrap(), Format::Kyaml).unwrap(),
+        docs
+    );
+}
+
+#[test]
+fn emitter_rejects_merge_keys() {
+    let docs = parse(br#"{"<<": 1}"#, Format::Json).unwrap();
+    assert!(format_documents(&docs).is_err());
+}
+
+#[test]
+fn single_quoted_trailing_backslash_is_literal() {
+    let docs = parse(b"a: 'x\\'\nb: yes\n", Format::Kyaml).unwrap();
+    assert_eq!(docs[0]["a"], "x\\");
 }

@@ -59,8 +59,9 @@ doc:
 check: fmt-check lint test doc
 
 # Run the native CLI
+[positional-arguments]
 run *args:
-    cargo run --locked --bin kyq -- {{args}}
+    cargo run --locked --bin kyq -- "$@"
 
 # Print the package version
 version:
@@ -71,8 +72,9 @@ container-build:
     podman build --file Containerfile --tag localhost/kyq:dev .
 
 # Run without network access, capabilities or a writable root filesystem
+[positional-arguments]
 container-run *args:
-    podman run --rm -i --network=none --read-only --cap-drop=ALL --memory=256m --cpus=1 --pids-limit=64 --security-opt=no-new-privileges localhost/kyq:dev {{args}}
+    podman run --rm -i --network=none --read-only --cap-drop=ALL --memory=256m --cpus=1 --pids-limit=64 --security-opt=no-new-privileges localhost/kyq:dev "$@"
 
 # A container smoke test; absence of Podman is a failure
 container-test:

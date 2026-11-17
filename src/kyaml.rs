@@ -474,6 +474,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
             );
         }
     }
+    let source_lines: Vec<&str> = text.lines().collect();
     let chars: Vec<char> = text.chars().collect();
     lexical.positions = Positions::new(&chars);
     let mut scanner = Scanner::new(text.chars());
@@ -497,7 +498,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
                         "",
                     ));
                 }
-                let line = text.lines().nth(m.line() - 1).unwrap_or("");
+                let line = source_lines.get(m.line() - 1).copied().unwrap_or("");
                 let rest = line.get(3..).unwrap_or("").trim_matches([' ', '\t', '\r']);
                 if !rest.is_empty() && !rest.starts_with('#') {
                     return Err(Error::new(
@@ -670,7 +671,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
                         }
                         break;
                     }
-                    escaped = ch == '\\' && !escaped;
+                    escaped = style == TScalarStyle::DoubleQuoted && ch == '\\' && !escaped;
                 }
             }
         }

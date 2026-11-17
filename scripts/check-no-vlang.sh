@@ -20,15 +20,21 @@ V_MODS=""
 if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # Search tracked content only. The exclusions are the policy and its
     # enforcement/tests, which necessarily name the forbidden patterns.
+    search_status=0
     HITS=$(git -C "$REPO_ROOT" grep -n -i -E "$PATTERN" -- \
         . \
         ':(exclude)affinescript/**' \
         ':(exclude)scripts/check-no-vlang.sh' \
         ':(exclude)tests/workflows/check_no_vlang_test.sh' \
         ':(exclude).github/workflows/estate-rules.yml' \
-        2>/dev/null || true)
+        ) || search_status=$?
+    if [ "$search_status" -gt 1 ]; then
+        echo "ERROR: content search failed (exit $search_status)" >&2
+        exit 2
+    fi
     V_MODS=$(git -C "$REPO_ROOT" ls-files -- 'v.mod' '**/v.mod' 2>/dev/null || true)
 else
+    search_status=0
     HITS=$(grep -rni -E "$PATTERN" "$REPO_ROOT" \
         --exclude-dir=.git \
         --exclude-dir=affinescript \
@@ -36,7 +42,11 @@ else
         --exclude=check-no-vlang.sh \
         --exclude=check_no_vlang_test.sh \
         --exclude=estate-rules.yml \
-        2>/dev/null || true)
+        ) || search_status=$?
+    if [ "$search_status" -gt 1 ]; then
+        echo "ERROR: content search failed (exit $search_status)" >&2
+        exit 2
+    fi
     V_MODS=$(find "$REPO_ROOT" -type f -name v.mod \
         -not -path '*/.git/*' -not -path '*/affinescript/*' \
         -printf '%P\n' 2>/dev/null || true)

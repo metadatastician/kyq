@@ -5,19 +5,38 @@ use crate::{Error, Value};
 fn string(value: &str) -> String {
     let unsafe_plain = value.is_empty()
         || value != value.trim()
-        || value.chars().any(|c| c.is_control())
+        || value
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+        || value == "-"
+        || value.starts_with("- ")
+        || value == "..."
+        || value == "---"
         || value.contains(" #")
         || value.contains(": ")
         || value.ends_with(':')
         || value.starts_with([
-            '-', '?', ':', ',', '[', ']', '{', '}', '#', '&', '*', '!', '|', '>', '\'', '"', '%',
-            '@', '`',
+            '?', ':', ',', '[', ']', '{', '}', '#', '&', '*', '!', '|', '>', '\'', '"', '%', '@',
+            '`',
         ])
         || ["y", "yes", "n", "no", "on", "off"].contains(&value.to_ascii_lowercase().as_str());
     if !unsafe_plain && crate::kyaml::plain_is_string(value) {
         value.to_owned()
     } else {
-        serde_json::to_string(value).expect("a Rust string is valid JSON")
+        let mut quoted = String::from("\"");
+        for ch in value.chars() {
+            match ch {
+                '\\' => quoted.push_str("\\\\"),
+                '"' => quoted.push_str("\\\""),
+                ch if ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}') => {
+                    use std::fmt::Write;
+                    write!(quoted, "\\u{:04x}", ch as u32).unwrap();
+                }
+                ch => quoted.push(ch),
+            }
+        }
+        quoted.push('"');
+        quoted
     }
 }
 fn inline(value: &Value) -> bool {
@@ -50,10 +69,23 @@ fn node(value: &Value, indent: usize, lines: &mut Vec<String>) -> Result<(), Err
     match value {
         Value::Object(map) if !map.is_empty() => {
             for (key, value) in map {
+                if key == "<<" {
+                    return Err(Error::new(
+                        "UNSUPPORTED_MERGE_KEY",
+                        "merge keys are outside KYAML",
+                    ));
+                }
+                let key = string(key);
+                if key.chars().count() > 1024 {
+                    return Err(Error::new(
+                        "KEY_TOO_LONG",
+                        "an implicit key is limited to 1024 characters",
+                    ));
+                }
                 if inline(value) {
-                    lines.push(format!("{pad}{}: {}", string(key), scalar(value)?));
+                    lines.push(format!("{pad}{}: {}", key, scalar(value)?));
                 } else {
-                    lines.push(format!("{pad}{}:", string(key)));
+                    lines.push(format!("{pad}{key}:"));
                     node(value, indent + 2, lines)?;
                 }
             }
