@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= kyq
+
+Bounded KYAML, I-JSON/JCS and Dhall parsing, querying and canonicalization.
+
+- https://github.com/metadatastician/kyq/blob/main/docs/SETUP.adoc[Setup and launcher]
+- https://github.com/metadatastician/kyq/blob/main/docs/ASSURANCE.adoc[Evidence and limits]
+- https://github.com/metadatastician/kyq/tree/main/docs/onboarding[AI onboarding]
+- https://github.com/metadatastician/kyq[Source and issues]
+
+These tracked wiki sources are reviewed with the implementation. Publishing a
+wiki page does not establish release or proof qualification.

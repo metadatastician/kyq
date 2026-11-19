@@ -12,8 +12,9 @@
 # 2 a toolchain is missing or not the asserted version; 3 a leg is OPEN.
 #
 # Versions are asserted, never assumed (PROOF-POLICY §6).  The Agda default
-# is the estate Guix pin (2.7.0.1).  Rocq has no Guix pin for kyq yet
-# (deviation DEV-2), so every Rocq run prints that deviation.  A run on
+# is the estate Guix pin (2.7.0.1).  The Guix pin of both provers is
+# verification/proofs/channels.scm with manifest.scm.  A Rocq run whose coqc
+# is not that Guix build prints deviation DEV-2.  A run on
 # another Agda version must name it explicitly, which is recorded as a
 # deviation in docs/status/PROOF-STATUS.adoc:
 #   KYQ_AGDA_VERSION=2.6.3 verification/proofs/run-proofs.sh agda
@@ -181,6 +182,21 @@ leg_agda() {
   echo "== Agda leg: agda $got (asserted $want_agda; estate Guix pin $pin_agda)"
   [ "$got" = "$want_agda" ] || tool "agda is $got, asserted $want_agda (set KYQ_AGDA_VERSION and record a deviation)"
   [ "$got" = "$pin_agda" ] || echo "  DEVIATION: DEV-1: Agda $got is not the Guix pin $pin_agda (PROOF-STATUS)"
+  # Agda writes the interfaces of its own primitive modules to
+  # <data dir>/lib/prim/_build. The Guix agda 2.7.0.1 store path is read-only
+  # and ships without them ("lib/prim/_build: createDirectory: permission
+  # denied"). Then Agda gets a writable copy of its data directory through
+  # Agda_datadir. The copy holds Agda's own library unchanged; the trusted-base
+  # scan below reads that copy.
+  if [ -z "${Agda_datadir:-}" ]; then
+    local data; data="$(agda --print-agda-dir)"
+    if [ ! -d "$data/lib/prim/_build" ] && [ ! -w "$data/lib/prim" ]; then
+      Agda_datadir="$scratch/agda-data"
+      mkdir -p "$Agda_datadir"; cp -r "$data/." "$Agda_datadir/"; chmod -R u+w "$Agda_datadir"
+      export Agda_datadir
+      echo "  Agda data directory is read-only without interfaces; using a writable copy"
+    fi
+  fi
   cd "$here/agda"
   find . -name '*.agdai' -delete; rm -rf _build
 
@@ -254,7 +270,11 @@ leg_rocq() {
   local got; got="$(coqc --version | sed -n 's/.*version \([0-9.]*\).*/\1/p' | head -n1)"
   echo "== Rocq leg: coqc $got (asserted $want_coq)"
   [ "$got" = "$want_coq" ] || tool "coqc is $got, asserted $want_coq (set KYQ_COQ_VERSION and record a deviation)"
-  echo "  DEVIATION: DEV-2: coqc $got is not a Guix pin; kyq has no Guix Rocq pin yet (PROOF-STATUS)"
+  case "$(readlink -f "$(command -v coqc)")" in
+    /gnu/store/*) echo "  coqc is the Guix build (verification/proofs/manifest.scm)" ;;
+    *) echo "  DEVIATION: DEV-2: coqc $got is not the Guix build of verification/proofs/manifest.scm (PROOF-STATUS)" ;;
+  esac
+  command -v coqchk >/dev/null || tool "coqchk not found on PATH"
   cd "$here/rocq"
   rm -f ./*.vo ./*.vok ./*.vos ./*.glob ./.*.aux controls/*.vo controls/*.vok controls/*.vos controls/*.glob
   local stray="$scratch/rocq-stray"
@@ -276,6 +296,14 @@ leg_rocq() {
   [ "$asked" -gt 0 ] && [ "$asked" = "$closed" ] \
     || fail "Print Assumptions: $closed of $asked theorems closed under the global context:"$'\n'"$out"
   echo "  coqc -R . KyqProofs $rocq_sources: exit 0; $closed/$asked theorems closed under the global context"
+  # Recheck the compiled library with the standalone checker and list its axioms.
+  local lib chk
+  for s in $rocq_sources; do
+    lib="KyqProofs.${s%.v}"
+    chk="$(coqchk -o -silent -R . KyqProofs "$lib" 2>&1)" || fail "coqchk rejected $lib:"$'\n'"$chk"
+    printf '%s\n' "$chk" | grep -q '^\* Axioms: <none>$' || fail "coqchk reports axioms for $lib:"$'\n'"$chk"
+    echo "  coqchk -o $lib: accepted, axioms <none>"
+  done
   run_controls "$here/rocq/controls" "$rocq_controls" "coqc -R . KyqProofs" v
   rm -f ./*.vo ./*.vok ./*.vos ./*.glob ./.*.aux ./.lia.cache controls/*.glob controls/.*.aux
   echo "PASS: Rocq leg (re-proved, BRIDGE-PENDING: not counted towards a grade)"

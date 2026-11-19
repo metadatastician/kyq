@@ -199,27 +199,27 @@ reason `docs/CONFORMANCE_GATE.adoc` says the gate makes byte-compatibility
 * Errors are typed (`code`, `line`, `column`, `path`, `kind`) with a text and a
   JSON rendering; no invalid input is classified valid.
 
-Not claimed: that `ijson-jcs` is itself bug-free (see above), that the
-AffineScript implementation under `src/` satisfies this contract (it does not
-compile yet), or that any of this is formally proved.
+Not claimed: that `ijson-jcs` is itself bug-free (see above), that the Rust
+implementation under `src/` satisfies this whole contract (see the next
+section), or that any of this is formally proved.
 
-== The gate and the AffineScript-only invariant
+== The gate and the implementation
 
-`coordination.k9` requires implementation code to be AffineScript. The gate in
-`conformance/` is a *verification harness*, not the kyq implementation: it is
-plain ESM JavaScript with no dependencies, in the same spirit and the same role
-as `scripts/check-action-pinning.sh` and the other repo-owned tooling under
-`scripts/`. It exists so the contracts in this document can be executed at all,
-since `src/*.affine` does not compile under AffineScript 0.1.1
-(`docs/status/A1_GRAMMAR_CENSUS.adoc`).
+`coordination.k9` requires the runtime implementation to be Rust (invariant
+`rust-verification-stack`). The gate in `conformance/` is a *verification
+harness*, not the kyq implementation: it is plain ESM JavaScript with no
+dependencies, in the same spirit and the same role as
+`scripts/check-action-pinning.sh` and the other repo-owned tooling under
+`scripts/`. It was written when no implementation could run, and it stays as
+an independent oracle. The native suites check the 118 bridge vectors and the 49 KYAML fixtures (`docs/NATIVE-MIGRATION.adoc`); agreement on the full gate corpus is step W4 of `docs/ULTRAPLAN.adoc` §12.
 
 Two rules keep that honest:
 
 . the gate MUST NOT be presented as kyq's implementation in release notes,
   README claims or the deed; it is the oracle the implementation must pass;
-. when the AffineScript implementation builds, it MUST pass the same corpus, and
-  the differential test then compares three implementations (Rust oracle,
-  JS gate, AffineScript kyq) rather than substituting one for another.
+. the Rust implementation MUST pass the same corpus, and the differential
+  test compares three implementations (the Rust `ijson-jcs` oracle, the JS
+  gate, and kyq) rather than substituting one for another.
 
 == Corpus and oracle pinning
 

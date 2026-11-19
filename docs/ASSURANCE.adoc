@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Acceptance record — native integration candidate
+:revdate: 2026-11-16
+
+== Implemented surfaces
+
+Native Rust KYAML parsing, strict JSON ingress and explicit binary64 JCS delegation, import-free typed Dhall,
+JSON Pointer queries, deterministic block formatting, a standalone CLI and
+the DocMatrix structured-data API. The production node-budget operation uses
+verification/bounds, whose Pearlite contract is checked separately from Rust tests.
+
+== Reproduction
+
+[source,sh]
+----
+cargo test --locked --all-targets
+cargo test --locked --doc
+cargo clippy --locked --all-targets -- -D warnings
+cargo fmt --all --check
+cargo doc --locked --no-deps
+----
+
+Native tests cover the 118 bridge vectors and 49 fixture diagnostic contracts,
+malformed input, duplicate keys,
+safe integer boundaries, alias expansion, cross-document aliases, disabled
+Dhall imports, JSON/JCS agreement, formatter repeatability and numeric type
+preservation. The benchmark consumes a real Kubernetes fixture and reports
+iterations, input bytes and elapsed time; debug timings are not release targets.
+
+== Recorded executions
+
+At revision `9df66eb`, the 2026-11-16 Debian and Windows native suites passed, including the corpus,
+Clippy and formatting. The source-hash-bound Creusot/Pearlite production-budget
+proof and complementary Verus arithmetic model both passed with positive and
+negative controls; see link:../verification/REPLAY-2026-11-16.adoc[the proof record].
+This does not discharge the parser-level obligations in the proof-scope ledger.
+
+== Required before broad promotion
+
+* Broader independent YAML corpus testing beyond the committed contract corpus.
+* Sustained fuzzing, mutation campaigns and complete current taxonomy evidence.
+* Live Windows, Linux and macOS CI receipts at the proposed commit.
+* Published-commit CI proof receipts and the open production-refinement obligations.
+* External Dhall evaluator time/memory confinement.
+* Offline Guix build with all git dependencies and the required Rust compiler.
+* Wolfi/Podman execution, SBOM, signed Stapeln bundle and strict admission evidence.
+* Representative estate consumer acceptance and reviewed pin updates.
+
+These are open acceptance requirements. This document, the presence of a file,
+and a green advisory workflow are not evidence that they have all passed.
+
+== Owning references
+
+Standards: metadatastician/standards at 305743d271bac04cf271a792b703a6379e29588b.
+Template: hyperpolymath/rsr-template-repo at e67ee0013777509a198977b840c0f0fabfa8ce75.
+Stapeln: metadatastician/stapeln at 33d7e5ee28d8de2170fe8671323c41c8bae221d7.
+The existing Proven-Tests v2 evidence contract has its own pinned taxonomy;
+do not confuse that historical contract with every category in current standards.
+
+The explicit JCS-reading follow-up pins ijson-jcs to
+c7091491ad48b64c19ee9bb754a28186f8e94042. Its new reader and round-trip
+regressions await hosted validation; local heavy validation is held by the
+host-memory coordinator. No prior receipt is promoted to cover this follow-up.

@@ -43,13 +43,16 @@ instance.
 ----
 just proofs        # every leg + every negative control; exits 3 while the Lean leg is OPEN
 just proofs-agda   # Agda leg (asserts Agda 2.7.0.1 unless KYQ_AGDA_VERSION names another)
-just proofs-rocq   # Rocq leg (asserts coqc 8.18.0; always prints DEVIATION DEV-2: no Guix pin)
+just proofs-rocq   # Rocq leg (asserts coqc 8.18.0, runs coqchk; prints DEVIATION DEV-2 when coqc is not the Guix build)
 just proofs-lean   # exits 3: OPEN
 ----
 
 Exit codes: 0 pass, 1 a proof or control failed, 2 toolchain missing or not
 the asserted version, 3 a leg is OPEN. A missing leg or tool is never a pass.
-In this session Agda is 2.6.3, so the Agda leg runs only as
+The pinned provers are `channels.scm` and `manifest.scm` in this directory
+(Guix: Agda 2.7.0.1, Rocq 8.18.0, Lean 4.29.0), and
+`.github/workflows/proofs.yml` runs the legs in that shell. With another Agda,
+for example 2.6.3, the Agda leg runs only as
 `KYQ_AGDA_VERSION=2.6.3 just proofs-agda`, which prints the deviation
 (PROOF-STATUS, DEV-1). The Rocq leg's PASS line says it is `re-proved` and
 BRIDGE-PENDING, so it does not count towards a grade.

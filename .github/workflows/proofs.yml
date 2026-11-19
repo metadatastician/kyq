@@ -1,0 +1,100 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+#
+# proofs.yml — the theory proof spine under the pinned Guix provers
+# (docs/ULTRAPLAN.adoc §12, steps P1 and P2; PROOF-POLICY §2.1 and §6).
+#
+# The provers come from verification/proofs/channels.scm and manifest.scm.
+# Each run asserts their versions. The Lean leg has no source yet: its step
+# passes only when the runner reports OPEN (exit 3), and it says so. A green
+# run of this workflow is not a claim that the spine is fully rechecked.
+name: Proof spine
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proofs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GUIX_VERSION: "1.5.0"
+  GUIX_SHA256: "aa41025489c5061543e9c48873eaa829b900b2da75d40f9648913622f5f47817"
+  AGDA_VERSION: "2.7.0.1"
+  ROCQ_VERSION: "8.18.0"
+  LEAN_VERSION: "4.29.0"
+  SHELL_CMD: guix time-machine -C verification/proofs/channels.scm -- shell -m verification/proofs/manifest.scm --
+
+jobs:
+  spine:
+    name: Agda and Rocq in the pinned Guix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Guix (checksum-pinned binary release)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
+            "https://ftp.gnu.org/gnu/guix/guix-binary-${GUIX_VERSION}.x86_64-linux.tar.xz" --output guix.tar.xz
+          echo "${GUIX_SHA256}  guix.tar.xz" | sha256sum --check --strict
+          sudo tar --warning=no-timestamp -xf guix.tar.xz -C /
+          sudo groupadd --system guixbuild
+          for i in 1 2 3 4; do
+            sudo useradd -g guixbuild -G guixbuild -d /var/empty -s /usr/sbin/nologin \
+              -c "Guix build user $i" --system "guixbuilder$i"
+          done
+          G=/var/guix/profiles/per-user/root/current-guix
+          sudo sh -c "nohup $G/bin/guix-daemon --build-users-group=guixbuild > /var/log/guix-daemon.log 2>&1 &"
+          for _ in $(seq 30); do [ -S /var/guix/daemon-socket/socket ] && break; sleep 1; done
+          [ -S /var/guix/daemon-socket/socket ] || { sudo cat /var/log/guix-daemon.log; exit 1; }
+          sudo "$G/bin/guix" archive --authorize < "$G/share/guix/ci.guix.gnu.org.pub"
+          sudo "$G/bin/guix" archive --authorize < "$G/share/guix/bordeaux.guix.gnu.org.pub"
+          echo "$G/bin" >> "$GITHUB_PATH"
+
+      - name: Pinned provers (versions asserted)
+        id: toolchain
+        run: |
+          set -euo pipefail
+          guix time-machine -C verification/proofs/channels.scm -- describe
+          $SHELL_CMD sh -euc '
+            agda --version | tee /dev/stderr | grep -qF "Agda version ${AGDA_VERSION}"
+            coqc --version | tee /dev/stderr | grep -qF "version ${ROCQ_VERSION}"
+            lean --version | tee /dev/stderr | grep -qF "version ${LEAN_VERSION}"'
+
+      # No KYQ_AGDA_VERSION override: the runner asserts the pin itself.
+      - name: Agda leg and its negative controls
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        run: $SHELL_CMD bash verification/proofs/run-proofs.sh agda
+
+      - name: Rocq leg, coqchk and its negative controls
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          $SHELL_CMD bash verification/proofs/run-proofs.sh rocq | tee "$RUNNER_TEMP/rocq.log"
+          if grep -q 'DEVIATION' "$RUNNER_TEMP/rocq.log"; then
+            echo "::error::the Rocq leg reported a toolchain deviation under the pinned Guix"
+            exit 1
+          fi
+
+      - name: Lean leg is OPEN (not a pass)
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        run: |
+          rc=0
+          $SHELL_CMD bash verification/proofs/run-proofs.sh lean || rc=$?
+          if [ "$rc" -ne 3 ]; then
+            echo "::error::the Lean leg exited $rc; expected 3 (OPEN) until a Lean leg exists"
+            exit 1
+          fi
+          echo "::warning::Lean leg is OPEN: the spine is not fully rechecked (PROOF-POLICY §2)"

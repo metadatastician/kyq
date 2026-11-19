@@ -4,6 +4,16 @@
 
 The journal of kyq: milestones, blockers and next actions.
 
+[IMPORTANT]
+====
+*Direction change (2026-11-19).* The implementation is Rust
+(`coordination.k9`, invariant `rust-verification-stack`). The current status
+is `docs/status/NATIVE-INTEGRATION.adoc`, and the plan for the remaining work
+is `docs/ULTRAPLAN.adoc`, section 12. The milestones, blockers, quality gates,
+execution plan and next actions below describe the earlier AffineScript route.
+They are kept as a historical record and are not current.
+====
+
 Phase and maturity are not recorded here. They live in the repo deed,
 `kyq_chora.deed`, in the `(status …)` and `(maturity …)` clauses. Objectives
 and success metrics are its `(playbook …)` clause.

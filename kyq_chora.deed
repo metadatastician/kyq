@@ -2,7 +2,7 @@
 ;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 ;;
 ;; kyq Repository Deed
-;; Kubernetes YAML Query - AffineScript KYAML processor
+;; KYAML, I-JSON/JCS and Dhall processing in Rust
 ;; Owner: metadatastician
 ;
 ; One deed per repo (owner ruling D312). The identity, clade, forges,
@@ -55,30 +55,32 @@
     :ended ""
     (history
       (entry :phase active :since "2026-10-05" :note "Kubernetes YAML Query - AffineScript KYAML processor; initial development")))
-  ; No command is implemented yet: AffineScript 0.1.1 does not parse any of
-  ; the sources (docs/status/ROADMAP.adoc, Blockers).
+  ; Native Rust candidate; broad estate admission remains gated by docs/ASSURANCE.adoc.
   (maturity
     :level experimental)
   (ecosystem
     :project "kyq"
     :ecosystem "metadatastician"
-    :purpose "Kubernetes YAML Query: an AffineScript-based KYAML processor intended as a smaller, K8s-aware alternative to yq."
-    :language "AffineScript"
-    :runtime "WebAssembly"
-    (related :name "affinescript" :relationship compiler :notes "hyperpolymath/affinescript; the implementation language. Required.")
+    :purpose "Native validation, canonicalisation, formatting and JSON Pointer queries for KYAML, I-JSON/JCS and import-free Dhall."
+    :language "Rust"
+    :runtime "native"
+    (related :name "ijson-jcs" :relationship library :notes "Pinned canonical JSON boundary; hyperpolymath/ijson-jcs.")
+    (related :name "docmatrix" :relationship consumer :notes "Separate structured-data conversion API; hyperpolymath/docmatrix.")
+    (related :name "creusot" :relationship verifier :notes "Pearlite contracts on the production budget kernel; not a whole-parser proof.")
+    (related :name "verus" :relationship verifier :notes "Independent budget model; refinement is an open obligation.")
     (related :name "kubernetes" :relationship schema-source :notes "Kubernetes API schemas, v1.30.x; target versions v1.25 to v1.30.")
     (compatibility
       :yaml-versions ("YAML 1.2")
-      :target-formats ("YAML" "JSON" "K8s manifests"))
+      :target-formats ("KYAML" "I-JSON/JCS" "Dhall"))
     (targets
-      :primary ("WebAssembly" "native binary")
-      :secondary ("Docker container")
+      :primary ("native binary")
+      :secondary ("Wolfi container on Podman")
       :experimental ("WASI")))
   (meta
     :version "0.1.0"
     :last-updated "2026-10-07"
     :type binary
-    :languages ("AffineScript")
+    :languages ("Rust" "Pearlite" "Verus")
     :license MPL-2.0
     :author "Jonathan D.A. Jewell (hyperpolymath)"
     :build-tool just
@@ -90,11 +92,11 @@
     :axis-2 "corrective > adaptive > perfective"
     :axis-3 "systems > compliance > effects"
     (design-rationale
-      :primary "Intended: AffineScript type checking to give compile-time safety guarantees for YAML processing (not yet realised; no source compiles)"
-      :secondary "Intended: K8s-specific parsing to allow domain-optimised processing"))
+      :primary "Rust parsing with explicit format boundaries, shared canonicalisation and bounded KYAML expansion"
+      :secondary "Small formally specified kernels; parser-level proof obligations remain explicit"))
   ; The former AGENTIC record declared supported operations (parse, lint,
-  ; query, get, set, del, format) and a `just ai-setup` command. None of
-  ; them exists, so neither is carried over.
+  ; query, get, set, del, format) and a `just ai-setup` command. Current
+  ; native operations are documented in README.adoc; mutation and lint remain unimplemented.
   (agentic
     :version "0.1.0"
     :last-updated "2026-10-07"
@@ -105,7 +107,7 @@
       :allow-silent-skip #f
       :require-rerun-after-fix #t
       :release-claim-requires-hard-pass #t)
-    (agent :id CLAUDE :role "AffineScript implementation, KYAML parser, integration")
+    (agent :id CLAUDE :role "Rust implementation, Creusot/Pearlite contracts, Verus scopes and integration")
     (agent :id GEMINI :role "Estate audits, cross-repo compliance, pattern detection")
     (agent :id VIBE :role "UI/frontend, rapid prototyping, agent panels"))
   (neurosym
@@ -113,9 +115,9 @@
       :version "0.1.0"
       :last-updated "2026-10-07")
     :enabled #f
-    ; Planned symbolic components; none is implemented yet.
+    ; These components are not integrated as a neurosymbolic service.
     (symbolic-components
-      :parser "Lexer + Parser in AffineScript"
+      :parser "Native Rust KYAML parser; formal refinement remains open"
       :ast "Abstract Syntax Tree representation"
       :query-engine "Path-based query system"
       :linter "Rule-based validation"))
@@ -124,7 +126,7 @@
       :version "0.1.0"
       :last-updated "2026-10-07")
     (objective :id "yq-replacement" :priority "P0" :description "Replace yq with kyq for KYAML processing in the estate" :success-criteria "Performance >= yq, Memory < yq, Size < yq")
-    (objective :id "affinescript-proof" :priority "P1" :description "Prove AffineScript is viable for text processing workloads" :success-criteria "Production-ready compiler, Sufficient performance")
+    (objective :id "rust-verification" :priority "P1" :description "Qualify Rust parsing with Creusot/Pearlite and complementary Verus scopes" :success-criteria "Discharged required proof obligations with recorded assumptions and source-bound receipts")
     (objective :id "k8s-awareness" :priority "P1" :description "Provide K8s-aware YAML processing with domain validation" :success-criteria "All core K8s types supported, Lint rules effective")
     (success-metrics
       :parse-speed-target "50MB/s"
@@ -136,14 +138,14 @@
     :version "0.1.0"
     :last-updated "2026-10-07"
     :project "kyq"
-    :purpose "Kubernetes YAML Query — an AffineScript-based KYAML processor intended as a smaller, faster, K8s-aware alternative to yq; not yet functional. Designed to replace yq for Kubernetes workloads with compile-time safety guarantees and domain-specific validation."
+    :purpose "Rust candidate for KYAML, I-JSON/JCS and Dhall processing. Commands and acceptance limits are documented in README.adoc and docs/ASSURANCE.adoc."
     :license "MPL-2.0"
     :docs-license "CC-BY-SA-4.0"
-    (agent :name CLAUDE :role "AffineScript implementation, KYAML parser, integration")
+    (agent :name CLAUDE :role "Rust implementation, Creusot/Pearlite contracts, Verus scopes and integration")
     (agent :name GEMINI :role "Estate audits, cross-repo compliance, pattern detection")
     (agent :name VIBE :role "UI/frontend, rapid prototyping, agent panels")
-    (policy :rules ("Use AffineScript for all implementation" "Follow RSR Tier 2 standards" "MPL-2.0 for code, CC-BY-SA-4.0 for docs" "Maintain K9 coordination"))
-    (work :agent CLAUDE :task "AffineScript KYAML parser implementation")
+    (policy :rules ("Use Rust with Creusot/Pearlite and Verus assurance" "Follow RSR Tier 2 standards" "MPL-2.0 for code, CC-BY-SA-4.0 for docs" "Maintain K9 coordination"))
+    (work :agent CLAUDE :task "Native Rust KYAML parsing and scoped formal verification")
     (work :agent GEMINI :task "Estate compliance verification")
     (work :agent VIBE :task "Agent integration and prototyping")
   )
@@ -152,7 +154,7 @@
     (directory :ply 1 :path "bin" :description "Compiled binaries and build outputs")
     (directory :ply 1 :path "dist" :description "Distribution artifacts (WASM, releases)")
     (directory :ply 1 :path "examples" :description "Example Kubernetes manifests for testing and documentation")
-    (directory :ply 1 :path "src" :description "Primary source code - AffineScript KYAML implementation")
+    (directory :ply 1 :path "src" :description "Native Rust implementation and retained AffineScript research sources")
     (directory :ply 2 :path "src/Kyaml" :description "KYAML core module")
     (directory :ply 3 :path "src/Kyaml/Lint" :description "Lint rules for Kubernetes resources")
     (directory :ply 1 :path "tests" :description "Test suite for KYAML parser and linter")

@@ -28,10 +28,11 @@ toc::[]
 |===
 | File | Classification | Current method | Compliance | Planned PR
 
-| `src/Kyaml/Parser.affine` | first-party | draft lex/parse (AffineScript 0.1.1 gap) | non-compliant (does not parse) | Phase 3
-| `src/Kyaml/Jcs.affine` | first-party | port stub from ijson-jcs | non-compliant (needs UTF-16 sort etc.) | Phase 3
-| `src/Kyaml/Ijson.affine` | first-party | port stub | non-compliant | Phase 3
-| `src/Kyaml/Lexer.affine` | first-party | draft | non-compliant | Phase 3
+| `src/lib.rs`, `src/kyaml.rs`, `src/emit.rs`, `src/main.rs` | first-party | native Rust implementation | tested against 118 bridge vectors and 49 KYAML fixtures; full corpus agreement open | `docs/ULTRAPLAN.adoc` §12, W4
+| `src/Kyaml/Parser.affine` | first-party | draft lex/parse (AffineScript 0.1.1 gap) | non-compliant (does not parse) | none: historical, not built
+| `src/Kyaml/Jcs.affine` | first-party | port stub from ijson-jcs | non-compliant (needs UTF-16 sort etc.) | none: historical, not built
+| `src/Kyaml/Ijson.affine` | first-party | port stub | non-compliant | none: historical, not built
+| `src/Kyaml/Lexer.affine` | first-party | draft | non-compliant | none: historical, not built
 | `.github/workflows/*.yml` | first-party (owned YAML) | yamllint/actionlint not yet kyq | partial (pinned, but not kyq-checked) | Phase 5
 | `tests/fixtures/invalid-deployment.yaml` | invalid test fixture | — | must never be rewritten | —
 | `examples/deployment.yaml` | first-party | — | must be KYAML canonical | Phase 3

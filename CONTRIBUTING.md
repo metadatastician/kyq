@@ -7,172 +7,69 @@ We welcome contributions! This document outlines how to contribute to kyq.
 
 ## Development Setup
 
+kyq is implemented in Rust. The retained `.affine` files under `src/`, `tests/`
+and `benches/` are historical research and are not built.
+
 ### Prerequisites
 
-1. **AffineScript Compiler**
-   ```bash
-   git clone https://github.com/hyperpolymath/affinescript
-   cd affinescript
-   # Follow setup instructions in affinescript/README.md
-   ```
+1. **Rust** at the version in `rust-toolchain.toml`. `rustup` installs it when
+   you run the first `cargo` command in the repository.
+2. **just** at the version in `mise.toml`.
+3. **Node.js 20 or later**, only for the independent conformance oracle in
+   `conformance/`.
+4. **Creusot**, **Agda** and **Rocq**, only when you change a proof. See
+   `verification/README.adoc` and `verification/proofs/README.adoc`.
 
-2. **OCaml Toolchain** (for AffineScript core)
-   ```bash
-   # On Debian/Ubuntu
-   sudo apt-get install ocaml opam
-   opam init
-   opam install dune merlin
-   ```
+`just setup` installs the declared toolchain and runs diagnostics.
 
-3. **Rust Toolchain** (for WASM compilation)
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   source ~/.cargo/env
-   ```
-
-### Building kyq
+### Building and checking
 
 ```bash
-# Clone the repository
 git clone https://github.com/metadatastician/kyq
 cd kyq
 
-# Validate the deed and layout (always works)
-just validate
-
-# Build — currently blocked by AffineScript 0.1.1 (see docs/status/ROADMAP.adoc)
-# This fails with "not implemented" rather than emitting a placeholder (estate rule).
-just build
-
-# Run tests / benchmarks (same blocker, same fail-closed behaviour)
-just test
-just bench
-just wasm
+just build        # build the package
+just test         # tests, benchmark smoke tests and documentation examples
+just check        # the local acceptance sequence used before review
+just conformance  # the independent JavaScript oracle
 ```
 
-Current status: see `docs/ULTRAPLAN.adoc` §0 and `docs/status/ROADMAP.adoc`
-Blockers. No binary exists yet; contributions that touch `src/` should discuss
-the AffineScript grammar gap first.
+### Project structure
 
-### Project Structure
+- `src/lib.rs`, `src/kyaml.rs`, `src/emit.rs`, `src/main.rs`: the library and
+  the command-line tool.
+- `tests/*.rs`: the native test suites. `tests/fixtures/` and
+  `conformance/fixtures/` hold the shared corpus.
+- `verification/bounds/`: the resource-budget kernel with its Pearlite
+  contract (Creusot). `verification/PROOF-STATUS.adoc` is the proof ledger for
+  the Rust code.
+- `verification/proofs/`: the Agda theory spine and its Rocq recheck leg.
+  `docs/status/PROOF-STATUS.adoc` is its ledger.
+- `conformance/`: the JavaScript conformance oracle. It is a test oracle, not
+  the implementation.
+- `docs/architecture/REPOSITORY-MAP.adoc`: the generated map of every path.
 
-```
-kyq/
-├── src/
-│   └── Kyaml/
-│       ├── Lexer.affine       # Tokenizer for KYAML
-│       ├── Parser.affine      # Parser to build AST
-│       ├── Ast.affine         # Abstract Syntax Tree types
-│       ├── Lint/              # Lint rules
-│       │   ├── RequiredFields.affine
-│       │   ├── TypeCheck.affine
-│       │   └── ...
-│       ├── Query/             # Query engine
-│       │   ├── Path.affine
-│       │   └── Filter.affine
-│       └── Schema/            # K8s schemas
-│           ├── Deployment.affine
-│           ├── Service.affine
-│           └── ...
-├── test/
-│   ├── fixtures/              # Test YAML files
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   └── ...
-│   └── Test.affine            # Test suite
-├── examples/                  # Example usage
-├── Makefile                  # Build scripts
-├── README.md
-└── LICENSE
-```
+The plan for the remaining work is `docs/ULTRAPLAN.adoc`, section 12.
 
 ## Writing Code
 
-### AffineScript Style Guide
-
-1. **Use LucidScript face** (Haskell-like syntax) for kyq
-2. **Type everything** — AffineScript's type system is your friend
-3. **Keep functions pure** where possible
-4. **Use affine types** for resource management (file handles, memory)
-5. **Document functions** with comments
-6. **Handle errors explicitly** — don't use partial functions
-
-### Example Module Structure
-
-```affine
--- src/Kyaml/Parser.affine
-module Kyaml.Parser where
-
-import Kyaml.Lexer
-import Kyaml.Ast
-
--- Parse KYAML input into AST
-parseKyaml :: string -> Result<KYamlDoc, ParseError>
-parseKyaml input = do
-  tokens <- lex input
-  parseTokens tokens
-
--- Internal: parse token stream
-parseTokens :: list<Token> -> Result<KYamlDoc, ParseError>
-parseTokens = -- implementation
-```
-
-### Adding a Lint Rule
-
-1. Create a new file in `src/Kyaml/Lint/`
-2. Implement the rule as a function with signature:
-   ```affine
-   type LintRule = KYamlDoc -> list<LintIssue>
-   
-   type LintIssue = {
-     severity: Severity,  -- Error, Warning, Info
-     message: string,
-     path: list<string>,  -- Field path
-     line: int,
-     column: int
-   }
-   
-   checkLatestTag :: LintRule
-   checkLatestTag doc = -- implementation
-   ```
-3. Register the rule in `src/Kyaml/Lint/Registry.affine`
+1. Follow `cargo fmt` and keep `cargo clippy --all-targets -- -D warnings` clean.
+2. Handle errors explicitly. Every refusal has a diagnostic code, a position
+   and a path.
+3. Add a test for each change in behaviour. Do not weaken the reference corpus
+   or its expectations.
+4. Put a Creusot/Pearlite contract on the shipped function, not on a separate
+   model. A proof row moves to `PROVEN` only after the verifier runs.
+5. Do not claim that a tool, test or proof passed unless it ran.
 
 ## Testing
-
-### Running Tests
 
 ```bash
 just test
 ```
 
-### Adding Tests
-
-Add test YAML files to `tests/fixtures/` and corresponding test cases to `tests/*.affine`:
-
-```affine
-module Test where
-
-import Kyaml.Parser
-import Kyaml.Lint
-
-// Test: parse a simple deployment
-testParseDeployment :: IO ()
-testParseDeployment = do
-  content <- readFile "test/fixtures/deployment.yaml"
-  case parseKyaml content of
-    Ok doc -> assert (doc.kind == "Deployment")
-    Err e -> fail (show e)
-
--- Test: lint catches latest tag
-testLintLatestTag :: IO ()
-testLintLatestTag = do
-  content <- readFile "test/fixtures/latest-tag.yaml"
-  case parseKyaml content of
-    Ok doc ->
-      let issues = lintDoc doc
-      assert (any (\(issue) -> issue.ruleId == "latest-tag") issues)
-    Err e -> fail (show e)
-```
+Add inputs to `tests/fixtures/` or `conformance/fixtures/`, and the test case
+to the matching file in `tests/`.
 
 ## Submitting Changes
 
@@ -186,7 +83,7 @@ testLintLatestTag = do
 5. **Update documentation** (README, docs)
 6. **Run tests**
    ```bash
-   make test
+   just check
    ```
 7. **Commit your changes** with a Conventional Commits subject (`feat:`, `fix:`, `docs:` …)
    ```bash

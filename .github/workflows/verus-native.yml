@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: MPL-2.0
+# Policy: metadatastician/standards@305743d271bac04cf271a792b703a6379e29588b
+# 3-practice/PROOF-POLICY.adoc; provisioning deviation VERUS-INSTALL is open
+# in verification/PROOF-STATUS.adoc. This gate covers an independent budget model.
+name: Native budget model (Verus)
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verus-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check out the shared verifier gate at its immutable revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: hyperpolymath/proven-cicd-and-workflows
+          ref: 9eb0bbf9bd80b7964ce5b9957e75821b3cd4a55b
+          path: .proof-suite
+          persist-credentials: false
+      - name: Install the verifier and its matching Rust toolchain
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 3 \
+            https://github.com/verus-lang/verus/releases/download/release/0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip \
+            --output "$RUNNER_TEMP/verus.zip"
+          echo "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c  $RUNNER_TEMP/verus.zip" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/verus"
+          unzip -q "$RUNNER_TEMP/verus.zip" -d "$RUNNER_TEMP/verus"
+      - name: Require negative and positive controls before verifying the model
+        env:
+          RUSTUP_TOOLCHAIN: 1.99.1
+        run: |
+          printf 'source revision: %s\n' "$GITHUB_SHA"
+          sha256sum verification/verus/budget.rs
+          VERUS="$RUNNER_TEMP/verus/verus-x86-linux/verus" \
+            bash .proof-suite/actions/verus-check/check.sh verification/verus/budget.rs

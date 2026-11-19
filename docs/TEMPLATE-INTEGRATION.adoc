@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Template integration boundary
+:revdate: 2026-11-16
+
+Repository gate helpers and their positive/negative controls are taken from
+`hyperpolymath/rsr-template-repo@e67ee0013777509a198977b840c0f0fabfa8ce75`.
+They cover root shape, the generated repository map, AsciiDoc rendering,
+documentation extensions, forbidden-language remnants, Nickel session policy
+and the Rust mint-helper controls already named by the inherited Estate Rules
+workflow. The project root allowlist describes this repository's actual files.
+
+`coordination.k9` describes kyq's project-specific invariants in the K9
+coordination grammar. `coordination.k9.ncl` is the template's separate Nickel
+binding for session commands; `session/custom-checks.k9.ncl` declares session
+checks. A Nickel evaluation proves that those records evaluate, not that an
+uninvoked session command ran or that a human workflow was followed.
+
+The two copied Rust mint utilities remain covered by their upstream functional
+controls. Their first-party Creusot/Pearlite and Verus proof scopes are OPEN;
+they are not part of the proved parser budget kernel. Changes to these shared
+helpers should be developed with the owning template repository.
+
+Template qualification is incomplete until the inherited workflows and all
+applicable policy checks run against the published native candidate. This
+source inventory is not a claim of complete template or estate compliance.
+
+The parsed actions-lock checker, its regression controls and its dependency-free
+CI workflow are adopted from standards at
+`305743d271bac04cf271a792b703a6379e29588b`. They supersede the inherited
+line-based lock checker; see link:actions-lock-validation.adoc[the lock contract].

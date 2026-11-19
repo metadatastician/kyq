@@ -6,6 +6,13 @@
 :icons: font
 :revdate: 2026-10-25
 
+[IMPORTANT]
+====
+*Historical (2026-11-19).* The implementation is Rust. This document and the
+A-gate records under `docs/status/` describe the earlier AffineScript route
+and are not current. See `docs/ULTRAPLAN.adoc`, section 12.
+====
+
 This note details the work implied by the owner's ruling *strict AffineScript
 only* (2026-10-23). No Rust/Cargo code is added; `coordination.k9`
 `affinescript-only` stays enforced. The plan turns the ROADMAP Blocker 1

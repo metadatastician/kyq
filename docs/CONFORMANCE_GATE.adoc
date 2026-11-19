@@ -40,16 +40,28 @@ program that parses KYAML, bridges to JSON, validates strictly per I-JSON, and
 emits JCS bytes — with a CLI whose exit codes, printed lines and diagnostics are
 part of the contract.
 
-The gate is **not** the kyq implementation. `coordination.k9` requires all
-implementation code to be AffineScript, and the AffineScript implementation
-under `src/` does not yet compile (see `docs/status/A1_GRAMMAR_CENSUS.adoc`). The
+The gate is **not** the kyq implementation. The implementation is the Rust
+code under `src/` (`coordination.k9`, invariant `rust-verification-stack`).
+The native suites check the 118 bridge vectors and the 49 KYAML fixtures (`docs/NATIVE-MIGRATION.adoc`); agreement on the full gate corpus is step W4 of `docs/ULTRAPLAN.adoc` §12. The
 gate is repo-owned tooling in the same role as `scripts/check-action-pinning.sh`:
 it is the oracle the implementation must satisfy. Two rules keep that honest,
 and both are binding:
 
+`conformance/tools/native-diff.mjs` (`just conformance-native`, and a step of
+the `selftest` job) runs the native `kyq canon` on every input of the fixture
+corpus (288 inputs) and compares it with the gate, verdict for verdict and
+byte for byte. It also gives each accepted output to the translation validator
+`conformance/tv/tv.js`. The known differences are listed in
+`conformance/fixtures/oracle/native-divergences.json`, and the observed set
+must equal that list exactly. On 2026-11-19 it holds 12 rows, all of one
+class: the native tool does not implement ruling R3 yet, so it writes an
+integer token outside the safe range for inputs such as `[1e20]`, and its own
+reader refuses that output. The harness covers `canon` only: `check`, `fmt`
+and the diagnostic codes are not compared yet.
+
 . the gate MUST NOT be described as kyq's implementation in release notes, the
   README, or the deed;
-. when the AffineScript implementation builds, it MUST pass this corpus, and the
+. the Rust implementation MUST pass this corpus, and the
   differential test then compares three implementations (the Rust
   `ijson-jcs` oracle, this gate, and kyq) instead of substituting one for the
   other.
