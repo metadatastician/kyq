@@ -720,6 +720,11 @@ This section plans the rest of the work. It extends §2 to §9 and `docs/AFFINES
 * Formats: estate routing gives kyq four formats: KYAML, I-JSON/JCS, TOML and Dhall. TOML and Dhall are validity gates (bytes preserved, not canonicalised). Neither the oracle nor the AffineScript sources handle TOML or Dhall.
 * Proofs: the Agda spine has 93 theorems, all `ungraded`. Rocq re-proves 15 of them (BRIDGE-PENDING). There is no Lean leg. `just proofs` was re-run on the committed tree at `e174f8c` on 2026-11-18 with Agda 2.6.3 and coqc 8.18.0: the Agda and Rocq legs pass, all 11 negative controls are refused, and the Lean leg is OPEN (exit 3). No CI job runs `just proofs`, and kyq has no Guix manifest. `docs/status/PROOF-STATUS.adoc` still says the tree is uncommitted, but e174f8c (PR #29) merged it.
 
+[IMPORTANT]
+====
+*Scope: this plan describes `main` at `e174f8c` and assumes D1 (strict AffineScript only).* Two unmerged branches, `codex/integration-20261116` and `claude/kyaml-marker-offsets` (last commit 2026-11-17), hold a native Rust candidate (`Cargo.toml` 0.2.0, `src/lib.rs`, `src/kyaml.rs`, `src/emit.rs`, `src/main.rs`) with a Creusot/Pearlite contract and a Verus model for the node budget. Their `docs/status/NATIVE-INTEGRATION.adoc` says that the implementation direction is Rust and that the AffineScript milestones are historical research. It reports KYAML, strict JSON, import-free Dhall, JCS bytes, RFC 6901 queries and CLI exit statuses as implemented, and TOML, Kubernetes schema validation and the mutation commands as not implemented. Those branches were not built or tested for this plan. Their direction contradicts D1, and no ruling on `main` records the change. If the owner adopts the Rust candidate (D20, proposed), Track W changes: W1, W2 and W6 to W9 are replaced by the merge and acceptance of that candidate (its `docs/ASSURANCE.adoc` lists the open requirements), D15 lapses, and D14 is answered by PROOF-POLICY §1.2 (Creusot, Pearlite and Verus). Track P for the theory spine does not change.
+====
+
 Upstream evidence, from AffineScript HEAD `70379fe` (2026-11-16; shallow clone, so no tags are visible):
 
 * `dune-project` and `affinescript.opam` say 0.1.1. `CHANGELOG.adoc` has only `[Unreleased]`. A release after v0.1.1 is unconfirmed.
