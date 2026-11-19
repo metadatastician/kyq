@@ -10,9 +10,10 @@ only what a run in this repository supports. Obligations are listed in
 
 *State in one paragraph.* The P1 proof spine exists as an Agda development
 (9 modules, 0 development postulates) and a Rocq recheck leg. Both are
-committed (`e174f8c`, PR #29) and were re-run on that commit on 2026-11-18,
-with Agda 2.6.3 rather than the estate pin 2.7.0.1 (deviation DEV-1) and with
-coqc 8.18.0, which is not a Guix pin (deviation DEV-2). There is no Lean leg.
+committed (`e174f8c`, PR #29). On 2026-11-19 both legs passed in CI under
+the pinned Guix provers, Agda 2.7.0.1 and Rocq 8.18.0, on commit `65b3204`
+(see "Toolchains and deviations"), which closes DEV-1 and DEV-2. There is no
+Lean leg.
 There is no machine-readable receipt (§8.5.1). So every theory row is
 `ungraded`. This file proves nothing about kyq's code, the JS conformance
 oracle or ijson-jcs. The ledger for kyq's Rust code is
@@ -41,8 +42,8 @@ spine when D13 is ruled.
 |===
 | Prover | Stated | Checked | Notes
 
-| Agda (source of truth) | 93 | 93 | `agda --safe --without-K --cubical-compatible --no-libraries All.agda`, Agda *2.6.3* (DEV-1). Development postulates: 0. 9 modules. The runner checks that every module is in the cone Agda checked.
-| Rocq (recheck, `re-proved`) | 15 | 15 | `coqc` 8.18.0 (DEV-2). 15 of 15 `Print Assumptions` report "Closed under the global context". Covers 15 of the 93 Agda theorems.
+| Agda (source of truth) | 93 | 93 | `agda --safe --without-K --cubical-compatible --no-libraries All.agda`, Agda *2.7.0.1* from Guix in CI (2026-11-19); the earlier local runs used 2.6.3 (DEV-1). Development postulates: 0. 9 modules. The runner checks that every module is in the cone Agda checked.
+| Rocq (recheck, `re-proved`) | 15 | 15 | `coqc` 8.18.0 from Guix in CI (2026-11-19), with `coqchk -o` reporting no axioms; the earlier local runs used the Ubuntu package (DEV-2). 15 of 15 `Print Assumptions` report "Closed under the global context". Covers 15 of the 93 Agda theorems.
 | Lean 4 (recheck) | 0 | 0 | No toolchain (see "Lean leg"). 0 of 93. Planned first tranche: the 15 theorems the Rocq leg covers.
 | Idris2 (engineering, P2) | 0 | 0 | Not started.
 | Negative controls, Agda | 9 | 9 refused | Each refused with its expected message.
@@ -62,7 +63,7 @@ Grade census (§8.4 rule 8): *ungraded 93 of 93; PWG-3 0 of 93; PWG-2i 0 of
 Every row has `pwg: ungraded` and `foundation_diverse: false`. The Agda leg
 of every row: token `proven` (the kernel accepted the term under the §2.1
 flags with no escape hatch and with the coverage check passing), *checked
-with Agda 2.6.3 under DEV-1*, with no §8.5.1 receipt.
+with the Guix Agda 2.7.0.1 in CI on `65b3204`*, with no §8.5.1 receipt.
 The Rocq and Lean columns give route; §5 token; §2.2 state.
 
 The "Catalogue id" column cites only ids that exist in
@@ -198,9 +199,34 @@ Lean target is 0 of 93. `just proofs` exits 3 until the leg exists.
 |===
 | Id | Record
 
-| DEV-1 (open) | Leg: Agda (every Agda row). Tool: Agda *2.6.3*, Ubuntu package `agda-bin 2.6.3-1build1`, `/usr/bin/agda` sha256 `852806142a15951f667df303c73cfce5f4123218ce6e1f1b29acaddc242af00d`. The estate Guix pin is 2.7.0.1. Why: this session has no Guix and no Guix manifest for kyq's proofs. The runner asserts 2.7.0.1 and fails (exit 2) unless `KYQ_AGDA_VERSION` names the version actually used, and then prints `DEVIATION: DEV-1`. Closes when the spine is rechecked under Guix Agda 2.7.0.1, which also re-earns the prover trusted-base list below.
-| DEV-2 (open) | Leg: Rocq. Tool: coqc *8.18.0*, Ubuntu package `coq 8.18.0+dfsg-1build2`, `/usr/bin/coqc` sha256 `f14ab0c140bdfdb31c7e7e1f20379703973376480a4eea2d43d0fa56ddae03ec`. kyq has no Guix Rocq pin; the runner asserts 8.18.0 (`KYQ_COQ_VERSION` overrides) and prints `DEVIATION: DEV-2` on *every* Rocq run. Why: no Guix in this session. Closes when kyq's Guix manifest pins Rocq and the leg runs under it.
+| DEV-1 (closed) | Leg: Agda (every Agda row). Tool: Agda *2.6.3*, Ubuntu package `agda-bin 2.6.3-1build1`, `/usr/bin/agda` sha256 `852806142a15951f667df303c73cfce5f4123218ce6e1f1b29acaddc242af00d`. The estate Guix pin is 2.7.0.1. Why: this session has no Guix and no Guix manifest for kyq's proofs. The runner asserts 2.7.0.1 and fails (exit 2) unless `KYQ_AGDA_VERSION` names the version actually used, and then prints `DEVIATION: DEV-1`. Closes when the spine is rechecked under Guix Agda 2.7.0.1, which also re-earns the prover trusted-base list below.
+| DEV-2 (closed) | Leg: Rocq. Tool: coqc *8.18.0*, Ubuntu package `coq 8.18.0+dfsg-1build2`, `/usr/bin/coqc` sha256 `f14ab0c140bdfdb31c7e7e1f20379703973376480a4eea2d43d0fa56ddae03ec`. kyq has no Guix Rocq pin; the runner asserts 8.18.0 (`KYQ_COQ_VERSION` overrides) and prints `DEVIATION: DEV-2` on *every* Rocq run. Why: no Guix in this session. Closes when kyq's Guix manifest pins Rocq and the leg runs under it.
 |===
+
+*Closing change (2026-11-19).* `verification/proofs/channels.scm` and
+`manifest.scm` pin the provers under Guix (commit
+`8edb9da7052607f17f09007933275b43978fcf9d`), and
+`.github/workflows/proofs.yml` runs both legs in that shell on every pull
+request and on `main`. The first passing run is
+https://github.com/metadatastician/kyq/actions/runs/44438171938/job/135272148455[run 44438171938]
+on commit `65b3204fc9361e24949281503dc13dec84f5b21c` (a pull-request commit,
+not yet on `main`):
+
+* the workflow asserted Agda 2.7.0.1, Coq 8.18.0 and Lean 4.29.0;
+* Agda leg, with no `KYQ_AGDA_VERSION` override: `All.agda` exit 0 with no
+  warnings, import cone of 11 modules, prover trusted base of the same 4
+  named postulates (`Agda.Primitive` sha256 starts `e5e4e04900cf1a28`), 9 of 9
+  controls refused. The Guix Agda store path is read-only and has no
+  interfaces for its primitive modules, so the runner gives Agda a writable
+  copy of its data directory (`Agda_datadir`);
+* Rocq leg on the Guix `coqc`, with no deviation line: 15 of 15 closed under
+  the global context, `coqchk -o` accepted the library with `Axioms: <none>`,
+  2 of 2 controls refused;
+* Lean leg: OPEN (exit 3).
+
+The two rows above keep the record of the earlier local runs. A run outside
+that Guix shell (for example Agda 2.6.3 from the Ubuntu package) is still a
+deviation: the runner prints it, and such a run earns no receipt.
 
 == Receipts (human-readable; not §8.5.1 receipts)
 
@@ -310,8 +336,8 @@ none. Rungs not yet met, for every theory row:
   version, the flags, the library state and pin (here: no library, under
   `--no-libraries`), and the import cone including the prover-supplied
   modules, with the prover's postulates listed by name and binding and
-  checked by the gate (§8.4 rule 7). The Agda check passed, under DEV-1, with
-  no receipt.
+  checked by the gate (§8.4 rule 7). The Agda check passed under the pinned
+  Guix Agda in CI, with no receipt.
 * `PWG-2i`: needs one counted recheck leg. The Rocq leg is `re-proved` but
   `BRIDGE-PENDING`, and covers 15 of 93 theorems.
 * `PWG-2ii`: needs the Lean leg as well; it is `unavailable`.
@@ -389,7 +415,7 @@ none. Rungs not yet met, for every theory row:
 
 ----
 just proofs        # every leg + controls; exit 3 while the Lean leg is OPEN
-just proofs-agda   # asserts Agda 2.7.0.1; KYQ_AGDA_VERSION=2.6.3 for DEV-1
-just proofs-rocq   # asserts coqc 8.18.0; prints DEVIATION DEV-2 on every run
+just proofs-agda   # asserts Agda 2.7.0.1; KYQ_AGDA_VERSION names another version (a deviation)
+just proofs-rocq   # asserts coqc 8.18.0; prints DEVIATION DEV-2 when coqc is not the Guix build
 just proofs-lean   # exit 3: OPEN
 ----
