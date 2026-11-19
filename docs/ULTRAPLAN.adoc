@@ -709,95 +709,92 @@ No mathematical proof is claimed in this plan; every guarantee above is stated
 as a testable property with a named theorem that will be discharged in Phase 3
 (now Phase 6 in handover numbering: see `docs/PROOF_OBLIGATIONS.adoc`).
 
-== 12. Completion plan (2026-11-18)
+== 12. Completion plan (2026-11-19)
 
-This section plans the rest of the work. It extends §2 to §9 and `docs/AFFINESCRIPT_STRICT_PORT.adoc` (A1 to A8) and does not restate them. Numbers in parentheses are handover steps. Every gate is fail-closed: a missing tool, an empty run or a skipped leg is a failure, never a pass (step 23). Where this section and the last paragraph of §11 differ, this section governs.
+This section plans the rest of the work. It extends §2 to §9 and does not restate them. It replaces the AffineScript route of §2 to §11 with the Rust candidate (§12.1). Numbers in parentheses are handover steps. Every gate is fail-closed: a missing tool, an empty run or a skipped leg is a failure, never a pass (step 23). Where this section and the last paragraph of §11 differ, this section governs.
 
 === 12.1 Starting point
 
-* Product: none of the 13 documented commands works. The 11 sources pass `affinescript check` on the pinned v0.1.1, and none of them has been compiled or run. A1 to A6 are source-check minimums only. A7 and A8 are open.
-* Oracle: `conformance/` 0.4.0 passes 524 of 524 tests (run 2026-11-18). Under D1 it is a test oracle, never the product.
-* Formats: estate routing gives kyq four formats: KYAML, I-JSON/JCS, TOML and Dhall. TOML and Dhall are validity gates (bytes preserved, not canonicalised). Neither the oracle nor the AffineScript sources handle TOML or Dhall.
-* Proofs: the Agda spine has 93 theorems, all `ungraded`. Rocq re-proves 15 of them (BRIDGE-PENDING). There is no Lean leg. `just proofs` was re-run on the committed tree at `e174f8c` on 2026-11-18 with Agda 2.6.3 and coqc 8.18.0: the Agda and Rocq legs pass, all 11 negative controls are refused, and the Lean leg is OPEN (exit 3). No CI job runs `just proofs`, and kyq has no Guix manifest. `docs/status/PROOF-STATUS.adoc` still says the tree is uncommitted, but e174f8c (PR #29) merged it.
+*Direction (2026-11-19): the implementation is Rust.* This instruction came from the session requester. It supersedes D1 (strict AffineScript only) for this plan. The owner records it as ruling D20 (§12.5). The verifier for kyq's Rust code is Creusot with Pearlite contracts (PROOF-POLICY §1.2). Verus, Kani and Aeneas are not planned here: the owner scopes them later (W9).
 
-[IMPORTANT]
-====
-*Scope: this plan describes `main` at `e174f8c` and assumes D1 (strict AffineScript only).* Two unmerged branches, `codex/integration-20261116` and `claude/kyaml-marker-offsets` (last commit 2026-11-17), hold a native Rust candidate (`Cargo.toml` 0.2.0, `src/lib.rs`, `src/kyaml.rs`, `src/emit.rs`, `src/main.rs`) with a Creusot/Pearlite contract and a Verus model for the node budget. Their `docs/status/NATIVE-INTEGRATION.adoc` says that the implementation direction is Rust and that the AffineScript milestones are historical research. It reports KYAML, strict JSON, import-free Dhall, JCS bytes, RFC 6901 queries and CLI exit statuses as implemented, and TOML, Kubernetes schema validation and the mutation commands as not implemented. Those branches were not built or tested for this plan. Their direction contradicts D1, and no ruling on `main` records the change. If the owner adopts the Rust candidate (D20, proposed), Track W changes: W1, W2 and W6 to W9 are replaced by the merge and acceptance of that candidate (its `docs/ASSURANCE.adoc` lists the open requirements), D15 lapses, and D14 is answered by PROOF-POLICY §1.2 (Creusot, Pearlite and Verus). Track P for the theory spine does not change.
-====
+* Product on `main` (`e174f8c`): AffineScript sources only. None of them has been compiled or run. They become historical research (W2).
+* Rust candidate: branch `claude/kyaml-marker-offsets` at `128cb50`, which contains `codex/integration-20261116`. It is not merged. Checked on 2026-11-19 with Rust 1.99.1:
+** `cargo test --locked --all-targets` passes: 44 tests in 9 suites, 0 failures.
+** `echo '{"b":1,"a":2}' | kyq canon --from json` prints `{"a":2,"b":1}` and exits 0.
+** `kyq check examples/deployment.yaml` exits 1 (valid, not canonical).
+** The CLI has 6 commands: `validate`, `canon`, `to-json`, `fmt`, `get`, `check`. Input formats: KYAML, JSON, JCS and import-free Dhall.
+** A trial merge into `main` has 1 conflict (`Justfile`).
+* Not in the candidate: TOML, `fix`, `from-json`, the mutation commands (`set`, `del`), lint and Kubernetes schema validation, `split`, `merge`, `diff`, `envsubst`, `inject`.
+* Code proofs in the candidate (`verification/PROOF-STATUS.adoc` on the branch): the node-budget arithmetic is `PROVEN` with Creusot 0.14.0 (BUDGET-IMPL), and a separate Verus model is `PROVEN` (BUDGET-MODEL). Every parser, map, alias, formatter, pointer and CLI obligation is `OPEN`. The Creusot and Verus runs were not repeated for this plan. yaml-rust2, serde_dhall and ijson-jcs are in the trusted base.
+* Oracle: `conformance/` 0.4.0 passes 524 of 524 tests (run 2026-11-18). It stays an independent test oracle.
+* Formats: estate routing gives kyq four formats: KYAML, I-JSON/JCS, TOML and Dhall. TOML and Dhall are validity gates (bytes preserved, not canonicalised).
+* Theory proofs: the Agda spine has 93 theorems, all `ungraded`. Rocq re-proves 15 of them (BRIDGE-PENDING). There is no Lean leg. `just proofs` was re-run on the committed tree at `e174f8c` on 2026-11-18 with Agda 2.6.3 and coqc 8.18.0: the Agda and Rocq legs pass, all 11 negative controls are refused, and the Lean leg is OPEN (exit 3). No CI job runs `just proofs`. `docs/status/PROOF-STATUS.adoc` still says the tree is uncommitted and that kyq has no Rust source. Both statements are stale after W1.
 
-Upstream evidence, from AffineScript HEAD `70379fe` (2026-11-16; shallow clone, so no tags are visible):
+=== 12.2 Track W: a tool that works (Rust)
 
-* `dune-project` and `affinescript.opam` say 0.1.1. `CHANGELOG.adoc` has only `[Unreleased]`. A release after v0.1.1 is unconfirmed.
-* `lib/resolve.ml` (`import_type_def`) now copies imported type definitions into the importer. Whether this clears the A3 imported-struct defect stays unconfirmed until W1 runs it.
-* `eval` now flattens multi-module programs. Upstream fixed H23 to H25 (`docs/COMPLETION-PLAN.adoc`, `test/test_module_root_flatten.ml`) after it checked and ran kyq's own sources. kyq holds no record of that run.
-* The WASM backend lowers `arg_count` and `arg_at` to `args_sizes_get` and `args_get`. It lowers `file_read(fd, n)` to `fd_read` and `file_fd_write(fd, s)` to `fd_write`. It has no `proc_exit` import, so a WASM module has no exit status. No fixture that reads fd 0 or writes fd 2 was found (unconfirmed). Imported functions compile to WASM imports, and no in-tree linker was found.
-* The CLI has no `test` subcommand. A Deno harness (`affinescript-deno-test`) exists. Whether it fits kyq is unconfirmed.
-
-Verdict: A7 (the WASI CLI) still waits on upstream for an exit status and a released, digest-pinnable build. Executed fixtures (the A8 `test` job) can start earlier only under D15.
-
-=== 12.2 Track W: a tool that works
+The candidate's own `docs/ASSURANCE.adoc` lists its open acceptance requirements. This track orders them and adds what the estate route still needs.
 
 [cols="1,6,5,3",options="header"]
 |===
 |Step |Work |Gate (fail-closed) |Needs; blocked on
 
 |W1
-|Upstream re-census (step 1). Build upstream from source at a recorded commit in a scratch CI lane, not as the pin. Probe imported struct fields, `eval` of all 11 sources, argv, stdin (fd 0), stdout, stderr (fd 2), exit status and multi-module WASM. Reuse `scripts/affine-a1-probe.sh` and `scripts/affine-a2-controls.sh`.
-|`docs/status/UPSTREAM_RECENSUS.adoc` holds the CI run id and, for each capability, either an executed fixture log or FAIL.
-|None. Not blocked.
+|Merge the candidate. Open a pull request from `claude/kyaml-marker-offsets` into `main`. Resolve the `Justfile` conflict and keep the `proofs`, `proofs-agda`, `proofs-rocq` and `proofs-lean` recipes.
+|On the merge commit: `cargo test --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings` and `cargo fmt --all --check` pass in CI. The conformance suite still passes 524 of 524. `just proofs` still runs.
+|D20 recorded.
 
 |W2
-|Repin and drop the workarounds. Move `ci.yml` to the new pin and remove the A3 scoped structural aliases.
-|`ci.yml` asserts the version and SHA-256. The A2 planted twins still pass. The imported-struct twin passes without aliases.
-|W1. Blocked on an upstream release, or on D15.
+|Make the documents agree with the direction. Mark §0 to §11 of this file, `docs/AFFINESCRIPT_STRICT_PORT.adoc`, the A-gate status files and the AffineScript blockers in `docs/status/ROADMAP.adoc` as historical. Update `kyq_chora.deed` (language, policy rule "Use AffineScript for all implementation"), the `affinescript-only` rule in `coordination.k9`, and the two stale statements in `docs/status/PROOF-STATUS.adoc`.
+|`just validate` passes. No document states AffineScript as the current implementation language.
+|W1.
 
 |W3
-|TOML and Dhall contract. Write `docs/FORMAT_GATES.adoc`: TOML 1.0.0 validity, Dhall validity per D16, bytes preserved on success, exit 0 for valid and 2 for invalid, limits per step 16, no network or file imports. Add the rows to `docs/COVERAGE_MATRIX.adoc`.
-|The document exists, the conformance contract version is bumped, and the routing rows cite the document.
-|None for TOML. D16 for Dhall.
+|Platform receipts. Run the native suite in CI on Linux, macOS and Windows at the merge commit (`native-platforms.yml` on the branch).
+|Three passing run URLs for one commit.
+|W1.
 
 |W4
-|Add TOML and Dhall validity gates to the oracle in `conformance/`.
-|`node --test test/*.test.js` passes with new valid, invalid and byte-preservation cases. A planted gate that accepts everything fails the suite.
-|W3. The source of a TOML and Dhall test corpus is unconfirmed.
+|Differential harness (steps 33 to 35). One corpus of inputs, verdicts and canonical bytes. Run the Rust CLI, the JS oracle and the pinned `ijson-jcs` on it. Run `conformance/tv/tv.js` on the Rust outputs. The candidate already checks 118 bridge vectors and 49 KYAML fixtures. Extend this to the full oracle corpus.
+|The harness passes on the Rust CLI and fails on a planted wrong implementation.
+|W1.
 
 |W5
-|Shared corpus and differential harness (groundwork for steps 33 to 35). Build one corpus of inputs, verdicts and canonical bytes. The harness runs any implementation from the command line and compares it with the oracle and with the pinned `ijson-jcs`.
-|The harness passes on the oracle and fails on a planted wrong implementation.
-|None. Not blocked.
+|Complete the gate commands. Add `fix` with atomic writes that leaves an invalid file untouched (step 18), and keep a leading header comment byte for byte, as the oracle does. Whether the candidate keeps header bytes today is unconfirmed. Decide the rest of the command surface (D21).
+|`fix` passes the oracle's fix cases in W4. `check` after `fix` exits 0. An invalid file has the same bytes after `fix`.
+|W4. D21 for the other commands.
 
 |W6
-|Phase 3 in AffineScript (steps 11 to 18). Order: A6 (`Ijson`, `Jcs`), then A3 (lexer, parser), then a CST that keeps header bytes apart from the value (the shape P9 proves), then A4 queries, then A5 lint rules. Port the oracle's behaviour, not its code.
-|For each module, executed AffineScript fixtures match the oracle byte for byte on the W5 corpus, and `conformance/tv/tv.js` accepts every product output. A source-check result does not count.
-|W2, W5. Blocked on upstream or D15.
+|TOML validity gate. Write the contract (TOML 1.0.0, bytes preserved, exit 0 valid, 2 invalid, limits per step 16). Implement it in Rust. Record the reason for the TOML dependency chosen (PROOF-POLICY §1.1).
+|Valid, invalid and byte-preservation cases pass. A planted gate that accepts everything fails the suite.
+|W1.
 
 |W7
-|TOML and Dhall validity gates in AffineScript.
-|The W4 cases pass on the product, and output bytes equal input bytes.
-|W4, W6.
+|Dhall confinement. Bound the time and memory of the Dhall evaluator (open in `docs/ASSURANCE.adoc`). Imports stay refused.
+|A test with a costly Dhall input ends with a typed refusal inside the stated limits.
+|W1.
 
 |W8
-|A7: `Main` dispatches the 13 commands with argv, stdin, stdout, stderr and exit codes 0, 1 and 2 (steps 18 to 20).
-|Step 20 `wasmtime` logs for `kyq --help`, `echo '{}' \| kyq canon` and the `kyq check` exit codes.
-|W6. Blocked on upstream (`proc_exit`, multi-module WASM, a release).
+|Robustness evidence: a broader independent YAML corpus, sustained fuzz runs and a mutation campaign (open in `docs/ASSURANCE.adoc`).
+|Recorded runs with their bounds, as `TESTED` rows. A planted parser fault is found.
+|W4.
 
 |W9
-|A8: real `build` and `test` CI jobs. `just build`, `just test` and `just wasm` stop failing by design.
-|The jobs pass on `main`, and `no-fabricated-artefacts` holds.
-|W8.
+|Creusot/Pearlite contracts on the production code, in this order from the branch ledger: KYAML-MAPS (duplicate keys refused before insertion), KYAML-ALIASES, FORMAT-CLOSURE, JSON-POINTER, KYAML-GRAMMAR, CLI-IO. Each contract sits on the shipped function, not on a separate model. Record the trusted dependency interfaces as `ASSUMED` rows (§1.1). Verus, Kani and Aeneas rows stay `OPEN` with the reason "scope left to the owner"; do not add proofs with them under this plan.
+|For each row: `cargo creusot` passes in CI at the published commit, a planted false contract fails, and the ledger row moves to `PROVEN` with tool versions. §5 tokens only. No PWG applies to code.
+|W1. Start after W5, so that contracts follow the final shape of the code.
 
 |W10
-|The rest of Phase 4: `--capabilities` (19), reproducible install with a Guix `manifest.scm` and release checksums (21), and adapters (22).
-|The step 39 `install-smoke` job passes.
-|W9.
+|Packaging (steps 19, 21, 39): `--capabilities` and `--version` reports, an offline Guix build, release checksums, the container build, SBOM and the Stapeln bundle.
+|The `install-smoke` job passes from a clean environment.
+|W3, W5, W6.
 
 |W11
-|Phase 5 (steps 24 to 32) in MetaManifold-WebUI. Replace the transitional standards `scripts/kyaml-format.sh` (DATA-FORMAT-ROUTING §4).
+|Estate rollout (Phase 5, steps 24 to 32), staged as `docs/NATIVE-MIGRATION.adoc` says: the DocMatrix seam, then read-only runs on representative manifests, then reviewed pin updates in consumers. Replace the transitional standards `scripts/kyaml-format.sh` (DATA-FORMAT-ROUTING §4).
 |The §8 gate for each step, in the consumer repo.
 |W10. Needs access to the consumer repos.
 
 |W12
-|Phase 6 acceptance (steps 33 to 40), run on the product, not on the oracle.
+|Phase 6 acceptance (steps 33 to 40), run on the installed Rust tool.
 |The §9 gate.
 |W10, W11.
 |===
@@ -811,7 +808,7 @@ The reader derives every grade from receipts. No document asserts a grade (PROOF
 |Step |Work |Gate (fail-closed) |Needs; blocked on
 
 |P1
-|Put the proof toolchain under Guix. Add `build/channels.scm` and `build/manifest.scm` with `agda`, `coq` and `lean4`. mathesis pins Guix `8edb9da`, and its records show that commit gives Agda 2.7.0.1, Rocq 8.18.0 and Lean 4.29.0. The spine uses `--no-libraries`, so it does not need the Guix `agda-stdlib`. Correct the stale PROOF-STATUS header.
+|Put the proof toolchain under Guix. Add `agda`, `coq` and `lean4` to a Guix manifest with pinned channels. The Rust candidate brings `channels.scm` and `manifest.scm` at the root (W1): extend those, or add a separate proof manifest before W1 lands. mathesis pins Guix `8edb9da`, and its records show that commit gives Agda 2.7.0.1, Rocq 8.18.0 and Lean 4.29.0. The spine uses `--no-libraries`, so it does not need the Guix `agda-stdlib`. Correct the stale PROOF-STATUS header.
 |`run-proofs.sh agda` and `run-proofs.sh rocq` pass in the Guix shell with no `KYQ_AGDA_VERSION` override. DEV-1 and DEV-2 are closed, with the closing change named.
 |None.
 
@@ -856,22 +853,22 @@ The reader derives every grade from receipts. No document asserts a grade (PROOF
 |D17, D18.
 
 |P10
-|Engineering obligations on kyq's code, by the route D14 sanctions (for example the Idris2 engineering leg, P2 in `verification/proofs/README.adoc`, not started).
-|As D14 sets.
-|W6, W8. Blocked on D14.
+|Engineering obligations on kyq's code. These are W9 (Creusot/Pearlite on the Rust implementation). They use §5 tokens and are not on the PWG ladder.
+|The W9 gate.
+|W9.
 |===
 
 These items stay ungraded by design:
 
 * The JS oracle and its TV: they are test evidence and carry no PWG.
-* kyq's AffineScript code: a PWG grades theory legs only. Code gets a proof route only through D14 (P10).
-* Bytes, UTF-8, number text, KYAML syntax, TOML and Dhall: no theory covers them beyond P9. W5 and W12 tests cover them. 35 of the 42 catalogue ids have no theory today.
+* kyq's Rust code: a PWG grades theory legs only. The code uses Creusot/Pearlite and §5 tokens (W9).
+* Bytes, UTF-8, number text, KYAML syntax, TOML and Dhall: no theory covers them beyond P9. W4, W8 and W12 tests cover them. 35 of the 42 catalogue ids have no theory today.
 
 Dependencies between the tracks:
 
-* W6 implements `canon` and the member order exactly as `KyqValue` and `KyqOrder` define them, so `tv.js` (TV-1) applies to the product. Track P grades then describe the specification the product is tested against, never the product itself.
-* The W6 CST keeps header bytes apart from the value, which is the shape P9 proves.
-* P10 needs the running code from W6 and W8.
+* W4 runs `tv.js` (TV-1) on the Rust outputs. Track P grades describe the specification the product is tested against, never the product itself.
+* W5 keeps header bytes apart from the value, which is the shape P9 proves.
+* The W9 Pearlite contracts state, on the Rust functions, the properties that the spine proves at value level (member order, duplicate-key refusal, canon idempotence). The correspondence between a contract and its Agda theorem is recorded by reading, and is not a proof.
 * No Track W claim cites a PWG as a property of kyq's code.
 
 === 12.4 PWG-2i route for the 78 uncovered theorems
@@ -887,23 +884,26 @@ Extend the hand re-proved Rocq leg. Four reasons:
 
 === 12.5 Owner decisions needed
 
-D15 to D19 are proposed numbers. Each recommendation is a proposal, not a ruling.
+D15 to D21 are proposed numbers. Each recommendation is a proposal, not a ruling.
 
 * D13, theory home: (a) autoformal-fidelity, (b) resource-algebra, (c) the mathesis theory shelf. Recommend (c): its deed owns "the theory that no single system owns", and it already runs pinned Guix Agda, Rocq and Lean lanes with receipts. Rule D13 before P6. Arm (a) was not assessed for this plan.
-* D14, proof route for kyq's code: (a) add an AffineScript row to PROOF-POLICY §1, (b) sanction an Idris2 engineering leg on a model plus executed TV, (c) record that no route exists yet, as a §4 exception. Recommend (c) until W8 lands, then (b), because no running code exists to refine.
-* D15, interim execution path: (a) wait for a released, digest-pinned toolchain, (b) use a commit-pinned source build that runs `eval`, for executed fixtures only, (c) use the Bun-ESM target. Recommend (b), and never use it for a CLI or WASM claim.
-* D16, Dhall validity scope: (a) parse only, (b) parse and type-check with every import refused, (c) parse and type-check with import resolution. Recommend (b), because it matches step 16.
+* D20, implementation direction: Rust, with Creusot/Pearlite as the verifier for the code. Given on 2026-11-19 by the session requester. The owner confirms it as a ruling that supersedes D1, or reverses it before W1.
+* D14, proof route for kyq's code: answered by D20 and PROOF-POLICY §1.2. No AffineScript row is needed.
+* D15, interim AffineScript execution path: lapsed under D20.
+* D16, Dhall validity scope: the candidate type-checks Dhall with every import refused. Recommend confirming that scope.
+* D21, command surface: the candidate has 6 commands. Earlier documents list 13. Arms: (a) gate commands only (`check`, `fix`, `canon`, `validate`, `fmt`, `to-json`, `get`), (b) add `from-json` and the mutation commands `set` and `del`, (c) add lint and Kubernetes schema validation too. Recommend (a) now, because the estate route needs gates, and keep the rest as proposals.
+* Verus, Kani and Aeneas scopes for the Rust code: left to the owner. PROOF-POLICY §1.2 names Verus in the default toolset, so the ledger keeps those rows `OPEN` with that reason.
 * D17, the header and trivia gap: (a) extend the spine with a byte model, `b = h ++ c v`, (b) build a KYAML instance only for files with no header, (c) handle headers outside the theory. Recommend (a), because (b) refuses every file with an SPDX line.
 * D18, proposed ids JCS-10, JCS-11, TV-1 and FID-1: accept them into `docs/PROOF_OBLIGATIONS.adoc`, or keep them proposed. Recommend accepting all four. The spine already proves theorems for each of them (for JCS-10, only its accept-set half), so receipts can cite them.
 * D19, who signs a `RECONCILED` comparison (P4): recommend a person, or an agent session that did not draft the comparison.
 
-=== 12.6 First five work items (none waits on upstream or on an owner decision)
+=== 12.6 First five work items
 
-. P1, with the PROOF-STATUS header fix, then P2. These close DEV-1 and DEV-2 and open the path to P3.
-. W1, the upstream re-census. It decides whether Track W unblocks, and which arm D15 needs.
-. W5, the shared corpus and differential harness. Every later W gate reuses it.
-. W3 and W4 for TOML only. The Dhall half waits on D16.
-. P7 on one module (`KyqOrder`), to settle the Lean toolchain and controls before the leg grows.
+. W1, the merge of the Rust candidate. Every other W step builds on it. It needs D20 on record.
+. W2, the document reconciliation, in the same change or the next one, so that `main` does not contradict itself.
+. P1, with the PROOF-STATUS fixes, then P2. These close DEV-1 and DEV-2 and open the path to P3.
+. W4, the differential harness. W5, W8 and W12 reuse it.
+. W6, the TOML validity gate. It is the largest missing format.
 
 == References
 
