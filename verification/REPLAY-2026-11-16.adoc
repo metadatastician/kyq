@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Local proof replay, 16 November 2026
+
+These are executed Linux x86_64 checks of the current candidate's files,
+not hosted CI receipts or a proof of the complete parser. The candidate had
+uncommitted integration changes. The Windows-linked Git worktree did not expose
+a source revision to the Debian gate, so the source identities below are file
+SHA-256 digests; the gate's `source_revision` field is explicitly empty.
+
+Both gates came from `hyperpolymath/proven-cicd-and-workflows` at
+`9eb0bbf9bd80b7964ce5b9957e75821b3cd4a55b`.
+
+== Creusot and Pearlite: production implementation
+
+Subject: `bounds/src/lib.rs::consume`, source SHA-256
+`def7ff9d3734344b86e4dd782dcf9de0ed503f89dbcf3e649c806a2f1e64da60`.
+The production parser links this Rust function through `kyq-bounds`.
+
+Toolchain: cargo-creusot 0.14.0, Rust nightly-2026-08-03
+(`rustc 1.99.0-nightly`, commit `11177f223`, 2026-08-02),
+Why3 1.8.2+git and why3find 1.3.0+dev.
+The generated proof record names Alt-Ergo 2.6.4 for `Coma.vc_consume`.
+The checking boundary includes these tools and their arithmetic models.
+
+The shared `actions/creusot-check/check.sh` ran `detect`, `theatre` and
+`prove` with `WORKING_DIRECTORY=verification/bounds`, `ENFORCE_HOLLOW=true`
+and `PROVE_ARGS=--no-cache`. The false planted contract was refused and the
+true contract proved before the production obligation ran. The gate recorded:
+
+[source,text]
+----
+execution_stage=substantive
+execution_outcome=passed
+controls_passed=true
+proof_started=true
+proof_completed=true
+crates_expected=1
+crates_attempted=1
+crates_completed=1
+source_revision=
+suite_revision=9eb0bbf9bd80b7964ce5b9957e75821b3cd4a55b
+proof_exit_code=0
+----
+
+The source reader found one function-bound contract and zero `#[trusted]`
+declarations. Why3find reported `consume.coma` proved, and its generated
+proof record attributes `vc_consume` to Alt-Ergo. This is the postcondition
+about the bounded arithmetic operation; it does not prove the adequacy of
+every parser charge or the grammar.
+
+An initial attempt stopped at mise's trust check before proof execution.
+The configuration was inspected and trusted for this checkout, then the
+three phases were replayed. That stopped attempt receives no proof credit.
+The tool-version inventory also reports a CVC5 version-string recognition
+warning; the successful production VC record names Alt-Ergo, not CVC5.
+
+== Verus: independent arithmetic model
+
+Subject: `verus/budget.rs`, source SHA-256
+`965ff5b7679ed1ac7dc9afa8908d00d3c1327a45610a5cc36353d77cac365bb3`.
+Verifier: 0.2026.11.02.8bf68ee, release profile, Rust 1.99.1.
+Bundled solver: Z3 4.16.0, 64-bit.
+
+The shared `actions/verus-check/check.sh verification/verus/budget.rs` ran
+negative and positive controls, then invoked Verus with `--no-cheating
+--crate-type lib`. It exited 0 and reported:
+
+[source,text]
+----
+verification results:: 1 verified, 0 errors
+----
+
+This result proves the separate Verus model. Its refinement to the production
+implementation remains OPEN in link:PROOF-STATUS.adoc[]. Installation
+deviations and broader parser obligations also remain in that ledger.

@@ -1,0 +1,15 @@
+;; SPDX-License-Identifier: MPL-2.0
+(praxis-deed
+  :schema-version "1.0.0"
+  :canonical-name "kyq-provisioning"
+  :name "kyq"
+  :repo "metadatastician/kyq"
+  :version "0.2.0"
+  :archetype "tool"
+  :languages "rust"
+  :build "cargo build --locked"
+  :test "cargo test --locked --all-targets"
+  :bench "cargo bench --locked"
+  :lint "cargo clippy --locked --all-targets -- -D warnings"
+  :run "cargo run --locked --bin kyq -- --help"
+  :ai-say-it "Set up kyq from https://github.com/metadatastician/kyq; follow docs/AI_INSTALLATION_GUIDE.adoc and report actual checks and unresolved requirements.")

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MPL-2.0
+# Reviewed native Rust integration shape; generated output is ignored by Git.
+.containerignore # Podman context exclusions
+.editorconfig # Editor conventions
+?.git # Git metadata directory or linked-worktree file; absent in source archives
+.gitattributes # Text and language attributes
+.github # Forge workflows and community configuration
+.gitguardian.yaml # Secret-scanner configuration
+.gitignore # Generated and local files
+.gitleaksignore # Existing secret-scan allowlist
+.gitmessage # Commit-message template
+.machine_readable # Repository contracts and metadata
+Cargo.lock # Locked native dependency closure
+Cargo.toml # Rust library and CLI manifest
+CONTRIBUTING.md # Contributor entrypoint
+Containerfile # Wolfi image definition
+Justfile # Build, test, verification and provisioning recipes
+LICENSE # Code licence
+LICENSES # Additional licence texts
+README.adoc # Native capability and acceptance overview
+benches # Parsing benchmarks
+build # Provisioning and Guix support
+channels.scm # Pinned Guix channels
+conformance # Independent reference gate and normative corpus
+coordination.k9 # Project coordination protocol
+coordination.k9.ncl # Nickel session-command bindings
+docs # Specifications, onboarding, status and wiki sources
+examples # Structured-data examples
+gradings # Existing compliance configurations
+guix.scm # Guix package declaration
+kyq-launcher.sh # Compatibility launcher
+kyq_chora.deed # Single repository deed
+launcher.sh # Native launcher and provisioning entrypoint
+manifest.scm # Guix development environment
+mise.lock # Resolved development-tool versions
+mise.toml # Development-tool declarations
+rust-toolchain.toml # Rust toolchain pin
+scripts # Repository validation and canonical template tools
+session # Instantiated session policy
+src # Native Rust and historical research sources
+templates # Kubernetes examples and templates
+tests # Native tests and repository gate controls
+verification # Production contracts, model proofs and scope ledger
+www # Existing documentation website sources

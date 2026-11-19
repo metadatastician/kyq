@@ -204,8 +204,8 @@ order (`|2-` and `|-2`).
 | `[-+]?[0-9]+` | int (decimal)
 | `0o[0-7]+` | int (octal)
 | `0x[0-9a-fA-F]+` | int (hex)
-| `[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?` | float
-| `[-+]?\.(inf|Inf|INF)`, `\.(nan|NaN|NAN)` | float (non-finite)
+| `[-+]?(\.[0-9]+\|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?` | float
+| `[-+]?\.(inf\|Inf\|INF)`, `\.(nan\|NaN\|NAN)` | float (non-finite)
 | anything else | string
 |===
 

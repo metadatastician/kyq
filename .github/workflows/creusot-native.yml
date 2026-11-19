@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: MPL-2.0
+# Policy: metadatastician/standards@305743d271bac04cf271a792b703a6379e29588b
+# 3-practice/PROOF-POLICY.adoc; provisioning deviation CREUSOT-INSTALL is open
+# in verification/PROOF-STATUS.adoc. This gate covers the production budget kernel.
+name: Native budget contracts
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: creusot-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  creusot:
+    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/creusot-gate.yml@9eb0bbf9bd80b7964ce5b9957e75821b3cd4a55b
+    with:
+      working_directory: verification/bounds
+      enforce_hollow: true
