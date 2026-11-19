@@ -4,7 +4,7 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-10-23
+:revdate: 2026-11-18
 :author: Agent (Arena) + hyperpolymath
 
 Abstract: a field-ready plan to take `metadatastician/kyq` from an honest
@@ -708,6 +708,197 @@ D8 — MetaManifold adapter centralisation :: First-party boundaries behind expl
 No mathematical proof is claimed in this plan; every guarantee above is stated
 as a testable property with a named theorem that will be discharged in Phase 3
 (now Phase 6 in handover numbering: see `docs/PROOF_OBLIGATIONS.adoc`).
+
+== 12. Completion plan (2026-11-18)
+
+This section plans the rest of the work. It extends §2 to §9 and `docs/AFFINESCRIPT_STRICT_PORT.adoc` (A1 to A8) and does not restate them. Numbers in parentheses are handover steps. Every gate is fail-closed: a missing tool, an empty run or a skipped leg is a failure, never a pass (step 23). Where this section and the last paragraph of §11 differ, this section governs.
+
+=== 12.1 Starting point
+
+* Product: none of the 13 documented commands works. The 11 sources pass `affinescript check` on the pinned v0.1.1, and none of them has been compiled or run. A1 to A6 are source-check minimums only. A7 and A8 are open.
+* Oracle: `conformance/` 0.4.0 passes 524 of 524 tests (run 2026-11-18). Under D1 it is a test oracle, never the product.
+* Formats: estate routing gives kyq four formats: KYAML, I-JSON/JCS, TOML and Dhall. TOML and Dhall are validity gates (bytes preserved, not canonicalised). Neither the oracle nor the AffineScript sources handle TOML or Dhall.
+* Proofs: the Agda spine has 93 theorems, all `ungraded`. Rocq re-proves 15 of them (BRIDGE-PENDING). There is no Lean leg. `just proofs` was re-run on the committed tree at `e174f8c` on 2026-11-18 with Agda 2.6.3 and coqc 8.18.0: the Agda and Rocq legs pass, all 11 negative controls are refused, and the Lean leg is OPEN (exit 3). No CI job runs `just proofs`, and kyq has no Guix manifest. `docs/status/PROOF-STATUS.adoc` still says the tree is uncommitted, but e174f8c (PR #29) merged it.
+
+Upstream evidence, from AffineScript HEAD `70379fe` (2026-11-16; shallow clone, so no tags are visible):
+
+* `dune-project` and `affinescript.opam` say 0.1.1. `CHANGELOG.adoc` has only `[Unreleased]`. A release after v0.1.1 is unconfirmed.
+* `lib/resolve.ml` (`import_type_def`) now copies imported type definitions into the importer. Whether this clears the A3 imported-struct defect stays unconfirmed until W1 runs it.
+* `eval` now flattens multi-module programs. Upstream fixed H23 to H25 (`docs/COMPLETION-PLAN.adoc`, `test/test_module_root_flatten.ml`) after it checked and ran kyq's own sources. kyq holds no record of that run.
+* The WASM backend lowers `arg_count` and `arg_at` to `args_sizes_get` and `args_get`. It lowers `file_read(fd, n)` to `fd_read` and `file_fd_write(fd, s)` to `fd_write`. It has no `proc_exit` import, so a WASM module has no exit status. No fixture that reads fd 0 or writes fd 2 was found (unconfirmed). Imported functions compile to WASM imports, and no in-tree linker was found.
+* The CLI has no `test` subcommand. A Deno harness (`affinescript-deno-test`) exists. Whether it fits kyq is unconfirmed.
+
+Verdict: A7 (the WASI CLI) still waits on upstream for an exit status and a released, digest-pinnable build. Executed fixtures (the A8 `test` job) can start earlier only under D15.
+
+=== 12.2 Track W: a tool that works
+
+[cols="1,6,5,3",options="header"]
+|===
+|Step |Work |Gate (fail-closed) |Needs; blocked on
+
+|W1
+|Upstream re-census (step 1). Build upstream from source at a recorded commit in a scratch CI lane, not as the pin. Probe imported struct fields, `eval` of all 11 sources, argv, stdin (fd 0), stdout, stderr (fd 2), exit status and multi-module WASM. Reuse `scripts/affine-a1-probe.sh` and `scripts/affine-a2-controls.sh`.
+|`docs/status/UPSTREAM_RECENSUS.adoc` holds the CI run id and, for each capability, either an executed fixture log or FAIL.
+|None. Not blocked.
+
+|W2
+|Repin and drop the workarounds. Move `ci.yml` to the new pin and remove the A3 scoped structural aliases.
+|`ci.yml` asserts the version and SHA-256. The A2 planted twins still pass. The imported-struct twin passes without aliases.
+|W1. Blocked on an upstream release, or on D15.
+
+|W3
+|TOML and Dhall contract. Write `docs/FORMAT_GATES.adoc`: TOML 1.0.0 validity, Dhall validity per D16, bytes preserved on success, exit 0 for valid and 2 for invalid, limits per step 16, no network or file imports. Add the rows to `docs/COVERAGE_MATRIX.adoc`.
+|The document exists, the conformance contract version is bumped, and the routing rows cite the document.
+|None for TOML. D16 for Dhall.
+
+|W4
+|Add TOML and Dhall validity gates to the oracle in `conformance/`.
+|`node --test test/*.test.js` passes with new valid, invalid and byte-preservation cases. A planted gate that accepts everything fails the suite.
+|W3. The source of a TOML and Dhall test corpus is unconfirmed.
+
+|W5
+|Shared corpus and differential harness (groundwork for steps 33 to 35). Build one corpus of inputs, verdicts and canonical bytes. The harness runs any implementation from the command line and compares it with the oracle and with the pinned `ijson-jcs`.
+|The harness passes on the oracle and fails on a planted wrong implementation.
+|None. Not blocked.
+
+|W6
+|Phase 3 in AffineScript (steps 11 to 18). Order: A6 (`Ijson`, `Jcs`), then A3 (lexer, parser), then a CST that keeps header bytes apart from the value (the shape P9 proves), then A4 queries, then A5 lint rules. Port the oracle's behaviour, not its code.
+|For each module, executed AffineScript fixtures match the oracle byte for byte on the W5 corpus, and `conformance/tv/tv.js` accepts every product output. A source-check result does not count.
+|W2, W5. Blocked on upstream or D15.
+
+|W7
+|TOML and Dhall validity gates in AffineScript.
+|The W4 cases pass on the product, and output bytes equal input bytes.
+|W4, W6.
+
+|W8
+|A7: `Main` dispatches the 13 commands with argv, stdin, stdout, stderr and exit codes 0, 1 and 2 (steps 18 to 20).
+|Step 20 `wasmtime` logs for `kyq --help`, `echo '{}' \| kyq canon` and the `kyq check` exit codes.
+|W6. Blocked on upstream (`proc_exit`, multi-module WASM, a release).
+
+|W9
+|A8: real `build` and `test` CI jobs. `just build`, `just test` and `just wasm` stop failing by design.
+|The jobs pass on `main`, and `no-fabricated-artefacts` holds.
+|W8.
+
+|W10
+|The rest of Phase 4: `--capabilities` (19), reproducible install with a Guix `manifest.scm` and release checksums (21), and adapters (22).
+|The step 39 `install-smoke` job passes.
+|W9.
+
+|W11
+|Phase 5 (steps 24 to 32) in MetaManifold-WebUI. Replace the transitional standards `scripts/kyaml-format.sh` (DATA-FORMAT-ROUTING §4).
+|The §8 gate for each step, in the consumer repo.
+|W10. Needs access to the consumer repos.
+
+|W12
+|Phase 6 acceptance (steps 33 to 40), run on the product, not on the oracle.
+|The §9 gate.
+|W10, W11.
+|===
+
+=== 12.3 Track P: proof-policy compliance
+
+The reader derives every grade from receipts. No document asserts a grade (PROOF-POLICY §8.5).
+
+[cols="1,6,5,3",options="header"]
+|===
+|Step |Work |Gate (fail-closed) |Needs; blocked on
+
+|P1
+|Put the proof toolchain under Guix. Add `build/channels.scm` and `build/manifest.scm` with `agda`, `coq` and `lean4`. mathesis pins Guix `8edb9da`, and its records show that commit gives Agda 2.7.0.1, Rocq 8.18.0 and Lean 4.29.0. The spine uses `--no-libraries`, so it does not need the Guix `agda-stdlib`. Correct the stale PROOF-STATUS header.
+|`run-proofs.sh agda` and `run-proofs.sh rocq` pass in the Guix shell with no `KYQ_AGDA_VERSION` override. DEV-1 and DEV-2 are closed, with the closing change named.
+|None.
+
+|P2
+|Add a CI proof lane. On each push to `main`, it runs `just proofs-agda` and `just proofs-rocq` with their negative controls in the P1 shell. It runs `proofs-lean`, which reports OPEN (exit 3), never a pass. It runs `coqchk -o` on the Rocq library, as mathesis does.
+|A passing run URL on a `main` commit.
+|P1.
+
+|P3
+|PWG-3 receipt. Add `scripts/grade-receipt.sh`. It fetches the four standards files at a pinned commit (`745fc74` or later), checks their SHA-256 and sources `proof-receipt.sh`. Write `verification/receipts/<name>_praxis.deed` from the P2 run: the Agda leg current, with an inputs manifest from `proof-inputs-sha256.sh` and a trusted base from the import cone. The Rocq legs are `BRIDGE-PENDING` and the Lean legs `unavailable`. Use one claim per theorem, to match the census.
+|In CI, `grade-receipt.sh --check` passes, `deed_lint.js --proof-receipt-json` derives PWG-3 for 93 of 93, and `check-proof-receipt.sh --branch origin/main` passes. The reader's negative control fails as expected.
+|P2. Not blocked by D13: if the spine moves, the new home issues fresh receipts and these become `superseded`, with a reason.
+
+|P4
+|Reconcile the 15 Rocq theorems. A reviewer who did not draft the comparison checks each statement against the Agda statement (§2.2) and records the comparison and the residual assumptions.
+|The reader derives PWG-2i for those 15.
+|P3. Blocked on D19.
+
+|P5
+|Run the transport probe (the §2 default arm) once, with a fixed bound: Agda2Dedukti and Lambdapi on one module, then export to Rocq. Record the versions, the logs and the outcome.
+|A PROOF-STATUS entry that either opens a transport route or records the reason for re-proof.
+|P1. Needs the opam hosts (reachability unconfirmed).
+
+|P6
+|Cover the remaining 78 theorems in Rocq by re-proof (§12.4), one module at a time, with a statement comparison for each theorem.
+|A coverage check in `run-proofs.sh` maps each Agda theorem to one Rocq theorem. The reader derives PWG-2i for 93 of 93.
+|P4, P5. Rule D13 first, so that this large piece of work lands in its final home.
+
+|P7
+|Lean 4 leg: core library only, no Mathlib (§2), re-proved. Pin `lean-toolchain` to the Guix Lean. Add negative controls: `sorry`, a false lemma and `#print axioms`.
+|`just proofs-lean` exits 0, and the reader derives PWG-2ii.
+|P1, and the P4 review method. It can run alongside P6.
+
+|P8
+|PWG-1: run every counted checker in a container image pinned by digest. Each receipt carries `:image`.
+|The reader derives PWG-1.
+|P6, P7. No prover image was found in standards. kyq builds and pins its own unless an estate image exists (unconfirmed).
+
+|P9
+|Theory extensions: the header and trivia byte model (`b = h ++ c v`, D17), then the ids from D18. Each new theorem enters at P3 and climbs the same ladder.
+|Each new theorem appears in the receipt with a derived grade.
+|D17, D18.
+
+|P10
+|Engineering obligations on kyq's code, by the route D14 sanctions (for example the Idris2 engineering leg, P2 in `verification/proofs/README.adoc`, not started).
+|As D14 sets.
+|W6, W8. Blocked on D14.
+|===
+
+These items stay ungraded by design:
+
+* The JS oracle and its TV: they are test evidence and carry no PWG.
+* kyq's AffineScript code: a PWG grades theory legs only. Code gets a proof route only through D14 (P10).
+* Bytes, UTF-8, number text, KYAML syntax, TOML and Dhall: no theory covers them beyond P9. W5 and W12 tests cover them. 35 of the 42 catalogue ids have no theory today.
+
+Dependencies between the tracks:
+
+* W6 implements `canon` and the member order exactly as `KyqValue` and `KyqOrder` define them, so `tv.js` (TV-1) applies to the product. Track P grades then describe the specification the product is tested against, never the product itself.
+* The W6 CST keeps header bytes apart from the value, which is the shape P9 proves.
+* P10 needs the running code from W6 and W8.
+* No Track W claim cites a PWG as a property of kyq's code.
+
+=== 12.4 PWG-2i route for the 78 uncovered theorems
+
+Extend the hand re-proved Rocq leg. Four reasons:
+
+. The leg already exists: a runner, 2 negative controls, 15 proofs and a drafted comparison. The spine imports no library (`--no-libraries`, its own prelude), so restating it in Rocq is direct.
+. Transport would serve Rocq only. §2 says the Lean leg is re-proved until a released Lambdapi Lean exporter exists, so P7 re-proves the Lean leg anyway.
+. Transport adds tools that kyq does not pin: Agda2Dedukti and Lambdapi through opam, plus an export into Rocq. Whether Agda2Dedukti accepts this spine under Agda 2.7.0.1 with `--without-K --cubical-compatible` is unconfirmed.
+. The §2.2 comparison is the cost that decides the grade, and both routes pay it. A transported leg stays `ASSUMED` until its statements are compared.
+
+§2 still names transport as the default. So P5 runs one probe, and its outcome becomes the recorded reason for each re-proof (§2, "Record which").
+
+=== 12.5 Owner decisions needed
+
+D15 to D19 are proposed numbers. Each recommendation is a proposal, not a ruling.
+
+* D13, theory home: (a) autoformal-fidelity, (b) resource-algebra, (c) the mathesis theory shelf. Recommend (c): its deed owns "the theory that no single system owns", and it already runs pinned Guix Agda, Rocq and Lean lanes with receipts. Rule D13 before P6. Arm (a) was not assessed for this plan.
+* D14, proof route for kyq's code: (a) add an AffineScript row to PROOF-POLICY §1, (b) sanction an Idris2 engineering leg on a model plus executed TV, (c) record that no route exists yet, as a §4 exception. Recommend (c) until W8 lands, then (b), because no running code exists to refine.
+* D15, interim execution path: (a) wait for a released, digest-pinned toolchain, (b) use a commit-pinned source build that runs `eval`, for executed fixtures only, (c) use the Bun-ESM target. Recommend (b), and never use it for a CLI or WASM claim.
+* D16, Dhall validity scope: (a) parse only, (b) parse and type-check with every import refused, (c) parse and type-check with import resolution. Recommend (b), because it matches step 16.
+* D17, the header and trivia gap: (a) extend the spine with a byte model, `b = h ++ c v`, (b) build a KYAML instance only for files with no header, (c) handle headers outside the theory. Recommend (a), because (b) refuses every file with an SPDX line.
+* D18, proposed ids JCS-10, JCS-11, TV-1 and FID-1: accept them into `docs/PROOF_OBLIGATIONS.adoc`, or keep them proposed. Recommend accepting all four. The spine already proves theorems for each of them (for JCS-10, only its accept-set half), so receipts can cite them.
+* D19, who signs a `RECONCILED` comparison (P4): recommend a person, or an agent session that did not draft the comparison.
+
+=== 12.6 First five work items (none waits on upstream or on an owner decision)
+
+. P1, with the PROOF-STATUS header fix, then P2. These close DEV-1 and DEV-2 and open the path to P3.
+. W1, the upstream re-census. It decides whether Track W unblocks, and which arm D15 needs.
+. W5, the shared corpus and differential harness. Every later W gate reuses it.
+. W3 and W4 for TOML only. The Dhall half waits on D16.
+. P7 on one module (`KyqOrder`), to settle the Lean toolchain and controls before the leg grows.
 
 == References
 
