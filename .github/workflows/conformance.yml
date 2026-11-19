@@ -55,6 +55,14 @@ jobs:
       - name: Run the gate's test suite
         run: node --test conformance/test/*.test.js
 
+      # docs/ULTRAPLAN.adoc §12, step W4. The observed divergences must equal
+      # conformance/fixtures/oracle/native-divergences.json exactly.
+      - name: Native kyq against the gate and the translation validator
+        run: |
+          set -euo pipefail
+          cargo build --locked --bin kyq
+          node conformance/tools/native-diff.mjs --impl target/debug/kyq
+
       - name: Workflow pinning contracts and repository check
         run: |
           bash tests/workflows/check_action_pinning_test.sh

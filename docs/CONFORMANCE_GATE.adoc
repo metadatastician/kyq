@@ -47,6 +47,18 @@ gate is repo-owned tooling in the same role as `scripts/check-action-pinning.sh`
 it is the oracle the implementation must satisfy. Two rules keep that honest,
 and both are binding:
 
+`conformance/tools/native-diff.mjs` (`just conformance-native`, and a step of
+the `selftest` job) runs the native `kyq canon` on every input of the fixture
+corpus (288 inputs) and compares it with the gate, verdict for verdict and
+byte for byte. It also gives each accepted output to the translation validator
+`conformance/tv/tv.js`. The known differences are listed in
+`conformance/fixtures/oracle/native-divergences.json`, and the observed set
+must equal that list exactly. On 2026-11-19 it holds 12 rows, all of one
+class: the native tool does not implement ruling R3 yet, so it writes an
+integer token outside the safe range for inputs such as `[1e20]`, and its own
+reader refuses that output. The harness covers `canon` only: `check`, `fmt`
+and the diagnostic codes are not compared yet.
+
 . the gate MUST NOT be described as kyq's implementation in release notes, the
   README, or the deed;
 . the Rust implementation MUST pass this corpus, and the

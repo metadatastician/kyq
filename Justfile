@@ -114,6 +114,11 @@ conformance:
     node --test conformance/test/*.test.js
 conformance-oracle:
     node conformance/tools/ijson-jcs-diff.mjs
+
+# Differential run: the native kyq against the gate and the translation validator
+conformance-native:
+    cargo build --locked --bin kyq
+    node conformance/tools/native-diff.mjs --impl target/debug/kyq
 conformance-package:
     bash conformance/tools/package.sh
 repo-map:
