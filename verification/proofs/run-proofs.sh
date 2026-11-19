@@ -182,6 +182,21 @@ leg_agda() {
   echo "== Agda leg: agda $got (asserted $want_agda; estate Guix pin $pin_agda)"
   [ "$got" = "$want_agda" ] || tool "agda is $got, asserted $want_agda (set KYQ_AGDA_VERSION and record a deviation)"
   [ "$got" = "$pin_agda" ] || echo "  DEVIATION: DEV-1: Agda $got is not the Guix pin $pin_agda (PROOF-STATUS)"
+  # Agda writes the interfaces of its own primitive modules to
+  # <data dir>/lib/prim/_build. The Guix agda 2.7.0.1 store path is read-only
+  # and ships without them ("lib/prim/_build: createDirectory: permission
+  # denied"). Then Agda gets a writable copy of its data directory through
+  # Agda_datadir. The copy holds Agda's own library unchanged; the trusted-base
+  # scan below reads that copy.
+  if [ -z "${Agda_datadir:-}" ]; then
+    local data; data="$(agda --print-agda-dir)"
+    if [ ! -d "$data/lib/prim/_build" ] && [ ! -w "$data/lib/prim" ]; then
+      Agda_datadir="$scratch/agda-data"
+      mkdir -p "$Agda_datadir"; cp -r "$data/." "$Agda_datadir/"; chmod -R u+w "$Agda_datadir"
+      export Agda_datadir
+      echo "  Agda data directory is read-only without interfaces; using a writable copy"
+    fi
+  fi
   cd "$here/agda"
   find . -name '*.agdai' -delete; rm -rf _build
 
