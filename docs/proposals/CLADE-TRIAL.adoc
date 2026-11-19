@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= CLADE.deed trial on kyq
+:revdate: 2026-11-19
+:status: TRIAL DRAFT. Not a live descriptile. Nothing reads it and no check passed on it.
+
+[IMPORTANT]
+====
+Canon forbids a `CLADE.deed` until the `clade` module (A7 M3) lands (`standards` `2-protocols/chora/CHORA-SPEC.adoc` section 11.1, rule 3). The draft below is therefore a source block in a document. It moves no file and changes no check.
+====
+
+== What is tested
+
+A `CLADE.deed` is the logical and epistemological side of a repo: by what ordering principles its own content is arranged, and how a category is decided. It is never identity. That is the chora, `kyq_chora.deed` (ontological and metaphysical: what the repo is).
+
+The trial writes the ordering that kyq has today, at commit `e174f8c`, in the form that A7 section 7.2 gives for `CLADE.deed`. It describes; it does not rearrange. A first trial of the same form, on a data ledger, is in `metadatastician/fleet-ledger` pull request 4.
+
+== The content today
+
+250 tracked files in 27 top-level entries [measured: `git ls-files`]:
+
+[cols="3,1",options="header"]
+|===
+|Entry |Files
+|`conformance/` |93
+|`.github/` |66
+|`verification/` |31
+|`docs/` |19
+|`src/` |8
+|`scripts/` |5
+|`tests/` |4
+|`gradings/` |3
+|`LICENSES/`, `templates/` |2 each
+|17 other entries |1 each
+|===
+
+The product source (`src/`) is 8 of the 250 files. The other 242 files check, prove, explain or govern it.
+
+== The draft
+
+[source,lisp]
+----
+(descriptile-deed
+  :schema-version "1.0.0"
+  ; :of-chora is left out. See finding 1.
+  :in-use #t
+  (scheme
+    :kind judgement
+    :membership single
+    (category :id product :name "Product"
+      :criterion "AffineScript source of the kyq tool, or the script that starts it.")
+    (category :id oracle :name "Oracle"
+      :criterion "Executable reference for KYAML, I-JSON and JCS that the product is checked against. Not the product.")
+    (category :id proof :name "Proof"
+      :criterion "Machine-checked theory, its controls and its runner.")
+    (category :id trial :name "Trial"
+      :criterion "A test or a benchmark, with its fixtures.")
+    (category :id sample :name "Sample"
+      :criterion "A Kubernetes manifest kept as an example or a template for a user.")
+    (category :id record :name "Record"
+      :criterion "Prose for a reader: specification, plan, status, proposal, or a grading.")
+    (category :id tooling :name "Tooling"
+      :criterion "A recipe, script or tool setting that a developer or CI runs or reads.")
+    (category :id governance :name "Governance"
+      :criterion "Identity, licence, coordination, or forge policy and workflows."))
+  (placement :path "src" :category product)
+  (placement :path "kyq-launcher.sh" :category product)
+  (placement :path "conformance" :category oracle)
+  (placement :path "verification" :category proof)
+  (placement :path "tests" :category trial)
+  (placement :path "benches" :category trial)
+  (placement :path "examples" :category sample)
+  (placement :path "templates" :category sample)
+  (placement :path "docs" :category record)
+  (placement :path "README.adoc" :category record)
+  (placement :path "CONTRIBUTING.md" :category record)
+  (placement :path "gradings" :category record)
+  (placement :path "Justfile" :category tooling)
+  (placement :path "scripts" :category tooling)
+  (placement :path ".editorconfig" :category tooling)
+  (placement :path ".gitattributes" :category tooling)
+  (placement :path ".gitignore" :category tooling)
+  (placement :path ".gitmessage" :category tooling)
+  (placement :path ".gitguardian.yaml" :category tooling)
+  (placement :path ".gitleaksignore" :category tooling)
+  (placement :path ".trusted-base-ignore" :category tooling)
+  (placement :path "kyq_chora.deed" :category governance)
+  (placement :path "coordination.k9" :category governance)
+  (placement :path "LICENSE" :category governance)
+  (placement :path "LICENSES" :category governance)
+  (placement :path ".github" :category governance)
+  (placement :path "www" :category governance))
+----
+
+Choices:
+
+* `judgement`, not `strict`: the 8 categories are the author's reading of the layout. Nobody ratified them, and no check decides them.
+* `single`: each top-level entry is placed once. Findings 3 and 4 show where that is tight.
+* Placements stop at the top level. Every tracked file is under exactly 1 of the 27 placed paths.
+
+== Findings
+
+. *`:of-chora` cannot be written.* A7 requires `:of-chora` to be an opaque `#uuid` literal (YD08). `kyq_chora.deed` still carries the legacy form `#u5"github.com/metadatastician/kcq"`. The registry mints the v8 id, and it is never guessed, so the draft has no `:of-chora`. A live `CLADE.deed` for kyq waits on that id as well as on M3.
+. *The chora already holds a content ordering.* The `(ply …)` clause of `kyq_chora.deed` lists 13 directories with a description each. That is content organisation inside the identity record. The clause is also out of date: it lists `bin` and `dist`, which are not tracked, and omits `verification`, `scripts`, `www` and `LICENSES` [measured against `git ls-files`]. `standards` `1-formats/deed/mappings/ply-manifest-decision.adoc` (option B) calls `CLADE.deed` the correct layer for a directory map, and records a limit that this draft also meets: the form has no member for a directory's description, so the 13 descriptions have no place in it. Nothing is changed here.
+. *kyq has a strict ordering, one level down, and the form cannot hold it.* Under `conformance/fixtures/kyaml/`, the directory is the verdict: all 14 files in `valid/` have `"expect":"valid"` and all 35 in `invalid/` have `"expect":"invalid"` in `cases.json`, and `conformance/test/corpus.test.js` fails if a fixture has no expectation or an expectation has no fixture [measured]. That is a `strict` scheme with a real grounding. The top level is `judgement`. The form holds 1 `(scheme …)` for the repo, so it can state one of the two. The fleet-ledger trial found the same limit from the other side: a local scheme with no home.
+. *`single` hides mixed directories.* `tests/` holds product tests (`*.affine`) and a test of repo tooling (`tests/workflows/`). `docs/` holds 4 kinds of prose (specification, plan, status, proposal), and only `status/` and `proposals/` have a directory. `gradings/` is placed as a record, but its files state feature status in TOML. Placing at the top level states none of this.
+. *Two paths, one role.* `CONTRIBUTING.md` and `.github/CONTRIBUTING.md` both exist and differ. `examples/` and `templates/` both hold sample manifests. A scheme with criteria makes such pairs visible; under `judgement` nothing reports them.
+. *Missing members.* A descriptile in use needs `:affirmed` and `:affirmed-by` (A7 YD06). Those are the owner's to give. The nesting of `(category …)` in `(scheme …)`, with `(placement …)` beside it, follows the registry seed in CHORA-SPEC 8.4. No linter confirmed it.
