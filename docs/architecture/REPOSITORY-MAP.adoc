@@ -53,6 +53,10 @@ predecessors did.
 | yes
 | Repository contracts and metadata
 
+| `.trusted-base-ignore`
+| yes
+| Trusted-base scan exemptions for the planted proof negative controls
+
 | `CONTRIBUTING.md`
 | yes
 | Contributor entrypoint

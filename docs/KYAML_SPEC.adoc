@@ -560,8 +560,8 @@ KYAML with wrong Kubernetes content, and belongs to the lint rules.
 |===
 
 What is *not* claimed here: no mechanised proof, no proof that the UTF-16 sort
-is a total order, and no claim that the AffineScript implementation in `src/`
-(which does not yet compile) satisfies this spec. The gate is a reference
+is a total order, and no claim that the Rust implementation in `src/`
+satisfies this whole spec (it is tested against part of the corpus). The gate is a reference
 implementation and a conformance oracle; `docs/status/ROADMAP.adoc` keeps that
 distinction explicit. Formal obligations stay in `docs/PROOF_OBLIGATIONS.adoc`.
 

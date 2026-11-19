@@ -4,7 +4,7 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-11-18
+:revdate: 2026-11-19
 :author: Agent (Arena) + hyperpolymath
 
 Abstract: a field-ready plan to take `metadatastician/kyq` from an honest
@@ -19,6 +19,17 @@ be proved working on top of KYAML; then packaging, integration, and evidence.
 Mathematical proofs are catalogued, not discharged, in this document. This
 revision integrates the 40-step production integration handover (2026-10-23) as
 the normative Phase 1–6 breakdown.
+
+[IMPORTANT]
+====
+*Direction change (2026-11-19).* The implementation is Rust
+(`coordination.k9`, invariant `rust-verification-stack`). §0 to §11 below
+describe the earlier strict AffineScript route (D1). They are kept as a
+historical record: the handover step numbers (1 to 40) and the Phase gates
+still define what "done" means, but every statement about AffineScript,
+WebAssembly input or "nothing builds" is not current. §12 is the current
+plan.
+====
 
 toc::[]
 
@@ -887,7 +898,7 @@ Extend the hand re-proved Rocq leg. Four reasons:
 D15 to D21 are proposed numbers. Each recommendation is a proposal, not a ruling.
 
 * D13, theory home: (a) autoformal-fidelity, (b) resource-algebra, (c) the mathesis theory shelf. Recommend (c): its deed owns "the theory that no single system owns", and it already runs pinned Guix Agda, Rocq and Lean lanes with receipts. Rule D13 before P6. Arm (a) was not assessed for this plan.
-* D20, implementation direction: Rust, with Creusot/Pearlite as the verifier for the code. Given on 2026-11-19 by the session requester. The owner confirms it as a ruling that supersedes D1, or reverses it before W1.
+* D20, implementation direction: Rust, with Creusot/Pearlite as the verifier for the code. Given on 2026-11-19 by the session requester. The candidate's `coordination.k9` already carries the invariant `rust-verification-stack` and cites an owner instruction for it. The owner confirms D20 as the ruling that supersedes D1, and adds it to §11.
 * D14, proof route for kyq's code: answered by D20 and PROOF-POLICY §1.2. No AffineScript row is needed.
 * D15, interim AffineScript execution path: lapsed under D20.
 * D16, Dhall validity scope: the candidate type-checks Dhall with every import refused. Recommend confirming that scope.

@@ -40,16 +40,16 @@ program that parses KYAML, bridges to JSON, validates strictly per I-JSON, and
 emits JCS bytes — with a CLI whose exit codes, printed lines and diagnostics are
 part of the contract.
 
-The gate is **not** the kyq implementation. `coordination.k9` requires all
-implementation code to be AffineScript, and the AffineScript implementation
-under `src/` does not yet compile (see `docs/status/A1_GRAMMAR_CENSUS.adoc`). The
+The gate is **not** the kyq implementation. The implementation is the Rust
+code under `src/` (`coordination.k9`, invariant `rust-verification-stack`).
+The native suites check the 118 bridge vectors and the 49 KYAML fixtures (`docs/NATIVE-MIGRATION.adoc`); agreement on the full gate corpus is step W4 of `docs/ULTRAPLAN.adoc` §12. The
 gate is repo-owned tooling in the same role as `scripts/check-action-pinning.sh`:
 it is the oracle the implementation must satisfy. Two rules keep that honest,
 and both are binding:
 
 . the gate MUST NOT be described as kyq's implementation in release notes, the
   README, or the deed;
-. when the AffineScript implementation builds, it MUST pass this corpus, and the
+. the Rust implementation MUST pass this corpus, and the
   differential test then compares three implementations (the Rust
   `ijson-jcs` oracle, this gate, and kyq) instead of substituting one for the
   other.
