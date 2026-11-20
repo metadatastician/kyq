@@ -19,6 +19,11 @@ fn scalar_strings_are_not_retyped() {
     for value in [
         "...",
         "---",
+        "... ?",
+        "--- x",
+        "...x",
+        "---\tx",
+        "... # c",
         "yes",
         "On",
         "0o7",
@@ -174,4 +179,71 @@ fn emitter_rejects_merge_keys() {
 fn single_quoted_trailing_backslash_is_literal() {
     let docs = parse(b"a: 'x\\'\nb: yes\n", Format::Kyaml).unwrap();
     assert_eq!(docs[0]["a"], "x\\");
+}
+
+/// docmatrix fuzz finding (kyaml target): `"   ... ?"` read as the string
+/// `... ?`, which the emitter wrote plain and the reader then took as a
+/// document-end marker followed by content.
+#[test]
+fn document_marker_prefixes_round_trip_as_keys_and_values() {
+    for text in ["... ?", "--- x", "...", "---", "... # c", "---\tx"] {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(text.to_owned(), Value::String(text.into()));
+        for docs in [
+            vec![Value::String(text.into())],
+            vec![Value::Object(map.into_iter().collect())],
+        ] {
+            let yaml = format_documents(&docs).unwrap();
+            assert_eq!(
+                parse(&yaml, Format::Kyaml).unwrap(),
+                docs,
+                "{:?}",
+                String::from_utf8_lossy(&yaml)
+            );
+        }
+    }
+    assert_eq!(
+        canonicalize(b"   ... ?", Format::Kyaml).unwrap(),
+        canonicalize(
+            &format_documents(&parse(b"   ... ?", Format::Kyaml).unwrap()).unwrap(),
+            Format::Kyaml
+        )
+        .unwrap()
+    );
+}
+
+/// docmatrix fuzz findings (json, jcs targets): U+FEFF was emitted raw. At the
+/// start of the stream the reader strips it as a byte-order mark (the value
+/// silently changed); elsewhere the reader rejects it (BOM_MIDSTREAM).
+#[test]
+fn byte_order_marks_in_strings_round_trip() {
+    for json in [
+        "\"\u{feff}qqqqqqq`0\"",
+        "{\"a1\u{feff}006i\":2}",
+        "[\"\u{feff}\", \"a\u{feff}b\"]",
+        "{\"\u{feff}\":\"\u{feff}\"}",
+    ] {
+        let docs = parse(json.as_bytes(), Format::Json).unwrap();
+        let yaml = format_documents(&docs).unwrap();
+        assert_eq!(
+            canonicalize(&yaml, Format::Kyaml).unwrap(),
+            canonicalize(json.as_bytes(), Format::Json).unwrap(),
+            "{:?}",
+            String::from_utf8_lossy(&yaml)
+        );
+    }
+}
+
+/// Noncharacters have no KYAML spelling; the JSON reader must refuse them so
+/// the emitter is never asked to write one.
+#[test]
+fn noncharacters_are_rejected_before_emission() {
+    for json in [
+        "\"\\ufdd0\"",
+        "\"\\uffff\"",
+        "\"\u{fffe}\"",
+        "\"\u{1fffe}\"",
+    ] {
+        assert!(parse(json.as_bytes(), Format::Json).is_err(), "{json}");
+    }
 }

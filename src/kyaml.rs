@@ -119,10 +119,56 @@ fn path_before(text: &str, index: usize) -> Option<String> {
     None
 }
 
+/// Character offsets for yaml-rust2 markers.
+///
+/// yaml-rust2 (0.11.1 through at least 0.13.0) advances `Marker::index` and
+/// `Marker::col` by UTF-8 *bytes* across block-scalar content lines but by
+/// *chars* everywhere else, so `index` can overshoot the input. `line` is
+/// exact. `col` is exact except after block-scalar content, where the true
+/// position is the end of that line. Deriving the offset from `line` and
+/// clamping `col` to the line end therefore recovers the exact character
+/// offset, and the result is always `<= len`.
+#[derive(Debug, Default)]
+struct Positions {
+    line_starts: Vec<usize>,
+    len: usize,
+}
+
+impl Positions {
+    fn new(chars: &[char]) -> Self {
+        let line_starts = std::iter::once(0)
+            .chain(
+                chars
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| **c == '\n')
+                    .map(|(i, _)| i + 1),
+            )
+            .collect();
+        Self {
+            line_starts,
+            len: chars.len(),
+        }
+    }
+
+    /// Character offset of `m`, in `0..=len`.
+    fn index(&self, m: Marker) -> usize {
+        let Some(&start) = self.line_starts.get(m.line().saturating_sub(1)) else {
+            return self.len;
+        };
+        let end = self
+            .line_starts
+            .get(m.line())
+            .map_or(self.len, |next| next - 1);
+        start.saturating_add(m.col()).min(end)
+    }
+}
+
 fn syntax_error(error: ScanError, text: &str, path: &str) -> Error {
     let message = error.to_string();
     let m = *error.marker();
     let chars: Vec<char> = text.chars().collect();
+    let at = Positions::new(&chars).index(m);
     let source = text.lines().nth(m.line() - 1).unwrap_or("");
     let indent = source.chars().take_while(|c| *c == ' ').count();
     if message.contains("tabs disallowed") {
@@ -180,7 +226,7 @@ fn syntax_error(error: ScanError, text: &str, path: &str) -> Error {
     {
         "TAB_INDENT"
     } else if message.contains("while scanning a tag") {
-        let suffix = &chars[m.index()..];
+        let suffix = &chars[at..];
         if let Some(end) = suffix
             .iter()
             .position(|c| matches!(c, '[' | '{' | ',' | ' ' | '\t' | '\n'))
@@ -196,7 +242,7 @@ fn syntax_error(error: ScanError, text: &str, path: &str) -> Error {
     } else if message.contains("invalid Unicode character escape") {
         // The dependency reports the opening quote. The public contract points
         // at the escape letter whose numeric value is not a Unicode scalar.
-        let mut index = m.index() + 1;
+        let mut index = at + 1;
         while index < chars.len() && chars[index] != '\n' {
             if chars[index] == '\\' {
                 let digits = match chars.get(index + 1) {
@@ -210,7 +256,7 @@ fn syntax_error(error: ScanError, text: &str, path: &str) -> Error {
                     if u32::from_str_radix(&hex, 16).is_ok_and(|n| (0xd800..=0xdfff).contains(&n)) {
                         return Error::new("LONE_SURROGATE", message).at(
                             m.line(),
-                            m.col() + index - m.index() + 2,
+                            m.col() + index - at + 2,
                             "",
                         );
                     }
@@ -229,17 +275,17 @@ fn syntax_error(error: ScanError, text: &str, path: &str) -> Error {
     {
         "PLAIN_INDICATOR"
     } else if message.contains("expected ',' or") {
-        if m.index() >= chars.len() {
+        if at >= chars.len() {
             "UNTERMINATED_FLOW"
         } else {
             "FLOW_SEPARATOR"
         }
     } else if chars
-        .get(m.index()..m.index().saturating_add(3))
+        .get(at..at.saturating_add(3))
         .is_some_and(|s| s == ['-', '-', '-'] || s == ['.', '.', '.'])
     {
         "UNTERMINATED_FLOW"
-    } else if chars.get(m.index()) == Some(&',') {
+    } else if chars.get(at) == Some(&',') {
         "EMPTY_VALUE"
     } else if message.contains("mapping values are not allowed") {
         "MAPPING_IN_VALUE"
@@ -261,7 +307,7 @@ fn syntax_error(error: ScanError, text: &str, path: &str) -> Error {
             | "UNEXPECTED_CONTENT"
     );
     let recovered = if code == "MAPPING_IN_VALUE" {
-        path_before(text, m.index())
+        path_before(text, at)
     } else {
         None
     };
@@ -404,6 +450,7 @@ fn scalar(
 
 #[derive(Default)]
 struct Lexical {
+    positions: Positions,
     tags: HashMap<usize, Marker>,
     key_errors: HashMap<usize, Error>,
 }
@@ -429,6 +476,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
     }
     let source_lines: Vec<&str> = text.lines().collect();
     let chars: Vec<char> = text.chars().collect();
+    lexical.positions = Positions::new(&chars);
     let mut scanner = Scanner::new(text.chars());
     let mut previous_scalar: Option<(Marker, TScalarStyle)> = None;
     let mut key_pending = false;
@@ -471,7 +519,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
                     && key.line() != m.line()
                 {
                     lexical.key_errors.insert(
-                        key.index(),
+                        lexical.positions.index(key),
                         located(
                             "MULTILINE_KEY",
                             "a flow mapping key must end on its first line",
@@ -488,7 +536,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
                 ) {
                     // Find the closing quote in the source; decoded escapes do
                     // not shorten the grammar's implicit-key length.
-                    quoted_length(&chars[m.index()..], *style)
+                    quoted_length(&chars[lexical.positions.index(m)..], *style)
                 } else {
                     value.chars().count()
                 };
@@ -528,7 +576,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
                 }
                 has_anchor = true;
                 property_start.get_or_insert(m);
-                let end = m.index() + 1 + name.chars().count();
+                let end = lexical.positions.index(m) + 1 + name.chars().count();
                 if matches!(chars.get(end), Some('[' | '{')) {
                     return Err(Error::new(
                         "PROPERTY_SEPARATION",
@@ -569,7 +617,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
             }
             _ => {
                 if let Some(tag) = tag_mark.take() {
-                    lexical.tags.insert(m.index(), tag);
+                    lexical.tags.insert(lexical.positions.index(m), tag);
                 }
                 property_start = None;
                 has_anchor = false;
@@ -577,7 +625,7 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
             }
         }
         match token.1 {
-            TokenType::Key if chars.get(m.index()) == Some(&'?') => {
+            TokenType::Key if chars.get(lexical.positions.index(m)) == Some(&'?') => {
                 return Err(located(
                     "UNSUPPORTED_COMPLEX_KEY",
                     "explicit keys are outside KYAML",
@@ -590,8 +638,12 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
         // The scanner folds multiline scalars. Check their source span before
         // accepting that lossy normalization. Block scalars are intentionally exempt.
         if let Some((start, style)) = previous_scalar.take() {
-            let end = m.index().min(chars.len()).max(start.index());
-            let source: String = chars[start.index()..end].iter().collect();
+            let end = lexical
+                .positions
+                .index(m)
+                .min(chars.len())
+                .max(lexical.positions.index(start));
+            let source: String = chars[lexical.positions.index(start)..end].iter().collect();
             if matches!(
                 style,
                 TScalarStyle::SingleQuoted | TScalarStyle::DoubleQuoted
@@ -638,15 +690,15 @@ fn lexical_checks(text: &str) -> Result<Lexical, Error> {
             if style == TScalarStyle::Plain {
                 // A plain scalar containing embedded whitespace from a later
                 // source line is rejected in the event pass using its token span.
-                let source_prefix: String = chars[m.index()..]
+                let source_prefix: String = chars[lexical.positions.index(m)..]
                     .iter()
                     .take(value.chars().count())
                     .collect();
                 if source_prefix != *value || value.contains(['\n', '\r']) {
-                    let continuation = chars[m.index()..]
+                    let continuation = chars[lexical.positions.index(m)..]
                         .iter()
                         .position(|c| *c == '\n')
-                        .map(|n| m.index() + n + 1);
+                        .map(|n| lexical.positions.index(m) + n + 1);
                     if let Some(start) = continuation {
                         let indent = chars[start..].iter().take_while(|c| **c == ' ').count();
                         return Err(
@@ -773,7 +825,12 @@ impl Reader<'_> {
         let (value, size, anchor) = match event {
             Event::Scalar(text, style, anchor, tag) => {
                 self.charge(text.len().saturating_add(64), m, path)?;
-                let tag_mark = self.lexical.tags.get(&m.index()).copied().unwrap_or(m);
+                let tag_mark = self
+                    .lexical
+                    .tags
+                    .get(&self.lexical.positions.index(m))
+                    .copied()
+                    .unwrap_or(m);
                 (scalar(&text, style, &tag, m, tag_mark, path)?, 1, anchor)
             }
             Event::Alias(id) => {
@@ -810,7 +867,11 @@ impl Reader<'_> {
                 check_tag(
                     &tag,
                     "seq",
-                    self.lexical.tags.get(&m.index()).copied().unwrap_or(m),
+                    self.lexical
+                        .tags
+                        .get(&self.lexical.positions.index(m))
+                        .copied()
+                        .unwrap_or(m),
                     path,
                 )?;
                 self.charge(64, m, path)?;
@@ -846,7 +907,11 @@ impl Reader<'_> {
                 check_tag(
                     &tag,
                     "map",
-                    self.lexical.tags.get(&m.index()).copied().unwrap_or(m),
+                    self.lexical
+                        .tags
+                        .get(&self.lexical.positions.index(m))
+                        .copied()
+                        .unwrap_or(m),
                     path,
                 )?;
                 self.charge(64, m, path)?;
@@ -857,7 +922,11 @@ impl Reader<'_> {
                     if event == Event::MappingEnd {
                         break;
                     }
-                    if let Some(mut error) = self.lexical.key_errors.remove(&m.index()) {
+                    if let Some(mut error) = self
+                        .lexical
+                        .key_errors
+                        .remove(&self.lexical.positions.index(m))
+                    {
                         error.path = path.to_owned();
                         return Err(error);
                     }
@@ -910,6 +979,24 @@ impl Reader<'_> {
         Ok((value, size))
     }
 }
+/// Why `ch` may not appear raw inside a KYAML stream, if it may not.
+///
+/// A carriage return is allowed only before a line feed and a byte-order mark
+/// only as the first character; callers handle those positions. The emitter
+/// escapes every character this rejects, so the two cannot drift apart.
+pub(crate) fn forbidden_raw(ch: char) -> Option<&'static str> {
+    match ch {
+        '\u{feff}' => Some("BOM_MIDSTREAM"),
+        '\u{fffe}' | '\u{ffff}' => Some("NONCHARACTER"),
+        '\0'..='\u{8}'
+        | '\u{b}'..='\u{c}'
+        | '\u{e}'..='\u{1f}'
+        | '\u{7f}'..='\u{84}'
+        | '\u{86}'..='\u{9f}' => Some("CONTROL_CHARACTER"),
+        _ => None,
+    }
+}
+
 pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
     // Validate the original stream before stripping its optional BOM. Positions
     // count Unicode scalar values, including astral characters, rather than bytes.
@@ -918,14 +1005,8 @@ pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
     while let Some(ch) = chars.next() {
         let code = match ch {
             '\r' if chars.peek() != Some(&'\n') => Some("INVALID_NEWLINE"),
-            '\u{feff}' if index != 0 => Some("BOM_MIDSTREAM"),
-            '\u{fffe}' | '\u{ffff}' => Some("NONCHARACTER"),
-            '\0'..='\u{8}'
-            | '\u{b}'..='\u{c}'
-            | '\u{e}'..='\u{1f}'
-            | '\u{7f}'..='\u{84}'
-            | '\u{86}'..='\u{9f}' => Some("CONTROL_CHARACTER"),
-            _ => None,
+            '\u{feff}' if index == 0 => None,
+            ch => forbidden_raw(ch),
         };
         if let Some(code) = code {
             return Err(
@@ -976,4 +1057,59 @@ pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
         }
     }
     Ok(docs)
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::*;
+
+    fn markers(text: &str) -> Vec<Marker> {
+        Scanner::new(text.chars()).map(|token| token.0).collect()
+    }
+
+    #[test]
+    fn offsets_never_exceed_the_input() {
+        for text in [
+            "|\n 2\u{fef7}",
+            "|\n 2\u{fef7}\n8",
+            "a: |\n  日本\nb: c\n",
+            "",
+            "\n\n",
+        ] {
+            let chars: Vec<char> = text.chars().collect();
+            let positions = Positions::new(&chars);
+            for m in markers(text) {
+                assert!(positions.index(m) <= chars.len(), "{text:?} {m:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn offsets_after_block_scalars_match_ascii_content() {
+        for (wide, narrow) in [("é", "z"), ("日本", "zz"), ("🦀\u{fef7}", "zz")] {
+            let index = |content: &str| {
+                let text = format!("|\n {content}\n8");
+                let chars: Vec<char> = text.chars().collect();
+                let positions = Positions::new(&chars);
+                markers(&text)
+                    .into_iter()
+                    .map(|m| positions.index(m))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(index(wide), index(narrow));
+        }
+        // The raw yaml-rust2 index drifts; the derived offset does not. The
+        // first content character is buffered and counted correctly; later
+        // ones are counted in bytes.
+        let text = "|\n zé\n8";
+        let chars: Vec<char> = text.chars().collect();
+        let plain = markers(text)[2];
+        assert_eq!(
+            plain.index(),
+            7,
+            "yaml-rust2 behaviour changed; revisit Positions"
+        );
+        assert_eq!(Positions::new(&chars).index(plain), 6);
+        assert_eq!(chars[6], '8');
+    }
 }

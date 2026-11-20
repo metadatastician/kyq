@@ -2,16 +2,26 @@
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
 use crate::{Error, Value};
 
+/// Characters written as `\\u` escapes inside a double-quoted string: every
+/// character the reader rejects raw, plus line terminators and controls that
+/// the reader would otherwise fold or strip (a leading U+FEFF is removed as a
+/// byte-order mark).
+fn must_escape(ch: char) -> bool {
+    ch.is_control()
+        || matches!(ch, '\u{2028}' | '\u{2029}')
+        || crate::kyaml::forbidden_raw(ch).is_some()
+}
+
 fn string(value: &str) -> String {
     let unsafe_plain = value.is_empty()
         || value != value.trim()
-        || value
-            .chars()
-            .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+        || value.chars().any(must_escape)
         || value == "-"
         || value.starts_with("- ")
-        || value == "..."
-        || value == "---"
+        // A line beginning with a document marker followed by a blank is read
+        // as that marker, so quote every string that starts with one.
+        || value.starts_with("...")
+        || value.starts_with("---")
         || value.contains(" #")
         || value.contains(": ")
         || value.ends_with(':')
@@ -28,7 +38,7 @@ fn string(value: &str) -> String {
             match ch {
                 '\\' => quoted.push_str("\\\\"),
                 '"' => quoted.push_str("\\\""),
-                ch if ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}') => {
+                ch if must_escape(ch) => {
                     use std::fmt::Write;
                     write!(quoted, "\\u{:04x}", ch as u32).unwrap();
                 }
@@ -120,5 +130,21 @@ pub(crate) fn format(docs: &[Value]) -> Result<Vec<u8>, Error> {
         Ok(vec![])
     } else {
         Ok((lines.join("\n") + "\n").into_bytes())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Exhaustive over every Unicode scalar value: nothing the reader rejects
+    /// raw can be emitted raw.
+    #[test]
+    fn every_character_the_reader_rejects_is_escaped() {
+        for ch in (0..=0x10ffff).filter_map(char::from_u32) {
+            if crate::kyaml::forbidden_raw(ch).is_some() || ch == '\r' {
+                assert!(must_escape(ch), "U+{:04X}", ch as u32);
+            }
+        }
     }
 }
