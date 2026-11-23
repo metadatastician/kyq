@@ -53,11 +53,14 @@ corpus (288 inputs) and compares it with the gate, verdict for verdict and
 byte for byte. It also gives each accepted output to the translation validator
 `conformance/tv/tv.js`. The known differences are listed in
 `conformance/fixtures/oracle/native-divergences.json`, and the observed set
-must equal that list exactly. On 2026-11-19 it holds 12 rows, all of one
-class: the native tool does not implement ruling R3 yet, so it writes an
-integer token outside the safe range for inputs such as `[1e20]`, and its own
-reader refuses that output. The harness covers `canon` only: `check`, `fmt`
-and the diagnostic codes are not compared yet.
+must equal that list exactly. The baseline on 2026-11-19 held 12 R3
+float-closure differences. The native strict JSON and KYAML implementation
+was corrected on 2026-11-23: on the same 288-input corpus all 288 now
+agree, and the listed native-divergences set is empty. This does not
+resolve separate JS-oracle-versus-upstream ijson-jcs policy deviations.
+The native harness covers `canon` only: `check`, `fmt` and diagnostic
+codes are not yet compared. The zero-divergence claim applies to this
+specific corpus and contract revision, not to all possible inputs.
 
 . the gate MUST NOT be described as kyq's implementation in release notes, the
   README, or the deed;

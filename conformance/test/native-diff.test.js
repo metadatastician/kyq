@@ -15,7 +15,11 @@ import test from "node:test";
 import { cleanupTemp, conformanceRoot, makeTempDir, writeTemp } from "./helpers.js";
 
 const tool = join(conformanceRoot, "tools", "native-diff.mjs");
-const diff = (impl) => spawnSync(process.execPath, [tool, "--impl", impl], { encoding: "utf8" });
+const diff = (impl, listed) => spawnSync(
+  process.execPath,
+  [tool, "--impl", impl, ...(listed ? ["--divergences", listed] : [])],
+  { encoding: "utf8" },
+);
 
 function planted(body) {
   const dir = makeTempDir();
@@ -36,13 +40,18 @@ test("an implementation that accepts everything as {} is caught", () => {
   }
 });
 
-test("an implementation that refuses everything is caught, and listed rows go stale", () => {
+test("an implementation that refuses everything and a planted stale row are caught", () => {
   const { dir, path } = planted("process.exit(2);");
   try {
-    const result = diff(path);
+    // Test exception-list staleness independently of the live exception
+    // count, which should be zero after native R3 conformance is repaired.
+    const listed = writeTemp(dir, "stale-divergences.json", JSON.stringify({
+      divergences: [{ case: "planted/stale", difference: "bytes-differ" }],
+    }));
+    const result = diff(path, listed);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /UNLISTED .*gate-accepts impl-refuses/);
-    assert.match(result.stderr, /STALE /);
+    assert.match(result.stderr, /STALE\s+planted\/stale/);
   } finally {
     cleanupTemp(dir);
   }
