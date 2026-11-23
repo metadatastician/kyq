@@ -1,57 +1,8 @@
 {
   "schema": "kyq-conformance-corpus-v1",
   "kind": "native-divergences",
-  "note": "Rows where the native Rust kyq `canon` differs from the gate on the fixture corpus, as measured by tools/native-diff.mjs. The observed set must equal this list exactly. All rows are one class: owner ruling R3 (2026-11-17, fixtures/oracle/divergences.json). The gate refuses a finite float whose RFC 8785 text is an integer token outside +-(2^53-1) (UNSAFE_FLOAT_INTEGER). The native tool accepts it and writes that integer token, which its own JSON reader then refuses (INVALID_IJSON), so its canon output is not valid input. The independent translation validator (tv/tv.js) rejects those outputs. Status: OPEN. The native tool does not implement R3 yet; a row leaves this list when it does.",
+  "note": "The twelve R3 float-closure mismatches first recorded 2026-11-19 were eliminated by the native strict JSON and KYAML input checks on 2026-11-23. The native-diff corpus now records zero exceptions. This ledger covers native kyq versus the JS gate only; independent JS-versus-upstream ijson-jcs deviations remain tracked separately.",
   "ruling": "R3 (2026-11-17)",
-  "status": "open",
-  "divergences": [
-    {
-      "case": "ijson/float-token-beyond-u64",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "ijson/float-1e18-integer-shaped",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "ijson/float-negative-1e18-integer-shaped",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "ijson/float-2p53-plus-1",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "ijson/float-2p53",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "ijson/float-1e20-integer-shaped",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "rfc8785/number/1e20",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "rfc8785/number/123456789012345680000.0",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "rfc8785/number/9007199254740992.0",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "oracle/canonVectors/number-serialisation",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "oracle/acceptVectors/float-token-beyond-u64",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    },
-    {
-      "case": "oracle/acceptVectors/float-tokens",
-      "difference": "gate-refuses (UNSAFE_FLOAT_INTEGER) impl-accepts; tv-rejects-impl-output (output)"
-    }
-  ]
+  "status": "closed",
+  "divergences": []
 }

@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath)
+= kyq: architecture decisions, seams and proof obligations
+:revdate: 2026-11-23
+:toc:
+:toclevels: 3
+:status: REVIEW PROPOSAL (not a new owner ruling)
+
+This companion to link:../ULTRAPLAN.adoc[the ultraplan] records the reasoning that should be completed at Extra High before delegating ordinary implementation to High. Scope: metadatastician/kyq only; kyX is a separate possible future consumer, not an implementation target. Observed source snapshot: main 77a622d129b84f07e4558c5595576757fd846470, 2026-11-23. Status labels distinguish OBSERVED evidence, PROPOSED design, and UNKNOWN execution.
+
+== 1. Product definition and ownership (A-01)
+
+The native Rust implementation merged in PR #30 on 2026-11-19. Cargo v0.2.0 implements six commands (validate, canon, to-json, fmt, get, check), and accepts KYAML, I-JSON, explicit JCS and import-free Dhall. TOML, native fix, an installed capability report, native TOML query and broader Kubernetes schema lint are not established. Source of truth: Cargo.toml, src/main.rs, src/lib.rs and PR #30.
+
+Define four completion gates: G0 = demonstrably functional installed Rust executable; G1 = complete four-family *estate validity/canonicalisation gate* for KYAML, JSON/JCS, Dhall and TOML with declared capability boundaries; G2 = standalone portable, auditable release and estate adoption; G3 = original expanded Kubernetes-aware yq-like linter, query and mutation vision. G3 remains visible and requires a separately scoped charter decision. Do not collapse G1, G2 and G3 into a single percentage. Do not promise complete yq compatibility from G1.
+
+== 2. Data flow, seams and observed risks
+
+[source,text]
+----
+untrusted bytes -- S-01 input guard --> S-02 per-format parser/typechecker
+                                     |  KYAML yaml-rust2 -> Value
+                                     |  JSON/JCS ijson-jcs -> Value
+                                     |  Dhall serde_dhall -> Value
+                                     |  TOML: absent, must retain TOML types
+                         S-03 semantic operation / explicit loss policy
+                           |        |           |
+                         canon    fmt/check     fix: absent
+                           \        |          /
+                           S-04 output / safe filesystem writes
+                                     |
+                        S-07 releases / S-08 consumers
+S-05 dependencies; S-06 oracle and proof correspondence; S-09 governance
+----
+
+[cols="1,2,3,3",options="header"]
+|===
+|Seam |State |Risk and classification |Required verification
+|S-01 IO and resource limits |PARTIAL |Dhall evaluation is import-free but resource confinement UNKNOWN |Hard byte and value budgets, timeout, memory cap, non-partial output, stable errors
+|S-02 format to value |PARTIAL |TOML absent; JSON-only Value loses TOML datetimes and source-level trivia (OBSERVED/INFERRED) |TOML parser with typed retention and explicit unsupported operations
+|S-03 canonical bytes |PARTIAL |Native block-YAML conflicts with KEP-5295 flow target; 12 allowlisted native/oracle R3 differences (OBSERVED) |Versioned profile, byte-level tests, zero unexplained divergences
+|S-04 file mutation |PARTIAL |Native fix absent; native fmt cannot retain source comments (OBSERVED) |SPDX preservation, atomic single-file writes, symlink/permission/concurrency tests
+|S-05 third-party parser/evaluator |PARTIAL |Pinned ijson-jcs but unproved semantic correspondence; Dhall CPU bound UNKNOWN |Immutable pins, exact numeric/Unicode vectors, confined evaluator
+|S-06 formal and executable evidence |PARTIAL |Green differential CI tolerates 12 rows; theory is not proof of implementation (OBSERVED) |Distinct proof, test, deviation, TV and runtime receipts
+|S-07 distribution |PARTIAL |Release workflow exists but no published release was found (OBSERVED) |Install all target artifacts in clean prefixes; checksum/provenance and rollback
+|S-08 consumers/kyX |PARTIAL |CLI exists; capabilities/versioned loss contract not established |Versioned process-level protocol, conformance fixtures, read-only canaries
+|S-09 standards governance |PARTIAL |DEED/K9 workflows use strict:false and mutable @main (OBSERVED) |Validate against normative grammars independently and fail-closed
+|===
+
+Lenses: technical and data-flow assessed; evolution assessed; trust, runtime operations, blast-radius and organisational responsibility partially assessed; cost qualitative only. No invented numeric confidence or performance claim.
+
+== 3. High-value decisions for the owner and implementer
+
+=== A-02 KEP-5295 and in-house block YAML are NOT one format contract
+
+Kubernetes KEP-5295 specifies an output dialect using flow collections, double-quoted string values, a document-separator header, optional safe unquoted keys and trailing commas. It does not require all incoming YAML to use the output form. See https://kubernetes.io/docs/reference/encodings/kyaml/ and https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/5295-kyaml/README.md . PR #29 records owner intent to implement that flow format in M4. Current src/emit.rs and docs/KYAML_SPEC.adoc instead prescribe two-space block mappings and sequences. RECOMMENDATION: retain a named legacy-block format profile; create a separately versioned KYAML-KEP5295 flow-output profile with pinned byte examples and the leading document marker. Promote it only with explicit default-change approval and golden migration tests. The KEP warns that external byte-exact rendering may change across versions: kyq must therefore own and version its *own* fixed canonical bytes, rather than claim eternal upstream byte identity.
+
+=== A-03 strict I-JSON and binary64 JCS have distinct acceptance domains
+
+Strict I-JSON lexical acceptance cannot silently become an RFC 8785 binary64 convenience parser. The kyq oracle R3 refuses floats like 1e18 whose RFC 8785 output is an unsafe integer-shaped token; native currently has 12 allowlisted differences. RFC 8785 output bytes must remain correct, not rewritten for convenience. For each named strict estate profile P require:
+  * accepted_P(x) => parse_P(canon_P(x)) succeeds;
+  * canon_P(canon_P(x)) = canon_P(x) byte for byte;
+  * check_P(estate_file(canon_P(x))) = success.
+The explicit binary64 profile may have another domain; declare it and avoid claiming strict-profile closure. Test 1e15, 1e18, 1e20, 1e21, -0.0, unsafe lexical integers, UTF-16 key ordering, duplicate keys, lone surrogates and the RFC tie-number regression. Current Cargo pin c7091491ad48b64c19ee9bb754a28186f8e94042 must be evaluated directly; legacy JS oracle pin 2c880594 is not interchangeable. R3 is in kyq; proposed J-3/J-4 upstream amendments are not automatically authoritative.
+
+=== A-04 resources are measured on values AND guarded at the CLI
+
+Native current safeguards (8 MiB input, depth 64, 100k nodes, expanded storage cap 64 MiB) differ from the JS R3 proposal (depth 127; 500k values; decoded string/key bytes 8 MiB; alias-added 100k nodes/1 MiB; raw 256 MiB). Those are incompatible policies, even when both are bounded. RECOMMENDATION: choose a named estate-strict-v1 value-budget profile only after native measurement of output expansion and process RSS; if constrained deployment needs less, advertise native-constrained-v1 as a separate profile. Ensure emitted bytes can be re-ingested in the same profile; count keys, aliases and output correctly. Dhall needs external execution isolation and a bounded deadline even with imports disabled.
+
+=== A-05 typed TOML and Dhall validity do not imply JSON round-tripping
+
+TOML 1.0 validity is a separate typed gate: retain date/time, integer/float, special float, arrays-of-tables and exact original bytes; first implement validate --from toml, typed refusals and resource tests. Do not project unsupported TOML types into a JSON-only Value and then overwrite the source. Dhall stays import-free; validate with sandboxed CPU/memory/time caps, and label to-json as a declared projection rather than lossless Dhall round-trip. JSONL/NDJSON framing, JSON-LD graph semantics, K9 and DEED documents remain separate contracts, outside these four input dialects.
+
+=== A-06 comments and source preservation are explicit loss properties
+
+The JS oracle's fix retains a leading SPDX/comment header byte for byte and refuses non-header comments with COMMENTS_WOULD_BE_LOST. Native fmt currently discards comments and native fix is absent. Keep values separate from a source envelope (header span, source positions, comment locations and original bytes); no comment-preservation claim from the JSON-like Value alone. For new fix, refuse unapproved trivia loss, write to a sibling temporary file, verify source identity, preserve required permissions, fsync where available and atomic-rename; report per-file outcomes (not fictional all-files atomicity). Test symlinks, races, permission failures, interruption, BOM and CRLF. Owner decision still needed on whether read-only canon must refuse comments or permit explicit --allow-loss=comments; it must not be silently declared lossless.
+
+=== A-07 versioned CLI, diagnostics and truthful capability discovery
+
+Recommend kyq --capabilities with schema_version, implementation_version, oracle_contract_version, supported formats and operations, canonical_profiles, budget_profiles, diagnostic schema version, source-loss classes, and confinement flags. Only advertise executed functions, never aspirations. Define stdout as data-only, explicit machine-readable diagnostics on a separate channel, stable exit 0 success / 1 canonical drift / 2 refusal-or-usage, and JSON Pointer conventions. Distinguish JCS library canonical bytes (no LF) from estate file bytes (one LF). Add -- option end and explicit --from semantics. Adding Format::Toml may break exhaustive-match Rust clients: document semver implications rather than assume ABI stability. Native fmt/read-only and oracle fmt/alias-for-fix are currently different; version the contract before unification.
+
+=== A-08 kyq/kyX integration is a seam, not a merger
+
+kyq owns exactly TOML, Dhall, KYAML and I-JSON/JCS. kyX owns broader projection. Do NOT modify kyX or export kyq's Rust Value enum as a cross-application ABI. The simplest compatibility surface is process-level versioned CLI + capability negotiation + a fixture-only adapter test within kyq. A future request/response envelope needs input_format/profile, output_format/profile, operation, resource_profile, source digest, loss policy, typed refusal and provenance. Loss must be declared or refused, not disguised as successful conversion. A daemon, universal AST and shared database are unwarranted absent a demonstrated consumer.
+
+=== A-09 keep formal theory and production verification ledgers separate
+
+Production Creusot/Pearlite budget arithmetic is within the documented proven scope; parser grammar refinement, formatter closure, source preservation and CLI IO are OPEN. An independent Verus budget model does not prove refinement of production Rust. The Agda spine has 93 checked-but-ungraded claims; Rocq 15 re-proofs are BRIDGE-PENDING; Lean OPEN; PWG receipts absent. Theory is not evidence that the source parser is correct. RECOMMENDATION: declare a bounded-tested G2 release grade separately from aspirational full refinement; do not claim the latter. Owner decision D13 on theory home remains open.
+
+=== A-10 authoritative governance checks and legacy migration
+
+DEED grammar v2.0.0: metadatastician/standards/1-formats/deed/spec/abnf/deed.abnf. Coordination grammar v1.3: standards/2-protocols/k9-coordination/spec/abnf/coordination-k9-grammar_v1.3.abnf. Nickel K9 has a separate normative component contract under standards/1-formats/k9/spec, not a coordination YAML grammar. Check coordination.k9 against the coordination ABNF and Nickel *.k9.ncl files against their own K9 contract; record applicability of BOTH authorities for every encountered file. Current coordination.k9 schema 1.1.1 may be backward-compatible; verify exact constraints rather than declaring failure from its age. Current GitHub checks use strict:false and @main actions: their success is not a hard validation receipt. Legacy A2ML migration is eligible only per DEED ANBF; no blind renaming or self-authorised validation.
+
+== 4. Failure experiments (DESIGNED; NOT RUN)
+
+* X-01 S-03: replay the 12 native exceptions, strict/binary64 numeric boundary and RFC tie vector; accept only exact expected outputs, with mutation negative control and zero unexplained differences.
+* X-02 S-01/S-02: run depth/node/alias/byte bombs inside process limits; typed boundary refusal, no OOM and no error-dependent partial stdout.
+* X-03 S-04: modify disposable SPDX-headed files with internal comments, symlink, concurrent edit, disk-full and interrupted rename; rejected originals remain byte-identical.
+* X-04 S-02: import-free but costly Dhall plus remote/local import probes in no-network sandbox; imports denied and compute bounded.
+* X-05 S-07: clean-prefix install, upgrade, uninstall and source-tree-free execution on supported platforms; digest, provenance and errors checked.
+* X-06 S-08/S-09: read-only canaries with TOML, Dhall, KYAML, JSON, DEED, K9, JSONL and JSON-LD; only the correct authority can validate each.
+
+Record source SHA, input digests, toolchain, environment, baseline/abort/recovery and measured outcome separately. No production fault injection is authorised by this planning document.
+
+== 5. Handover boundary
+
+High can implement contracts and tests after explicit decisions A-01..A-08 are accepted or an existing owner ruling settles them. Escalate back to Extra High when a standard changes, a byte-level counterexample disproves closure, a safety/control trade-off cannot be satisfied, or proofs show an architecture inconsistency. Otherwise implement the first unblocked W-step in ULTRAPLAN section 13, add a failing test and negative control, run locked Rust/oracle/proof jobs, and record a reproducible result. Keep kyX untouched.
