@@ -43,6 +43,7 @@ kyq to-json --from dhall configuration.dhall
 kyq get --pointer /metadata/name manifest.yaml
 kyq fmt manifest.yaml
 kyq check manifest.yaml
+kyq --capabilities
 ----
 
 Omit the filename or use `-` to read stdin. Input format is explicit and
@@ -58,6 +59,11 @@ defaults to KYAML; a file extension does not establish content validity.
 |`fmt` |Block KYAML on stdout; retains data and mapping order, discards comments.
 |`check` |Compare with native formatted bytes; never modify input.
 |===
+
+Use +kyq --capabilities+ to inspect an installed binary's supported operations,
+resource limits and known gaps without parsing a file. The JSON schema is a
+preview, not yet a stable compatibility promise. See
+link:docs/CAPABILITIES.adoc[executable capability contract].
 
 Exit status is 0 for success, 1 for valid input with formatting drift, and
 2 for invalid input or usage. See link:docs/NATIVE-MIGRATION.adoc[the native CLI boundary].
@@ -76,9 +82,12 @@ operation is `validate --from toml`; `canon`, `to-json`, `get`, `fmt` and
 link:docs/TOML_VALIDITY.adoc[the TOML validity contract].
 
 JCS binary64 formatting and the estate's safe-integer-token policy are distinct.
-A large floating-point input can produce integer-looking JCS bytes that the
-strict lexical input policy rejects. KYAML formatting retains a decimal point
-for those values. Universal strict-JSON round-trip closure is not claimed.
+Strict I-JSON and KYAML refuse floating-point numbers whose JCS representation
+would be an integer token outside the safe-integer range (owner ruling R3).
+Explicit +--from jcs+ retains RFC 8785 binary64 semantics for those values;
+its output is not necessarily valid strict I-JSON. The native formatter also
+refuses KYAML values outside the strict domain instead of silently emitting
+non-reingestable text.
 
 == Rust, Creusot, Pearlite and Verus
 

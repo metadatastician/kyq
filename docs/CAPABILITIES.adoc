@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+= Executable capabilities (preview contract)
+:revdate: 2026-11-23
+
+== Purpose
+
+A consumer must not guess whether an operation is safe for a format from
+the existence of its parser. The command below reports *implemented,
+tested* CLI operations, bounded values, and explicit missing guarantees:
+
+[source,sh]
+----
+kyq --capabilities
+----
+
+The command writes exactly one JSON document followed by LF to stdout,
+requires no input or source checkout, and rejects additional arguments
+with exit code 2. It is also available from packaged native executables.
+
+The +schema_version+ is +0.1.0+ and +contract_status+ is +preview+.
+Consumers may inspect or test it today, but must not assume that this
+provisional schema is a stable public ABI. Any incompatible schema change
+requires an explicit version change and corresponding fixture update.
+
+== Source of truth
+
+The reporting implementation is +src/capabilities.rs+ and the actual CLI
+dispatch is +src/main.rs+. +tests/capabilities.rs+ independently executes
+every advertised format-operation pairing and checks that unsupported
+pairs refuse rather than silently projecting a value.
+
+The report describes exactly five input selector names:
+
+[cols="1,3,2",options="header"]
+|===
+|Selector |Commands |Semantics
+|+kyaml+ |validate, canon, to-json, fmt, get, check |Restricted KYAML; legacy two-space block formatter, NOT KEP-5295 flow
+|+json+ |validate, canon, to-json, fmt, get, check |Estate strict I-JSON with R3 floating-integer closure
+|+jcs+ |validate, canon, to-json, fmt, get, check |Explicit RFC 8785 binary64 reader, not a backdoor into strict I-JSON
+|+dhall+ |validate, canon, to-json, fmt, get |Typed import-free Dhall; check is unsupported
+|+toml+ |validate |TOML 1.0 validity only; querying and conversion refuse
+|===
+
+The +fmt+ command produces *legacy block KYAML*, even when the input
+format was JSON, JCS or Dhall. +canon+ emits RFC 8785 JCS bytes without
+an LF; +to-json+ adds one LF. +get+ emits one JCS value plus LF for each
+parsed document. +check+ tests file bytes without rewriting the file.
+There is no native +fix+ or other mutation command.
+
+== Important missing assurances
+
+The report provides numeric limits that actually exist:
++raw_input_max_bytes+, +kyaml_nodes_max+,
++kyaml_expanded_storage_max_bytes+ and
++kyaml_container_depth_max+.
+
+The +dhall_process_time_limit_ms+ and
++dhall_process_memory_limit_bytes+ fields are *null*, not zero,
+because import-free evaluation is not yet OS-confined. An external
+caller processing untrusted Dhall must supply its own time/memory
+limits. The report also states +fmt_preserves_comments: false+ and
++atomic_fix_implemented: false+.
+
++diagnostics.machine_readable+ is +false+: the current CLI reports
+human-readable errors on stderr with exit 2, and exit 1 indicates
+canonical drift. The machine-readable *capability report* is not a
+machine-readable *diagnostic protocol*.
+
+No release, formal proof status, external provenance, platform
+availability, service-mode interface or wider kyX format list is
+implied by this record. It reports compiled behaviour, not planned
+features. kyX remains a separate application; it may eventually
+negotiate against this surface without consuming kyq's internal Rust
+Value enum.
+
+== Compatibility discipline
+
+Call +--capabilities+ with no other arguments. Read the
++schema_version+ and +contract_status+ first. Interpret only
+advertised operations, format selectors and safety statements;
+unknown fields may be ignored by tolerant readers. A consumer
+must still independently enforce the deadline and process isolation
+suitable for its threat model.
+
+Use +cargo test --locked --test capabilities+ for a live
+dispatch-versus-report check; the normal cross-platform CI will
+also run the test. The field values must change when implementation
+limits or operations change, and the tests must fail if the report
+overstates implemented functionality.
