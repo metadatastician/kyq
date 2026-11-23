@@ -47,3 +47,4 @@ jobs:
           cargo build --locked --release --target "$RELEASE_TARGET" --bin kyq
           version=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "kyq") | .version')
           bash scripts/package-release.sh "$RELEASE_TARGET" "$version"
+          bash scripts/smoke-native-archive.sh "$RELEASE_TARGET" "$version"
