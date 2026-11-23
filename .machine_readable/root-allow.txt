@@ -10,6 +10,7 @@
 .gitleaksignore # Existing secret-scan allowlist
 .gitmessage # Commit-message template
 .machine_readable # Repository contracts and metadata
+.pre-commit-config.yaml # Non-mutating hosted pre-commit.ci syntax checks
 .trusted-base-ignore # Trusted-base scan exemptions for the planted proof negative controls
 Cargo.lock # Locked native dependency closure
 Cargo.toml # Rust library and CLI manifest
