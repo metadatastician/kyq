@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+#
+# Minimal, non-mutating syntax checks for hosted pre-commit.ci.
+# Native Rust, AsciiDoc, DEED and both K9 dialects remain with their
+# dedicated authoritative CI gates. Intentionally no "language: system":
+# full pre-commit.ci does not support arbitrary system-tool installations.
+ci:
+  autofix_prs: false
+  autoupdate_schedule: quarterly
+  autoupdate_branch: ci/precommit-autoupdates
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-yaml
+        files: '(^\.pre-commit-config\.yaml$|^\.github/.*\.ya?ml$|^\.gitguardian\.yaml$)'
+      - id: check-toml
+        files: '\.toml$'
+        exclude: '^(conformance/fixtures/|tests/fixtures/)'
+      - id: check-json
+        files: '\.json$'
+        # Invalid-input fixtures are supposed to be malformed by design.
+        exclude: '^(conformance/fixtures/|tests/fixtures/|verification/fixtures/)'
