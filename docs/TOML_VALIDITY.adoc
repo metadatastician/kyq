@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+= TOML 1.0 validity-only contract
+:revdate: 2026-11-23
+
+== Purpose and authority
+
+kyq's fourth format family is TOML 1.0, alongside KYAML, Dhall and I-JSON/JCS.
+The authoritative grammar is https://toml.io/en/v1.0.0[TOML 1.0.0].
+TOML 1.1 extensions MUST NOT be accepted under the 1.0 selector.
+The native implementation pins +toml_edit = "=0.22.27"+ with its parser
+feature only: no serialization or rewriting pathway is exposed by kyq.
+Cargo.lock pins the resolved recursive dependency tree. This is a
+validity-only gate, not a lossless conversion claim.
+
+== Native operation
+
+[source,sh]
+----
+kyq validate --from toml config.toml
+cat config.toml | kyq validate --from toml -
+----
+
+Exit 0 means the document is a valid, bounded TOML 1.0 input; exit 2 means
+syntax, UTF-8, size, read or usage failure. No data is written to stdout,
+no input bytes are changed, and diagnostics go to stderr.
+
+All other native TOML operations, including +canon+, +to-json+, +fmt+,
++get+ and +check+, fail explicitly with +UNSUPPORTED_OPERATION+ (exit 2).
+They neither reformat TOML nor project TOML's types through the
+JSON-shaped +ijson_jcs::Value+. This policy is necessary to preserve
+offset/local datetimes, local dates and times, non-finite floating-point
+values, comments and lexical source representation.
+
+The public Rust entry point is +kyq::validate_toml(&[u8])+; unlike
++kyq::parse+, it deliberately does not return +Vec<Value>+.
+
+== Resource and trust limits
+
+The parser accepts UTF-8 and enforces the current kyq raw source
+limit of 8 MiB before parsing. The +toml_edit+ build excludes its
++unbounded+ feature. No claim is made that an 8 MiB source-length
+check proves a hard wall-clock or peak-process-memory bound for
+arbitrary hostile data. Such budgets require separate experiments
+and a target-specific process envelope.
+
+The TOML 1.0 negative-control fixtures reject:
+
+* duplicate and conflicting keys;
+* malformed strings/dates, invalid number tokens and invalid UTF-8;
+* TOML 1.1-only \e and \xHH string escapes;
+* TOML 1.1-only abbreviated times and multiline/trailing-comma inline tables;
+* oversized input.
+
+Accepted fixtures include offset/local time semantics, arrays of
+tables, non-finite numeric values, comments, source CRLF and an
+integer beyond the JavaScript safe-integer range. Accepted validation
+is not permission to rewrite these inputs.
+
+== Upgrade and compatibility gates
+
+Changing the TOML syntax profile requires a separately versioned
+capability identifier and tests that can discriminate 1.0 and 1.1
+grammar differences. Do not infer grammar authority from the
+top-level crate name if its transitive parser version changes.
+
+Before offering a TOML query or conversion operation, define a
+typed representation, a loss declaration, a source/trivia retention
+contract, and an explicit compatibility migration. kyX remains
+a separate application; this document creates no dependency on it.
+
+Verification: +cargo test --locked --test toml_validity+ plus locked
+Rust CLI tests, format-specific invalid-input probes, compiler
+lints and the hosted supply-chain audit. Passing these tests is
+not proof of complete parser correctness.

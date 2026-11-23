@@ -74,6 +74,33 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
+/// Validate a TOML 1.0 document without converting its values to JSON.
+///
+/// This is a *validity-only* operation: datetime, offset, special floating-point
+/// values, comments, ordering and the original bytes are never projected or
+/// rewritten. Unsupported conversion and querying must be explicitly refused
+/// by the CLI rather than silently changing the TOML type domain.
+///
+/// The parser's syntax profile is pinned to TOML 1.0.0 in Cargo.toml.
+pub fn validate_toml(input: &[u8]) -> Result<(), Error> {
+    if input.len() > MAX_INPUT_BYTES {
+        return Err(Error::new("INPUT_LIMIT", "input exceeds 8 MiB"));
+    }
+    let text = std::str::from_utf8(input).map_err(|e| Error::new("INVALID_UTF8", e.to_string()))?;
+    let _: toml_edit::DocumentMut = text.parse().map_err(|error: toml_edit::TomlError| {
+        let mut diagnostic = Error::new("INVALID_TOML", error.to_string());
+        if let Some(span) = error.span()
+            && let Some(before) = text.get(..span.start)
+        {
+            let line = before.bytes().filter(|&byte| byte == b'\n').count() + 1;
+            let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+            diagnostic = diagnostic.at(line, column, "");
+        }
+        diagnostic
+    })?;
+    Ok(())
+}
+
 /// Parse a bounded UTF-8 input. JSON/Dhall produce exactly one document.
 ///
 /// Dhall imports (local, environment and remote) are disabled. Evaluation is

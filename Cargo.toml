@@ -5,7 +5,7 @@ version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MPL-2.0"
-description = "Bounded KYAML, I-JSON/JCS and Dhall processing for repository automation"
+description = "Bounded KYAML, I-JSON/JCS, Dhall and TOML 1.0 validation for repository automation"
 repository = "https://github.com/metadatastician/kyq"
 readme = "README.adoc"
 keywords = ["kyaml", "json", "jcs", "dhall", "kubernetes"]
@@ -18,6 +18,8 @@ serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 serde_dhall = { version = "0.13", default-features = false }
 yaml-rust2 = "0.11"
 regex = "1"
+# TOML 1.0 validity-only parser; keep the typed document and its trivia intact.
+toml_edit = { version = "=0.22.27", default-features = false, features = ["parse"] }
 
 [dev-dependencies]
 proven-evidence = { git = "https://github.com/hyperpolymath/proven-tests-and-benches", rev = "2e978736732651098022169a6d1680e771eefc3e" }
