@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
 #![forbid(unsafe_code)]
+mod capabilities;
 use kyq::{Format, MAX_INPUT_BYTES};
 use std::{
     io::{self, Read, Write},
@@ -18,9 +19,17 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         println!("kyq {}", env!("CARGO_PKG_VERSION"));
         return Ok(0);
     }
+    if command == "--capabilities" {
+        if args.next().is_some() {
+            return Err("--capabilities takes no arguments".into());
+        }
+        let bytes = capabilities::bytes()?;
+        io::stdout().lock().write_all(&bytes)?;
+        return Ok(0);
+    }
     if command == "--help" || command == "help" {
         println!(
-            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares formatted bytes without modifying files."
+            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\nkyq --capabilities  (machine-readable preview of supported operations)\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares formatted bytes without modifying files."
         );
         return Ok(0);
     }

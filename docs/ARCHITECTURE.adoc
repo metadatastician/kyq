@@ -8,7 +8,7 @@ import-free Dhall. TOML 1.0 takes a separate validity-only path that never
 projects TOML dates, times or source comments into the JSON value model. It is a native Rust library and command-line tool. This
 page describes the repository as it stands. The feature boundary is
 `README.adoc`. The status is `docs/status/NATIVE-INTEGRATION.adoc`, and the
-plan for the remaining work is `docs/ULTRAPLAN.adoc`, section 12.
+plan for the remaining work is `docs/ULTRAPLAN.adoc`, section 13.
 
 == Repository layout
 
@@ -57,7 +57,8 @@ The tool reads one value-projectable format (`--from kyaml`, `json`, `jcs` or
 1.0 validity-only parser with no conversion or output. KYAML input passes lexical checks and a bounded reader that
 charges every node and alias expansion to a budget. The tool then validates
 the value, writes JCS bytes through `ijson-jcs`, writes block KYAML, or
-answers an RFC 6901 pointer query. `README.adoc` lists the commands.
+answers an RFC 6901 pointer query. `README.adoc` lists the commands. Machine-readable capability discovery
+is a preview command, documented in `docs/CAPABILITIES.adoc`.
 
 == Build
 

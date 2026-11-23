@@ -44,6 +44,11 @@ executable="$scratch/$name/$binary"
   [[ $actual == "kyq $version" ]] ||
     { echo "installed executable reports wrong version: $actual" >&2; exit 1; }
 
+  "$executable" --capabilities > "$scratch/capabilities.json"
+  jq -e '.schema_version == "0.1.0" and .contract_status == "preview" and (.formats.toml.operations == ["validate"]) and .safety.atomic_fix_implemented == false' \
+    "$scratch/capabilities.json" >/dev/null ||
+    { echo "installed capabilities do not match the implemented contract" >&2; exit 1; }
+
   printf 'a: 1\n' | "$executable" validate --from kyaml - > "$scratch/valid.out"
   [[ ! -s "$scratch/valid.out" ]] || { echo "validate wrote data to stdout" >&2; exit 1; }
 
