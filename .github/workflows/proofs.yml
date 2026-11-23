@@ -42,12 +42,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Offline Guix mirror and checksum negative controls
+        run: bash tests/shape/guix_mirror_download_test.sh
+
       - name: Install Guix (checksum-pinned binary release)
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
-          curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
-            "https://ftp.gnu.org/gnu/guix/guix-binary-${GUIX_VERSION}.x86_64-linux.tar.xz" --output guix.tar.xz
+          bash "$GITHUB_WORKSPACE/scripts/fetch-guix-pinned.sh" \
+            "$GUIX_VERSION" "$GUIX_SHA256" "$RUNNER_TEMP/guix.tar.xz"
           echo "${GUIX_SHA256}  guix.tar.xz" | sha256sum --check --strict
           sudo tar --warning=no-timestamp -xf guix.tar.xz -C /
           sudo groupadd --system guixbuild
