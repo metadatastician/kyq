@@ -4,7 +4,7 @@
 :toc: macro
 :toclevels: 3
 :icons: font
-:revdate: 2026-11-19
+:revdate: 2026-11-23
 :author: Agent (Arena) + hyperpolymath
 
 Abstract: a field-ready plan to take `metadatastician/kyq` from an honest
@@ -27,8 +27,10 @@ the normative Phase 1–6 breakdown.
 describe the earlier strict AffineScript route (D1). They are kept as a
 historical record: the handover step numbers (1 to 40) and the Phase gates
 still define what "done" means, but every statement about AffineScript,
-WebAssembly input or "nothing builds" is not current. §12 is the current
-plan.
+WebAssembly input or "nothing builds" is not current. §12 is the 2026-11-19
+pre-merge snapshot; §13 is the current execution plan and supersedes stale
+section-12 status claims. The source-of-truth decisions and seam audit
+are in `docs/architecture/KYQ-DECISIONS-2026-11-23.adoc`.
 ====
 
 toc::[]
@@ -915,6 +917,189 @@ D15 to D21 are proposed numbers. Each recommendation is a proposal, not a ruling
 . P1, with the PROOF-STATUS fixes, then P2. These close DEV-1 and DEV-2 and open the path to P3.
 . W4, the differential harness. W5, W8 and W12 reuse it.
 . W6, the TOML validity gate. It is the largest missing format.
+
+== 13. Current execution baseline and reprioritised completion programme (2026-11-23)
+
+[IMPORTANT]
+====
+This section supersedes section 12 wherever chronology, implementation status,
+dependency order or release-readiness claims differ. Sections 0-11 preserve the
+historical AffineScript route; section 12 is the 2026-11-19 *pre-merge* plan.
+PR #30 merged the Rust candidate on 2026-11-19, so W1 and the Rust portion
+of W2 have already happened. Do not repeat them. The research, risks and
+unclosed acceptance criteria from section 12 still apply unless expressly
+reconciled below. Consult
+link:architecture/KYQ-DECISIONS-2026-11-23.adoc[the architecture decision record]
+before changing default canonical bytes or public CLI semantics.
+====
+
+=== 13.1 Inspected state, with scope of evidence
+
+Audit anchor: +main+ commit
++77a622d129b84f07e4558c5595576757fd846470+.
+The current product is a Rust 0.2.0 crate and executable. Its six native
+commands are +validate+, +canon+, +to-json+, +fmt+, +get+ and +check+.
+Native format selectors cover KYAML, strict JSON, JCS and import-free Dhall;
+*TOML is missing*. Native +fix+, capabilities negotiation and the
+original K8s-aware linter/query/mutation suite are not present. Installed
+release acceptance has not been demonstrated: the GitHub releases collection
+returned no native release at inspection.
+
+Source +conformance/+ is the independent JS oracle (contract 0.4.0);
+it is not the native binary. Main CI has reported successful Rust,
+platform, budget, governance, differential and proof-spine jobs.
+The differential harness *explicitly permits 12 known R3 number-policy
+mismatches*, so a green job is not full equality. A green proof-spine
+workflow still permits the unavailable Lean leg to be OPEN, and
+93/93 Agda items are currently ungraded with 15 Rocq reproofs
+BRIDGE-PENDING. Source code/parser refinement is not established by
+those theory proofs. DEED/K9 workflow strict:false actions are advisory,
+not a fail-closed grammar receipt.
+
+=== 13.2 Completion means a named gate, not a single headline percentage
+
+[cols="1,3,3",options="header"]
+|===
+|Gate |Minimal promised product |Excluded claim
+|G0 useful executable |Build and install real Rust CLI; native commands, stable exits and negative tests execute |Not yet a complete four-format estate gate
+|G1 four-family estate gate |TOML validity, import-free bounded Dhall, KYAML and I-JSON/JCS with pinned, explicit output/acceptance profiles, safe loss handling and honest capabilities |Not a full yq replacement
+|G2 standalone general-release grade |G1 plus qualified OS archives, pinned provenance, independent install/upgrade/uninstall, hard conformance and security/consumer receipts |Not a theorem of complete parser correctness
+|G3 expanded original vision |Only when separately approved: Kubernetes API schema lint, jq/yq-like query, set/del, split/merge/diff, envsubst/inject and measured performance |Not kyX or universal conversion
+|===
+
+The estate charter in issue #16 explicitly names exactly TOML, Dhall,
+KYAML and I-JSON/JCS. The original README/deed also contains K8s-yq
+aspirations, which remain tracked as G3 until a charter decision disposes
+of them. For release labels include the gate and assurance grade.
+Percent-complete can be estimated only after an explicit weighted rubric
+with verified receipts; older subjective estimates are not a metric.
+
+=== 13.3 Prerequisite decisions (Extra High; review before source changes)
+
+[cols="1,4,4",options="header"]
+|===
+|Decision |Recommended resolution |What must be established
+|A-01 product scope |G1 and G2 are near-term independent product; preserve G3 as separate charter |Owner acceptance and explicit issue split
+|A-02 KYAML canonical profile |KEP-5295 flow output with quoted string values, bracketed containers, optional unquoted safe keys, leading document marker; name current block formatter legacy |Pin spec and goldens, version +check+/+fmt+ change; PR #29 owner intent does not prove M4 shipped
+|A-03 JCS input/closure |Retain strict I-JSON lexical reader distinct from explicit binary64 JCS; adopt kyq R3 for named estate-strict acceptance |Proof/test of parse(canon), canon idempotence and check(canon), plus all 12 native exceptions resolved for advertised conformance profile
+|A-04 budgets |Compare oracle R3 value budgets to native much lower/deferred limits; choose explicit named production profiles |Measure peak memory, emitted expansion, exact typed refusals and re-ingest closure; no unreviewed 256 MiB increase
+|A-05 TOML/Dhall |Validity-only TOML 1.0, preserving original text and typed values; Dhall import-free and process-confined |Semantic vectors for datetime, float, tables; Dhall timeout/memory caps and forbidden import probes
+|A-06 comments and fix |Fail-closed for unpreservable comments; preserve SPDX header byte for byte; transactional per-file replacement |Owner ruling on read-only +canon+ loss, format +fmt+ compatibility, symlink/Windows semantics
+|A-07 interface |Versioned +--capabilities+, diagnostics and per-format support; no unsupported operation advertised |Consumer fixtures, no stdout pollution, pinned exit status and JSON Pointer contract
+|A-08 kyX future seam |Separate kyX repo/application; CLI capability negotiation and typed loss classes, not shared Rust internals |Read-only contract fixtures in kyq; no kyX modifications
+|A-09 verification |Keep production Creusot/Pearlite, independent oracle/TV, and abstract Agda/Rocq/Lean receipts separately labelled |Proof scope, theory-home D13, PWG receipt rules and negative controls
+|A-10 DEED/K9 |Use v2 DEED grammar, v1.3 K9 coordination ABNF, distinct Nickel K9 contract, immutable strict checks |Per-file conformance, migratable legacy A2ML classified, no blind rewrite
+|===
+
+These are *proposals or previously recorded owner intents*, not new
+ratified decisions. Contracts which are already safe and active
+continue to govern until an approved versioned change replaces them.
+The detailed seam analysis and failure experiments are in the
+link:architecture/KYQ-DECISIONS-2026-11-23.adoc[decision record].
+
+=== 13.4 Dependency-ordered executable work packages
+
+Each package must produce a reviewed source change, machine-executed
+positive and negative checks, and a source-SHA/toolchain/OS receipt.
+A check box is complete only after the cited independent evidence exists.
+
+[cols="1,2,4,4",options="header"]
+|===
+|Step |Dependency |Implementation |Fail-closed completion criterion
+|E0 baseline refresh |none |Reconcile docs with merged PR #30; audit TODO, own CI, release and governance declarations |Docs no longer state Rust is unmerged; base checks rerun at pinned SHA; distinguish skipped/allowed from passed
+|E1 contract goldens |A-02/03/04 |Create per-profile byte, verdict and budget vectors; pin KEP-5295 and R3 semantics |Each vector states accepted profile, bytes, code, provenance and planted-negative failure
+|E2 R3 native closure |E1 |Fix numeric acceptance/serialization and align profiles with pinned ijson-jcs |All 12 allowlist rows removed only after exact differential/TV pass; no new divergences; binary64 vs strict acceptance explicit
+|E3 parser resource parity |E1 |Value counters for depth, nodes, decoded strings, expansions; bounded output/reparse |Exact just-below/at/over tests, no panic/partial output, measured peak bounds, no silent weaker profile
+|E4 TOML validity |E1 |Add TOML 1.0 typed, bounded parser and native CLI selector; no default lossful bridge |Valid/invalid fixtures, preserve bytes and datetimes, duplicate-key rejection, unsupported conversions refuse
+|E5 Dhall confinement |E3 |Bound import-free evaluator in OS-isolated process; precise failure status |Hostile pure expressions terminate on budget with typed error; local/env/remote imports remain denied
+|E6 KYAML KEP formatting |E1/E3 |Implement flow-profile emitter separately from legacy block, version default migration |KEP golden byte tests including header, commas/quotes, nesting, comments; round-trip/idempotence; source safe
+|E7 safe native fix |E6 |Header/trivia diagnostics, atomic file replacement, failure-state handling |SPDX unchanged, unpreservable comments refused, interrupted/racing writes never falsely report success
+|E8 CLI/protocol freeze |E2-E7 |Capabilities, diagnostics, exit and framing contract, library API migration |Independent downstream fixture runner validates truthful capabilities and typed loss/unsupported cases
+|E9 formal code assurance |E2-E8 |Extend Creusot/Pearlite from budget arithmetic into relevant parser/encoder/CLI invariants, close proof/correspondence gaps |Each PROVEN entry links actual production function, checked toolchain, negative control; OPEN remains visible
+|E10 theory witness receipts |independent |P1/P2 reconciliation, D13, PWG-3 receipts, Rocq 93 coverage path, Lean route, correspondence |No promotion from ungraded based on green CI alone; missing legs loudly OPEN and grading rule applied mechanically
+|E11 governance and distribution |E4/E8 |Strict immutable DEED/K9 validators; release assets, SBOM/provenance, Guix/offline witness, smoke tests |Correct grammars and negative controls; install in clean OS prefix, verify digest, version, no source checkout dependence
+|E12 consumer rollout |E11 |Read-only estate audit, staged canaries, pinned native gate replacing stubs, rollback documents |Representative TOML/Dhall/KYAML/JSON accepted/rejected correctly, no blind .k9/.deed parsing, no mass rewrite
+|E13 closeout |E9/E10 scoped independently |Reconcile issues #11/#16 and stale CI issues #4/#5; record release grade and all exclusions |Only evidence-backed claims close; G0/G1/G2 separate and G3 explicitly tracked
+|===
+
+Fastest dependency-aware implementation order: E0 -> E1 -> E2 and E3
+(in parallel only after E1) -> E4/E5/E6 -> E7 -> E8 -> E11 -> E12.
+E9 and E10 are independent proof tracks requiring their own formal
+acceptance claims; do not silently mark them complete because E11 passes.
+Any current production/source defect that blocks the next step is fixed
+or cordoned before feature work.
+
+=== 13.5 Assurance contract and risk controls
+
+* Proof ledger: +verification/PROOF-STATUS.adoc+ for native Creusot/Pearlite;
+  +docs/status/PROOF-STATUS.adoc+ for abstract Agda/Rocq/Lean; production
+  source refinement is not inferred from abstract algebra.
+* Differential: +conformance/tools/native-diff.mjs+ tracks the allowlist.
+  All agreed profile mismatches must reach zero; a new mismatch fails
+  immediately; the original JS oracle has its own upstream deviation
+  ledger, not a blanket proof of correctness.
+* Loss model: distinguish semantic value, lexical representation,
+  source comments/SPDX, type information, JSONL/NDJSON record framing
+  and JSON-LD context/graph semantics. A non-preserving operation
+  requires explicit policy and a typed refusal or acknowledged loss.
+* Format authority: +coordination.k9+ uses K9 coordination grammar;
+  +*.k9.ncl+ uses K9 Nickel contract; +*.deed+ uses DEED ANBF.
+  A green warn-only validator does not establish conformance.
+* Security: no Dhall imports; sandbox process costs; check hostile
+  YAML aliases and depth; fail-closed missing tools; no implicit
+  write-capable mutation in a read-only command.
+* Release: tests and proofs qualify exact binary/toolchain revisions.
+  An archive workflow existing is not equivalent to a released,
+  install-tested artifact. Record provenance and cross-platform
+  smoke results; use gradual canaries, not a big-bang estate rewrite.
+
+=== 13.6 Immediate High-effort handover when Extra High decisions are frozen
+
+. First verify that the source of truth, KEP goldens and release gate
+  choices A-01..A-08 have either explicit owner rulings or safe,
+  documented backward-compatible defaults.
+. Implement the first unblocked E-step with a failing test, a planted
+  negative control and the smallest sufficient source patch.
+. Run +just check+, +just conformance-native+, format-specific
+  tests and affected Creusot/proof lanes with locked revisions.
+. Record a current SHA, environment, exact commands, exit and
+  semantic/byte outcome; keep skipped and OPEN obligations separate.
+. Propose a signed, reviewed PR; do not modify kyX, do not bypass
+  signature or branch rules, do not merge merely because a
+  non-strict governance action is green.
+. Escalate back to Extra High only for a new standards conflict,
+  proof counterexample, unsafe cross-format coercion or product
+  boundary redesign; otherwise High should progress without
+  re-litigating the plan.
+
+=== 13.7 Active checklist at 2026-11-23
+
+* [x] Rust candidate integrated into main through PR #30 (W1).
+* [x] Native CLI implemented for KYAML, JSON, JCS, import-free Dhall.
+* [x] Baseline CI suite has reported passing runs; qualifications above.
+* [x] Initial proof spine, Creusot budget contract, Verus budget model exist.
+* [x] This architecture/roadmap reconciliation drafted for review.
+* [ ] Resolve canonical KEP-5295 output versus existing block form.
+* [ ] Resolve R3 strict-domain policy and native 12-row mismatch.
+* [ ] Resolve resource-budget/profile parity with hostile execution.
+* [ ] Implement and verify TOML validity.
+* [ ] Bound import-free Dhall evaluation.
+* [ ] Native safe fix and SPDX/trivia preservation.
+* [ ] Freeze executable/CLI capabilities and consumer contract.
+* [ ] Establish strict DEED and dual K9 enforcement with actual validators.
+* [ ] Publish and smoke-test a standalone multi-platform distribution.
+* [ ] Demonstrate four-format estate adoption with no unsafe migrations.
+* [ ] Complete independently claimed formal/PWG grades, or label OPEN.
+* [ ] Close issues #11/#16 only on receipts; reconcile #4/#5.
+
+=== 13.8 Source and review links
+
+* https://github.com/metadatastician/kyq/pull/30[PR #30 Rust merge].
+* https://github.com/metadatastician/kyq/pull/29[PR #29 R3, theory, KEP owner intent].
+* https://github.com/metadatastician/kyq/issues/16[Four-family estate gate].
+* https://github.com/metadatastician/kyq/issues/11[Independent install].
+* https://kubernetes.io/docs/reference/encodings/kyaml/[Official KYAML reference].
+* https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/5295-kyaml/README.md[KEP-5295 source].
 
 == References
 
