@@ -104,11 +104,14 @@ fn non_utf8_arguments_are_errors_not_panics() {
 
 #[test]
 fn explicit_jcs_input_preserves_the_numeric_wire_format() {
-    let canonical = invoke(&["canon", "--from", "json"], b"1e16");
+    let strict = invoke(&["canon", "--from", "json"], b"1e16");
+    assert_eq!(strict.status.code(), Some(2));
+    assert!(strict.stdout.is_empty());
+    let canonical = invoke(&["canon", "--from", "jcs"], b"1e16");
     assert!(canonical.status.success());
     assert_eq!(canonical.stdout, b"10000000000000000");
-    let strict = invoke(&["canon", "--from", "json"], &canonical.stdout);
-    assert_eq!(strict.status.code(), Some(2));
+    let strict_canonical = invoke(&["canon", "--from", "json"], &canonical.stdout);
+    assert_eq!(strict_canonical.status.code(), Some(2));
     let wire = invoke(&["canon", "--from", "jcs"], &canonical.stdout);
     assert!(wire.status.success());
     assert_eq!(wire.stdout, canonical.stdout);

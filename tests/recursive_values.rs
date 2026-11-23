@@ -11,7 +11,9 @@ fn values() -> impl Strategy<Value = Value> {
         Just(Value::Null),
         any::<bool>().prop_map(Value::Bool),
         (-9_007_199_254_740_991i64..=9_007_199_254_740_991).prop_map(Value::from),
-        (-1e20f64..1e20f64).prop_map(Value::from),
+        // R3 excludes large integer-shaped floats; those refusals have
+        // separate regression coverage in r3_numeric_closure.rs.
+        (-1e15f64..1e15f64).prop_map(Value::from),
         text().prop_map(Value::String),
     ]
     .prop_recursive(4, 96, 8, |inner| {
