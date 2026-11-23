@@ -20,7 +20,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     }
     if command == "--help" || command == "help" {
         println!(
-            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall] [--pointer /path] [FILE|-]\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. check compares formatted bytes without modifying files."
+            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares formatted bytes without modifying files."
         );
         return Ok(0);
     }
@@ -28,17 +28,36 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         return Err(format!("unknown command: {command}").into());
     }
     let mut format = Format::Kyaml;
+    // TOML has a typed, source-preserving validity-only path; it must not
+    // be passed through the JSON-shaped Value used by the other formats.
+    let mut toml_mode = false;
     let mut file: Option<String> = None;
     let mut pointer = String::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--from" => {
                 format = match args.next().as_deref() {
-                    Some("kyaml" | "yaml") => Format::Kyaml,
-                    Some("json" | "ijson") => Format::Json,
-                    Some("jcs") => Format::Jcs,
-                    Some("dhall") => Format::Dhall,
-                    _ => return Err("--from requires kyaml, json, jcs or dhall".into()),
+                    Some("kyaml" | "yaml") => {
+                        toml_mode = false;
+                        Format::Kyaml
+                    }
+                    Some("json" | "ijson") => {
+                        toml_mode = false;
+                        Format::Json
+                    }
+                    Some("jcs") => {
+                        toml_mode = false;
+                        Format::Jcs
+                    }
+                    Some("dhall") => {
+                        toml_mode = false;
+                        Format::Dhall
+                    }
+                    Some("toml") => {
+                        toml_mode = true;
+                        Format::Kyaml
+                    }
+                    _ => return Err("--from requires kyaml, json, jcs, dhall or toml".into()),
                 }
             }
             "--pointer" => {
@@ -59,6 +78,12 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
             }
         }
     }
+    if toml_mode && command != "validate" {
+        return Err(format!(
+            "UNSUPPORTED_OPERATION: TOML 1.0 is validity-only; '{command}' would require a declared type/loss contract"
+        )
+        .into());
+    }
     let reader: Box<dyn Read> = match file.as_deref() {
         None | Some("-") => Box::new(io::stdin()),
         Some(path) => Box::new(std::fs::File::open(Path::new(path))?),
@@ -67,6 +92,10 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     reader
         .take(MAX_INPUT_BYTES as u64 + 1)
         .read_to_end(&mut input)?;
+    if toml_mode {
+        kyq::validate_toml(&input)?;
+        return Ok(0);
+    }
     let docs = kyq::parse(&input, format)?;
     let output = match command.as_str() {
         "validate" => Vec::new(),

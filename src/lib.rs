@@ -74,6 +74,72 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
+/// Enforce the estate R3 restriction on floating-point values whose JCS
+/// representation would be an integer token outside the strict safe range.
+///
+/// Explicit `Format::Jcs` is intentionally excluded: that mode exposes the
+/// RFC 8785 binary64 acceptance domain, which differs from estate-strict input.
+fn reject_unsafe_float_integer(value: &Value) -> Result<(), Error> {
+    match value {
+        Value::Number(number) if number.is_f64() => {
+            if let Some(number) = number.as_f64() {
+                // ECMAScript / RFC 8785 prints integral doubles below 1e21
+                // without an exponent. Beyond 2^53-1 those bytes would be
+                // rejected by the strict I-JSON reader.
+                if number.is_finite()
+                    && number.fract() == 0.0
+                    && number.abs() >= 9_007_199_254_740_992.0
+                    && number.abs() < 1e21
+                {
+                    return Err(Error::new(
+                        "UNSAFE_FLOAT_INTEGER",
+                        "integer-shaped floating-point JCS output exceeds the safe integer range",
+                    ));
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                reject_unsafe_float_integer(item)?;
+            }
+        }
+        Value::Object(items) => {
+            for item in items.values() {
+                reject_unsafe_float_integer(item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Validate a TOML 1.0 document without converting its values to JSON.
+///
+/// This is a *validity-only* operation: datetime, offset, special floating-point
+/// values, comments, ordering and the original bytes are never projected or
+/// rewritten. Unsupported conversion and querying must be explicitly refused
+/// by the CLI rather than silently changing the TOML type domain.
+///
+/// The parser's syntax profile is pinned to TOML 1.0.0 in Cargo.toml.
+pub fn validate_toml(input: &[u8]) -> Result<(), Error> {
+    if input.len() > MAX_INPUT_BYTES {
+        return Err(Error::new("INPUT_LIMIT", "input exceeds 8 MiB"));
+    }
+    let text = std::str::from_utf8(input).map_err(|e| Error::new("INVALID_UTF8", e.to_string()))?;
+    let _: toml_edit::DocumentMut = text.parse().map_err(|error: toml_edit::TomlError| {
+        let mut diagnostic = Error::new("INVALID_TOML", error.to_string());
+        if let Some(span) = error.span()
+            && let Some(before) = text.get(..span.start)
+        {
+            let line = before.bytes().filter(|&byte| byte == b'\n').count() + 1;
+            let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+            diagnostic = diagnostic.at(line, column, "");
+        }
+        diagnostic
+    })?;
+    Ok(())
+}
+
 /// Parse a bounded UTF-8 input. JSON/Dhall produce exactly one document.
 ///
 /// Dhall imports (local, environment and remote) are disabled. Evaluation is
@@ -85,10 +151,17 @@ pub fn parse(input: &[u8], format: Format) -> Result<Vec<Value>, Error> {
     }
     let text = std::str::from_utf8(input).map_err(|e| Error::new("INVALID_UTF8", e.to_string()))?;
     match format {
-        Format::Kyaml => kyaml::parse(text),
+        Format::Kyaml => {
+            let docs = kyaml::parse(text)?;
+            for value in &docs {
+                reject_unsafe_float_integer(value)?;
+            }
+            Ok(docs)
+        }
         Format::Json => {
             let value = ijson_jcs::parse_json(text, ijson_jcs::JsonMode::Canonical)
                 .map_err(|e| Error::new("INVALID_IJSON", e.to_string()))?;
+            reject_unsafe_float_integer(&value)?;
             Ok(vec![value])
         }
         Format::Jcs => {
@@ -141,8 +214,12 @@ pub fn canonicalize_documents(docs: &[Value]) -> Result<Vec<u8>, Error> {
 
 /// Emit deterministic block-style KYAML, preserving mapping insertion order.
 /// Comments, anchors and tags are omitted after semantic resolution.
-/// Large integral floats retain a decimal point so output remains parseable.
+/// Refuses R3-unsafe floating-point values rather than emitting a KYAML stream
+/// that the strict reader would reject on re-ingestion.
 pub fn format_documents(docs: &[Value]) -> Result<Vec<u8>, Error> {
+    for value in docs {
+        reject_unsafe_float_integer(value)?;
+    }
     emit::format(docs)
 }
 /// Query every document with an RFC 6901 JSON Pointer.
