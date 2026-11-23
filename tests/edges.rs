@@ -2,8 +2,8 @@
 use kyq::{Format, Value, canonicalize, format_documents, parse};
 
 #[test]
-fn formatter_preserves_large_integral_floats() {
-    for input in ["x: 1e20", "x: 1.23456789e19", "x: -1e20", "x: 1e-7"] {
+fn formatter_preserves_permitted_float_shapes() {
+    for input in ["x: 1e21", "x: 1e-7", "x: 9007199254740991.0"] {
         let value = parse(input.as_bytes(), Format::Kyaml).unwrap();
         let first = format_documents(&value).unwrap();
         let again = parse(&first, Format::Kyaml).unwrap();
@@ -12,6 +12,13 @@ fn formatter_preserves_large_integral_floats() {
             canonicalize(&first, Format::Kyaml).unwrap()
         );
         assert_eq!(first, format_documents(&again).unwrap());
+    }
+    for input in ["x: 1e20", "x: 1.23456789e19", "x: -1e20"] {
+        assert_eq!(
+            parse(input.as_bytes(), Format::Kyaml).unwrap_err().code,
+            "UNSAFE_FLOAT_INTEGER",
+            "{input}"
+        );
     }
 }
 #[test]
@@ -104,8 +111,6 @@ fn large_scalar_aliases_cannot_bypass_the_storage_budget() {
 #[test]
 fn explicit_tags_resolve_before_json_numeric_limits() {
     for (input, expected) in [
-        ("!!float 9007199254740993", "9007199254740992"),
-        ("!!float -9007199254740993", "-9007199254740992"),
         ("!!float 1", "1"),
         ("!!float \"1\"", "1"),
         ("!!str 9007199254740993", "\"9007199254740993\""),
@@ -113,6 +118,15 @@ fn explicit_tags_resolve_before_json_numeric_limits() {
         assert_eq!(
             canonicalize(input.as_bytes(), Format::Kyaml).unwrap(),
             expected.as_bytes(),
+            "{input}"
+        );
+    }
+    for input in ["!!float 9007199254740993", "!!float -9007199254740993"] {
+        assert_eq!(
+            canonicalize(input.as_bytes(), Format::Kyaml)
+                .unwrap_err()
+                .code,
+            "UNSAFE_FLOAT_INTEGER",
             "{input}"
         );
     }
