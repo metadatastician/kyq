@@ -4,7 +4,7 @@
 :toc:
 :toclevels: 2
 
-Native Rust processing for KYAML, strict I-JSON/JCS and import-free Dhall.
+Native Rust processing for KYAML, strict I-JSON/JCS, import-free Dhall and a separate TOML 1.0 validity-only gate.
 
 kyq validates structured data, queries it with JSON Pointer, formats KYAML,
 and produces deterministic JSON bytes through
@@ -37,6 +37,7 @@ Podman tasks. link:docs/SETUP.adoc[Setup] covers manual installation, mise and G
 [source,sh]
 ----
 kyq validate --from kyaml manifest.yaml
+kyq validate --from toml configuration.toml
 kyq canon --from json document.json
 kyq to-json --from dhall configuration.dhall
 kyq get --pointer /metadata/name manifest.yaml
@@ -50,7 +51,7 @@ defaults to KYAML; a file extension does not establish content validity.
 [cols="1,3",options="header"]
 |===
 |Operation |Contract
-|`validate` |Parse and validate; no rewritten output.
+|`validate` |Parse and validate; no rewritten output. For TOML 1.0, this is the only supported operation, preserving the original file.
 |`canon` |Exactly one document, RFC 8785 bytes without a final newline.
 |`to-json` |Exactly one document, canonical bytes plus LF.
 |`get` |RFC 6901 JSON Pointer, one result per document.
@@ -67,6 +68,12 @@ Input is capped at 8 MiB, with explicit YAML depth and expansion budgets.
 Dhall expressions are typechecked; local, environment and remote imports are
 disabled. Untrusted Dhall evaluation still needs external process time and
 memory limits.
+
+TOML uses a dedicated TOML 1.0 parser: its datetime types, comments and original
+bytes are not coerced into the JSON-shaped value model. The only TOML
+operation is `validate --from toml`; `canon`, `to-json`, `get`, `fmt` and
+`check` are explicitly refused (exit 2), with no file modification. See
+link:docs/TOML_VALIDITY.adoc[the TOML validity contract].
 
 JCS binary64 formatting and the estate's safe-integer-token policy are distinct.
 A large floating-point input can produce integer-looking JCS bytes that the
