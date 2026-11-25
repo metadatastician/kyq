@@ -110,3 +110,38 @@ fn jcs_reader_round_trips_integral_doubles_without_relaxing_json() {
         assert!(parse(input.as_bytes(), Format::Jcs).is_err());
     }
 }
+
+#[test]
+fn kyaml_container_depth_boundary_counts_empty_collections() {
+    for (leaf, leaf_depth) in [("0", 0), ("[]", 1), ("{}", 1)] {
+        for depth in [kyq::MAX_DEPTH, kyq::MAX_DEPTH + 1] {
+            let outer = depth - leaf_depth;
+            let input = format!("{}{leaf}{}", "[".repeat(outer), "]".repeat(outer));
+            let result = canonicalize(input.as_bytes(), Format::Kyaml);
+            if depth == kyq::MAX_DEPTH {
+                assert_eq!(result.unwrap(), input.as_bytes());
+            } else {
+                assert_eq!(result.unwrap_err().code, "DEPTH_LIMIT");
+            }
+        }
+    }
+}
+
+#[test]
+fn kyaml_container_depth_boundary_counts_alias_targets_at_the_use_site() {
+    // The root map, these sequences and the empty map reach the limit exactly.
+    let outer = kyq::MAX_DEPTH - 2;
+    let anchor = format!(
+        "base: &base {}{{}}{}\n",
+        "[".repeat(outer),
+        "]".repeat(outer)
+    );
+    let exact = format!("{anchor}copy: *base\n");
+    let canonical = canonicalize(exact.as_bytes(), Format::Kyaml).unwrap();
+    assert_eq!(canonicalize(&canonical, Format::Kyaml).unwrap(), canonical);
+
+    let over = format!("{anchor}copy: [*base]\n");
+    let error = parse(over.as_bytes(), Format::Kyaml).unwrap_err();
+    assert_eq!(error.code, "DEPTH_LIMIT");
+    assert_eq!(error.path, "copy/0");
+}

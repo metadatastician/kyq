@@ -764,12 +764,19 @@ struct Reader<'a> {
     nodes: usize,
     bytes: usize,
 }
-fn storage_cost(value: &Value) -> usize {
-    let mut pending = vec![(value, 0)];
+// Measure an anchor copy in the context where it will be inserted. The
+// depth carried by the stack counts enclosing containers, excluding the value.
+fn storage_cost(value: &Value, ancestors: usize, m: Marker, path: &str) -> Result<usize, Error> {
+    let mut pending = vec![(value, ancestors)];
     let mut cost: usize = 0;
     while let Some((value, depth)) = pending.pop() {
-        if depth > MAX_DEPTH {
-            return usize::MAX;
+        if depth >= MAX_DEPTH && (value.is_array() || value.is_object()) {
+            return Err(located(
+                "DEPTH_LIMIT",
+                "expanded alias nesting exceeds limit",
+                m,
+                path,
+            ));
         }
         cost = cost.saturating_add(64);
         match value {
@@ -784,7 +791,7 @@ fn storage_cost(value: &Value) -> usize {
             _ => {}
         }
     }
-    cost
+    Ok(cost)
 }
 impl Reader<'_> {
     fn charge(&mut self, bytes: usize, m: Marker, path: &str) -> Result<(), Error> {
@@ -811,7 +818,12 @@ impl Reader<'_> {
         path: &str,
         depth: usize,
     ) -> Result<(Value, usize), Error> {
-        if depth > MAX_DEPTH {
+        if depth >= MAX_DEPTH
+            && matches!(
+                event,
+                Event::SequenceStart(_, _) | Event::MappingStart(_, _)
+            )
+        {
             return Err(located("DEPTH_LIMIT", "maximum nesting exceeded", m, path));
         }
         self.nodes = kyq_bounds::consume(self.nodes, 1, NODE_BUDGET).ok_or_else(|| {
@@ -851,16 +863,19 @@ impl Reader<'_> {
                         path,
                     )
                 })?;
-                self.bytes =
-                    kyq_bounds::consume(self.bytes, storage_cost(value), MAX_EXPANDED_BYTES)
-                        .ok_or_else(|| {
-                            located(
-                                "EXPANSION_LIMIT",
-                                "alias copy exceeds storage budget",
-                                m,
-                                path,
-                            )
-                        })?;
+                self.bytes = kyq_bounds::consume(
+                    self.bytes,
+                    storage_cost(value, depth, m, path)?,
+                    MAX_EXPANDED_BYTES,
+                )
+                .ok_or_else(|| {
+                    located(
+                        "EXPANSION_LIMIT",
+                        "alias copy exceeds storage budget",
+                        m,
+                        path,
+                    )
+                })?;
                 (value.clone(), *size, 0)
             }
             Event::SequenceStart(anchor, tag) => {
@@ -973,7 +988,7 @@ impl Reader<'_> {
             _ => return Err(located("YAML_SYNTAX", "expected a value", m, path)),
         };
         if anchor != 0 {
-            self.charge(storage_cost(&value), m, path)?;
+            self.charge(storage_cost(&value, depth, m, path)?, m, path)?;
             self.anchors.insert(anchor, (value.clone(), size));
         }
         Ok((value, size))
@@ -1043,14 +1058,6 @@ pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
                 reader.nodes = 0;
                 let (event, mark) = reader.next("")?;
                 let value = reader.node(event, mark, "", 0)?.0;
-                if storage_cost(&value) == usize::MAX {
-                    return Err(located(
-                        "DEPTH_LIMIT",
-                        "expanded alias nesting exceeds limit",
-                        mark,
-                        "",
-                    ));
-                }
                 docs.push(value);
             }
             _ => return Err(located("YAML_SYNTAX", "expected a document", m, "")),

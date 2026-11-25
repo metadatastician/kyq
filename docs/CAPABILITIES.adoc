@@ -55,6 +55,12 @@ The report provides numeric limits that actually exist:
 +kyaml_expanded_storage_max_bytes+ and
 +kyaml_container_depth_max+.
 
+The native KYAML reader accepts up to 64 containers on a root-to-leaf
+path after alias expansion. An empty sequence or mapping counts as one
+container and a scalar counts as zero. An alias uses the depth available
+where it appears. A 65th container produces +DEPTH_LIMIT+. The R3
+conformance oracle has its own limit of 127 containers.
+
 The +dhall_process_time_limit_ms+ and
 +dhall_process_memory_limit_bytes+ fields are *null*, not zero,
 because import-free evaluation is not yet OS-confined. An external
