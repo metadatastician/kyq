@@ -62,6 +62,10 @@ fn advertised_version_profiles_and_boundaries_are_truthful() {
         report["resource_limits"]["dhall_result_max_bytes"],
         kyq::DHALL_OUTPUT_MAX_BYTES
     );
+    assert_eq!(
+        report["resource_limits"]["dhall_worker_stack_bytes"],
+        kyq::DHALL_STACK_BYTES
+    );
     assert_eq!(report["safety"]["dhall_confinement"], "worker-process");
     assert_eq!(report["safety"]["dhall_imports_enabled"], false);
     assert_eq!(report["safety"]["atomic_fix_implemented"], true);

@@ -92,9 +92,11 @@ worker after +dhall_process_time_limit_ms+ (2000) and refuses with
 +dhall_process_memory_limit_bytes+ (268435456, 256 MiB) through a
 counting global allocator, so an allocation past the cap ends it, and
 the parent refuses with +DHALL_MEMORY_LIMIT+. The cap is the same on
-Linux, macOS and Windows; it counts heap, not stack. Deep evaluation
-that overflows the worker's default main-thread stack is
-+DHALL_STACK_LIMIT+ (before W7 it aborted kyq itself). A result larger
+Linux, macOS and Windows; it counts heap, not stack. The worker
+evaluates on a thread with a +dhall_worker_stack_bytes+ (64 MiB) stack
+on every OS, so deep evaluation that overflows it is
++DHALL_STACK_LIMIT+ everywhere (before W7 it aborted kyq itself, at a
+depth that depended on the platform's main-thread stack). A result larger
 than +dhall_result_max_bytes+ (64 MiB) is +DHALL_OUTPUT_LIMIT+. Any
 other abnormal worker end is +DHALL_WORKER_FAILED+. All of these exit 2.
 The limits bind the +kyq+ CLI only: the +kyq::parse+ library function

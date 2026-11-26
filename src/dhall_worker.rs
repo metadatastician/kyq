@@ -15,15 +15,16 @@
 //!   worker's result and reports `DHALL_OUTPUT_LIMIT` beyond that.
 //!
 //! * Stack: deep evaluation (for example a long `Natural/fold`) overflows the
-//!   worker's main-thread stack. That used to abort kyq itself; the parent
-//!   now reports `DHALL_STACK_LIMIT`. The stack size is the platform default.
+//!   worker's evaluation thread, whose stack is `DHALL_STACK_BYTES` on every
+//!   OS. That used to abort kyq itself; the parent now reports
+//!   `DHALL_STACK_LIMIT`.
 //!
 //! Any other abnormal end is `DHALL_WORKER_FAILED`.
 //! Every refusal is a typed `kyq::Error`, so the CLI exits 2.
 
 use kyq::{
-    DHALL_MEMORY_LIMIT_BYTES, DHALL_OUTPUT_MAX_BYTES, DHALL_TIME_LIMIT_MS, Error, Format,
-    MAX_INPUT_BYTES, Value,
+    DHALL_MEMORY_LIMIT_BYTES, DHALL_OUTPUT_MAX_BYTES, DHALL_STACK_BYTES, DHALL_TIME_LIMIT_MS,
+    Error, Format, MAX_INPUT_BYTES, Value,
 };
 use std::{
     io::{self, Read, Write},
@@ -69,13 +70,31 @@ pub fn worker() -> i32 {
     {
         return REFUSED_EXIT;
     }
-    let result = kyq::parse(&input, Format::Dhall).and_then(|docs| match docs.as_slice() {
-        [value] => serde_json::to_vec(value).map_err(|e| refusal("INVALID_IJSON", e.to_string())),
-        _ => Err(refusal(
+    // Evaluate on a thread with an explicit stack, so the stack limit is the
+    // same on every OS (a Windows main thread has 1 MiB, Linux 8 MiB).
+    let evaluation = thread::Builder::new()
+        .name("dhall".into())
+        .stack_size(DHALL_STACK_BYTES)
+        .spawn(move || {
+            kyq::parse(&input, Format::Dhall).and_then(|docs| match docs.as_slice() {
+                [value] => {
+                    serde_json::to_vec(value).map_err(|e| refusal("INVALID_IJSON", e.to_string()))
+                }
+                _ => Err(refusal(
+                    "DHALL_WORKER_FAILED",
+                    "Dhall produced no single document",
+                )),
+            })
+        });
+    let result = match evaluation {
+        Ok(handle) => handle
+            .join()
+            .unwrap_or_else(|_| Err(refusal("DHALL_WORKER_FAILED", "Dhall evaluation panicked"))),
+        Err(e) => Err(refusal(
             "DHALL_WORKER_FAILED",
-            "Dhall produced no single document",
+            format!("cannot start the evaluation thread: {e}"),
         )),
-    });
+    };
     match result {
         Ok(bytes) => {
             let mut out = io::stdout().lock();

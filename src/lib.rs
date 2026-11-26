@@ -20,6 +20,8 @@ pub const MAX_DEPTH: usize = 64;
 pub const DHALL_TIME_LIMIT_MS: u64 = 2_000;
 /// Heap limit for the CLI's confined Dhall worker process.
 pub const DHALL_MEMORY_LIMIT_BYTES: usize = 256 * 1024 * 1024;
+/// Stack of the Dhall worker's evaluation thread, the same on every OS.
+pub const DHALL_STACK_BYTES: usize = 64 * 1024 * 1024;
 /// Largest evaluated Dhall result the CLI accepts back from its worker.
 pub const DHALL_OUTPUT_MAX_BYTES: usize = MAX_EXPANDED_BYTES;
 

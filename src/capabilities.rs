@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
 //! Truthful, versioned *preview* of executable capabilities, not release claims.
 use kyq::{
-    DHALL_MEMORY_LIMIT_BYTES, DHALL_OUTPUT_MAX_BYTES, DHALL_TIME_LIMIT_MS, MAX_DEPTH,
-    MAX_EXPANDED_BYTES, MAX_INPUT_BYTES, NODE_BUDGET,
+    DHALL_MEMORY_LIMIT_BYTES, DHALL_OUTPUT_MAX_BYTES, DHALL_STACK_BYTES, DHALL_TIME_LIMIT_MS,
+    MAX_DEPTH, MAX_EXPANDED_BYTES, MAX_INPUT_BYTES, NODE_BUDGET,
 };
 use serde_json::{json, to_vec};
 
@@ -53,6 +53,7 @@ pub(crate) fn bytes() -> Result<Vec<u8>, serde_json::Error> {
             "kyaml_container_depth_max": MAX_DEPTH,
             "dhall_process_time_limit_ms": DHALL_TIME_LIMIT_MS,
             "dhall_process_memory_limit_bytes": DHALL_MEMORY_LIMIT_BYTES,
+            "dhall_worker_stack_bytes": DHALL_STACK_BYTES,
             "dhall_result_max_bytes": DHALL_OUTPUT_MAX_BYTES
         },
         "safety": {
