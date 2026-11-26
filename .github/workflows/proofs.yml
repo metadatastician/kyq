@@ -101,3 +101,36 @@ jobs:
             exit 1
           fi
           echo "::warning::Lean leg is OPEN: the spine is not fully rechecked (PROOF-POLICY §2)"
+
+  # PROOF-POLICY §8.5 (ULTRAPLAN §12, P3): the proof receipt still matches the
+  # tree and the run ledger, passes the git checks of §8.5.3 against main,
+  # and the pinned reader derives its grades and refuses its negative control.
+  receipt:
+    name: Proof receipt (PWG grades derived, not typed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      BUN_VERSION: "1.4.4"
+      BUN_SHA256: "bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c"
+    steps:
+      - name: Checkout (full history; the git checks need it)
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install bun (checksum-pinned release)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL --proto '=https' --retry 3 -o bun.zip \
+            "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip"
+          echo "${BUN_SHA256}  bun.zip" | sha256sum --check --strict
+          unzip -q bun.zip
+          echo "$RUNNER_TEMP/bun-linux-x64" >> "$GITHUB_PATH"
+
+      - name: Receipt gate (grade-receipt.sh --check)
+        run: |
+          set -euo pipefail
+          git fetch -q origin "+refs/heads/main:refs/remotes/origin/main"
+          bash scripts/grade-receipt.sh --check

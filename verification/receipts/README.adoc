@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Proof receipts
+
+The proof receipt of kyq's theory spine (PROOF-POLICY §8.5.1), and the run
+ledger it is written from.
+
+* `kyq-spine_praxis.deed`: the receipt. One claim per Agda theorem of the
+  census in `docs/status/PROOF-STATUS.adoc`. Generated; never edit it by
+  hand. The grades in it are derived by the generator and derived again by
+  the pinned reader, which refuses a grade the legs do not support.
+* `runs.ledger`: the run ledger. Append-only: a row on `main` is never
+  changed, moved or removed.
+
+Commands (from a full clone with `origin/main` fetched; they need `bun`,
+`jq`, `git` and `curl`):
+
+* `bash scripts/grade-receipt.sh --check`: the gate CI runs. It regenerates
+  the receipt and refuses any difference, runs the git checks of §8.5.3
+  against `main`, and runs the reader with its negative control.
+* `bash scripts/grade-receipt.sh --run-row agda --run URL --commit SHA
+  --checker TEXT --reported TEXT --axioms none > rows`, then
+  `bash scripts/grade-receipt.sh --record rows`: record a new passing run.
+
+When a spine input changes, `--check` fails until a run of the new inputs
+is recorded: the old receipt no longer describes the tree.
