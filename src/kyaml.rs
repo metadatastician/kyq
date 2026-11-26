@@ -1066,6 +1066,192 @@ pub(crate) fn parse(text: &str) -> Result<Vec<Value>, Error> {
     Ok(docs)
 }
 
+/// A block scalar's source region and what is needed to tell its content
+/// lines from comment lines that follow it.
+struct BlockRegion {
+    start: usize,
+    end: usize,
+    value: String,
+    indent: Option<usize>,
+    cursor: usize,
+}
+
+/// The first comment after the leading header block, as a 1-based
+/// (line, column) pair, or `None` when formatting would lose no comment.
+///
+/// `text` must already be accepted by [`parse`]. A `#` is a comment when it
+/// starts a line or follows a blank, and lies outside every quoted scalar and
+/// every block scalar content line. The rule errs toward "comment": a `#` that
+/// cannot be shown to be scalar content is reported, so `fix` refuses rather
+/// than drop text. Lines up to `header_lines` belong to the header and are
+/// kept verbatim, so their comments are not lost.
+pub(crate) fn first_lost_comment(text: &str, header_lines: usize) -> Option<(usize, usize)> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let chars: Vec<char> = text.chars().collect();
+    let positions = Positions::new(&chars);
+    let mut quoted: Vec<(usize, usize)> = Vec::new();
+    let mut blocks: Vec<BlockRegion> = Vec::new();
+    let mut open: Option<(usize, String)> = None;
+    for token in Scanner::new(text.chars()) {
+        let index = positions.index(token.0);
+        if let Some((start, value)) = open.take() {
+            blocks.push(BlockRegion {
+                start,
+                end: index.max(start),
+                value,
+                indent: None,
+                cursor: 0,
+            });
+        }
+        if let TokenType::Scalar(style, value) = &token.1 {
+            match style {
+                TScalarStyle::SingleQuoted | TScalarStyle::DoubleQuoted => {
+                    let end = index + quoted_length(&chars[index.min(chars.len())..], *style);
+                    quoted.push((index, end));
+                }
+                TScalarStyle::Literal | TScalarStyle::Folded => {
+                    open = Some((indicator_line_start(&chars, index), value.clone()));
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some((start, value)) = open {
+        blocks.push(BlockRegion {
+            start,
+            end: chars.len(),
+            value,
+            indent: None,
+            cursor: 0,
+        });
+    }
+    for block in &mut blocks {
+        block.indent = content_indent(&chars, block.start, block.end);
+    }
+    let inside = |spans: &[(usize, usize)], i: usize| {
+        let k = spans.partition_point(|&(start, _)| start <= i);
+        k > 0 && i < spans[k - 1].1
+    };
+    let (mut line, mut line_start) = (1usize, 0usize);
+    let mut decided_line: Option<(usize, bool)> = None;
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == '\n' {
+            line += 1;
+            line_start = i + 1;
+            continue;
+        }
+        if ch != '#' || line <= header_lines {
+            continue;
+        }
+        if i > 0 && !matches!(chars[i - 1], ' ' | '\t' | '\n') {
+            continue;
+        }
+        if inside(&quoted, i) {
+            continue;
+        }
+        let k = blocks.partition_point(|b| b.start <= i);
+        if k > 0 && i < blocks[k - 1].end {
+            let content = match decided_line {
+                Some((start, content)) if start == line_start => content,
+                _ => {
+                    let content = block_content_line(&chars, &mut blocks[k - 1], line_start);
+                    decided_line = Some((line_start, content));
+                    content
+                }
+            };
+            if content {
+                continue;
+            }
+        }
+        return Some((line, i - line_start + 1));
+    }
+    None
+}
+
+/// Start of the line holding a block scalar's `|` or `>` indicator. The
+/// scanner marks a block scalar at its first content line; the indicator is
+/// on the nearest non-blank line before that one.
+fn indicator_line_start(chars: &[char], index: usize) -> usize {
+    let index = index.min(chars.len());
+    let mut start = chars[..index]
+        .iter()
+        .rposition(|c| *c == '\n')
+        .map_or(0, |n| n + 1);
+    while start > 0 {
+        let previous = chars[..start - 1]
+            .iter()
+            .rposition(|c| *c == '\n')
+            .map_or(0, |n| n + 1);
+        let blank = chars[previous..start - 1]
+            .iter()
+            .all(|c| matches!(c, ' ' | '\t' | '\r'));
+        start = previous;
+        if !blank {
+            break;
+        }
+    }
+    start
+}
+
+/// Leading spaces of the first non-blank line after a block scalar's
+/// indicator line, inside its region.
+fn content_indent(chars: &[char], start: usize, end: usize) -> Option<usize> {
+    let mut i = start;
+    while i < end && chars[i] != '\n' {
+        i += 1;
+    }
+    while i < end {
+        i += 1;
+        let spaces = chars[i..end].iter().take_while(|c| **c == ' ').count();
+        let rest = i + spaces;
+        let blank = rest >= end || matches!(chars[rest], '\n' | '\r');
+        if !blank {
+            return Some(spaces);
+        }
+        while i < end && chars[i] != '\n' {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Whether the source line starting at `line_start` is a content line of
+/// `block`: it lies after the indicator line, is indented at least as far as
+/// the first content line, and its text (less that indentation) occurs in the
+/// decoded value after the previous content line found. Anything else is
+/// treated as a comment line.
+fn block_content_line(chars: &[char], block: &mut BlockRegion, line_start: usize) -> bool {
+    let Some(indent) = block.indent else {
+        return false;
+    };
+    if line_start <= block.start {
+        return false;
+    }
+    let mut line_end = line_start;
+    while line_end < chars.len() && chars[line_end] != '\n' {
+        line_end += 1;
+    }
+    let spaces = chars[line_start..line_end]
+        .iter()
+        .take_while(|c| **c == ' ')
+        .count();
+    if spaces < indent {
+        return false;
+    }
+    let text: String = chars[line_start + indent..line_end].iter().collect();
+    let text = text.trim_end_matches([' ', '\t', '\r']);
+    if text.is_empty() {
+        return false;
+    }
+    match block.value[block.cursor..].find(text) {
+        Some(found) => {
+            block.cursor += found + text.len();
+            true
+        }
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod position_tests {
     use super::*;
