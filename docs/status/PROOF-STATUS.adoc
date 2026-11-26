@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: CC-BY-SA-4.0
 = Proof Status — kyq
-:revdate: 2026-11-19
+:revdate: 2026-11-26
 
 The per-claim proof record for kyq in the sense of
 `hyperpolymath/standards` `3-practice/PROOF-POLICY.adoc` §8.5. A row says
@@ -14,8 +14,11 @@ committed (`e174f8c`, PR #29). On 2026-11-19 both legs passed in CI under
 the pinned Guix provers, Agda 2.7.0.1 and Rocq 8.18.0, on commit `65b3204`
 (see "Toolchains and deviations"), which closes DEV-1 and DEV-2. There is no
 Lean leg.
-There is no machine-readable receipt (§8.5.1). So every theory row is
-`ungraded`. This file proves nothing about kyq's code, the JS conformance
+The machine-readable receipt (§8.5.1) is
+`verification/receipts/kyq-spine_praxis.deed`. It records the Agda run of
+the P2 lane on `main` at `a06ff20`, and the pinned reader derives PWG-3 for
+all 93 theory rows from it. No row is higher: no recheck leg is RECONCILED.
+This file proves nothing about kyq's code, the JS conformance
 oracle or ijson-jcs. The ledger for kyq's Rust code is
 `verification/PROOF-STATUS.adoc` (Creusot/Pearlite, §5 tokens, no PWG).
 
@@ -32,7 +35,8 @@ spine when D13 is ruled.
   `argued` (= ASSUMED), `open`.
 * Recheck routes (§2, §8.5): `transported`, `re-proved`, `waived`,
   `unavailable`, each with a §2.2 correspondence state (`BRIDGE-PENDING`,
-  `RECONCILED`, ...). A leg with no route yet is written "route unset".
+  `RECONCILED`, ...). A leg with no route yet is written "route unset";
+  the receipt writes it as `unavailable`, with a reason.
 * Proof Witness Grades (§8): `PWG-3` < `PWG-2i` < `PWG-2ii` < `PWG-1`, or
   `ungraded`. A grade is derived from receipts and is never asserted here.
 
@@ -55,15 +59,18 @@ spine when D13 is ruled.
 lemmas. Recheck coverage is 15 of 93 Agda theorems: the other 78 have no
 recheck leg in either Rocq or Lean.
 
-Grade census (§8.4 rule 8): *ungraded 93 of 93; PWG-3 0 of 93; PWG-2i 0 of
-93; PWG-2ii 0 of 93; PWG-1 0 of 93.*
+Grade census (§8.4 rule 8), as the pinned reader derives it from the
+receipt: *PWG-3 93 of 93; PWG-2i 0 of 93; PWG-2ii 0 of 93; PWG-1 0 of 93;
+ungraded 0 of 93.*
 
 == Claims
 
-Every row has `pwg: ungraded` and `foundation_diverse: false`. The Agda leg
-of every row: token `proven` (the kernel accepted the term under the §2.1
-flags with no escape hatch and with the coverage check passing), *checked
-with the Guix Agda 2.7.0.1 in CI on `65b3204`*, with no §8.5.1 receipt.
+Every row derives `pwg: PWG-3` and `foundation_diverse: false` from the
+receipt. The Agda leg of every row: token `proven` (the kernel accepted the
+term under the §2.1 flags with no escape hatch and with the coverage check
+passing), *checked with the Guix Agda 2.7.0.1 in CI on `a06ff20`*
+(https://github.com/metadatastician/kyq/actions/runs/45261060651[run
+45261060651]), with a current §8.5.1 receipt.
 The Rocq and Lean columns give route; §5 token; §2.2 state.
 
 The "Catalogue id" column cites only ids that exist in
@@ -329,15 +336,24 @@ fully rechecked (exit 3)". Without `KYQ_AGDA_VERSION` it stops at
 
 == Proof Witness Grades
 
-No grade is asserted. Grades are derived from §8.5.1 receipts, and kyq has
-none. Rungs not yet met, for every theory row:
+No grade is asserted. Grades are derived from the §8.5.1 receipt
+`verification/receipts/kyq-spine_praxis.deed`. `scripts/grade-receipt.sh`
+writes it from the run ledger `verification/receipts/runs.ledger`, with the
+shared generator, reader and git checker of `hyperpolymath/standards` at
+`745fc74`, each pinned by SHA-256. The `receipt` job of
+`.github/workflows/proofs.yml` runs `grade-receipt.sh --check` on every pull
+request and push to `main`.
 
-* `PWG-3`: needs a receipt of the Agda run on a committed source, with the
-  version, the flags, the library state and pin (here: no library, under
-  `--no-libraries`), and the import cone including the prover-supplied
-  modules, with the prover's postulates listed by name and binding and
-  checked by the gate (§8.4 rule 7). The Agda check passed under the pinned
-  Guix Agda in CI, with no receipt.
+* `PWG-3`: *met for 93 of 93.* The receipt binds the Agda run on `a06ff20`
+  to its version, flags, invocation (`--no-libraries`: no library), inputs
+  manifest (`All.agda` and its import cone, 10 files) and trusted base (the
+  4 postulates of the prover-supplied `Agda.Primitive`, by name and binding,
+  which the runner checks against Agda's own source; §8.4 rule 7). The run
+  reported no axioms. If an input changes, the receipt no longer matches
+  the tree and the gate fails until a new run is recorded.
+
+Rungs not yet met, for every theory row:
+
 * `PWG-2i`: needs one counted recheck leg. The Rocq leg is `re-proved` but
   `BRIDGE-PENDING`, and covers 15 of 93 theorems.
 * `PWG-2ii`: needs the Lean leg as well; it is `unavailable`.

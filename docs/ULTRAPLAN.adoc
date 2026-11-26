@@ -833,7 +833,7 @@ The reader derives every grade from receipts. No document asserts a grade (PROOF
 |P1.
 
 |P3
-|PWG-3 receipt. Add `scripts/grade-receipt.sh`. It fetches the four standards files at a pinned commit (`745fc74` or later), checks their SHA-256 and sources `proof-receipt.sh`. Write `verification/receipts/<name>_praxis.deed` from the P2 run: the Agda leg current, with an inputs manifest from `proof-inputs-sha256.sh` and a trusted base from the import cone. The Rocq legs are `BRIDGE-PENDING` and the Lean legs `unavailable`. Use one claim per theorem, to match the census.
+|PWG-3 receipt. Add `scripts/grade-receipt.sh`. It fetches the four standards files at a pinned commit (`745fc74` or later), checks their SHA-256 and sources `proof-receipt.sh`. Write `verification/receipts/<name>_praxis.deed` from the P2 run: the Agda leg current, with an inputs manifest from `proof-inputs-sha256.sh` and a trusted base from the import cone. The Rocq legs are `BRIDGE-PENDING` and the Lean legs `unavailable`. Use one claim per theorem, to match the census. *Done 2026-11-26:* `verification/receipts/kyq-spine_praxis.deed` from P2 run 45261060651 on `a06ff20`; the reader derives PWG-3 for 93 of 93.
 |In CI, `grade-receipt.sh --check` passes, `deed_lint.js --proof-receipt-json` derives PWG-3 for 93 of 93, and `check-proof-receipt.sh --branch origin/main` passes. The reader's negative control fails as expected.
 |P2. Not blocked by D13: if the spine moves, the new home issues fresh receipts and these become `superseded`, with a reason.
 
@@ -953,8 +953,8 @@ platform, budget, governance, differential and proof-spine jobs.
 The differential harness *explicitly permits 12 known R3 number-policy
 mismatches*, so a green job is not full equality. A green proof-spine
 workflow still permits the unavailable Lean leg to be OPEN, and
-93/93 Agda items are currently ungraded with 15 Rocq reproofs
-BRIDGE-PENDING. Source code/parser refinement is not established by
+93/93 Agda items derive PWG-3 from the receipt (2026-11-26), not higher,
+with 15 Rocq reproofs BRIDGE-PENDING. Source code/parser refinement is not established by
 those theory proofs. DEED/K9 workflow strict:false actions are advisory,
 not a fail-closed grammar receipt.
 

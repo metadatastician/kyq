@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MPL-2.0
+# kyq proof run ledger (PROOF-POLICY §8.4, §8.5.1). Append-only: a row the
+# default branch holds is never changed, moved or removed. One row a line:
+# prover|run|commit|checker|invocation|inputs sha256|reported|state|reason|axioms[|imports[|trusted base[|image]]]
+# Add a row only with: bash scripts/grade-receipt.sh --record ROWS
+agda|https://github.com/metadatastician/kyq/actions/runs/45261060651|a06ff204b31705cec1e87237f7d9a7a716d84674|agda 2.7.0.1 (Guix, verification/proofs/channels.scm)|agda --safe --without-K --cubical-compatible --no-libraries All.agda|466fd5541a1d6e5b67ccf6a877187023d7a00ee581b5f8e1ead493456132a642|agda --safe --without-K --cubical-compatible --no-libraries All.agda: exit 0, no warnings; import cone 11 modules; prover trusted base 4 named; PASS: Agda leg|current||||0c1f64c3c7f0a26cbc92595168858485a9883f6196d287497dcc805faf5c58eb
