@@ -18,7 +18,7 @@ The command writes exactly one JSON document followed by LF to stdout,
 requires no input or source checkout, and rejects additional arguments
 with exit code 2. It is also available from packaged native executables.
 
-The +schema_version+ is +0.2.0+ and +contract_status+ is +preview+.
+The +schema_version+ is +0.3.0+ and +contract_status+ is +preview+.
 Consumers may inspect or test it today, but must not assume that this
 provisional schema is a stable public ABI. Any incompatible schema change
 requires an explicit version change and corresponding fixture update.
@@ -48,7 +48,7 @@ an LF; +to-json+ adds one LF. +get+ emits one JCS value plus LF for each
 parsed document. +check+ compares the file bytes with the canonical
 file form and never rewrites the file.
 
-+fix FILE+ (schema 0.2.0) is the only command that writes. It follows
++fix FILE+ (since schema 0.2.0) is the only command that writes. It follows
 owner ruling A-06 (2026-11-26): it fails closed. For KYAML the canonical
 file form is the leading header comment block (every comment and blank
 line before the first content line, so the SPDX lines), byte for byte,
@@ -84,10 +84,23 @@ container and a scalar counts as zero. An alias uses the depth available
 where it appears. A 65th container produces +DEPTH_LIMIT+. The R3
 conformance oracle has its own limit of 127 containers.
 
-The +dhall_process_time_limit_ms+ and
-+dhall_process_memory_limit_bytes+ fields are *null*, not zero,
-because import-free evaluation is not yet OS-confined. An external
-caller processing untrusted Dhall must supply its own time/memory
+Schema 0.3.0 (W7, 2026-11-26) confines Dhall. The CLI never evaluates
+Dhall in its own process: it re-runs itself as a hidden worker
+(+safety.dhall_confinement: "worker-process"+). The parent kills the
+worker after +dhall_process_time_limit_ms+ (2000) and refuses with
++DHALL_TIME_LIMIT+. The worker caps its own heap at
++dhall_process_memory_limit_bytes+ (268435456, 256 MiB) through a
+counting global allocator, so an allocation past the cap ends it, and
+the parent refuses with +DHALL_MEMORY_LIMIT+. The cap is the same on
+Linux, macOS and Windows; it counts heap, not stack. The worker
+evaluates on a thread with a +dhall_worker_stack_bytes+ (64 MiB) stack
+on every OS, so deep evaluation that overflows it is
++DHALL_STACK_LIMIT+ everywhere (before W7 it aborted kyq itself, at a
+depth that depended on the platform's main-thread stack). A result larger
+than +dhall_result_max_bytes+ (64 MiB) is +DHALL_OUTPUT_LIMIT+. Any
+other abnormal worker end is +DHALL_WORKER_FAILED+. All of these exit 2.
+The limits bind the +kyq+ CLI only: the +kyq::parse+ library function
+still evaluates in-process, and a library caller must supply its own
 limits. The report also states +fmt_preserves_comments: false+,
 +atomic_fix_implemented: true+, +fix_keeps_header_comment_block: true+,
 +fix_refuses_lost_comments: true+ and +fix_follows_symlinks: false+.

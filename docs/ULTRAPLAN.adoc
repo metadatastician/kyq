@@ -784,7 +784,7 @@ The candidate's own `docs/ASSURANCE.adoc` lists its open acceptance requirements
 |W1.
 
 |W7
-|Dhall confinement. Bound the time and memory of the Dhall evaluator (open in `docs/ASSURANCE.adoc`). Imports stay refused.
+|Dhall confinement. Bound the time and memory of the Dhall evaluator (open in `docs/ASSURANCE.adoc`). Imports stay refused. *Done 2026-11-26:* the CLI evaluates Dhall in a re-executed worker process. The parent kills it after 2 s (`DHALL_TIME_LIMIT`); a counting allocator (`cap`) caps its heap at 256 MiB on every OS (`DHALL_MEMORY_LIMIT`); a stack overflow is `DHALL_STACK_LIMIT`. Owner rulings by selector: child process, 2 s and 256 MiB, counting allocator. Capabilities schema 0.3.0. Tests: `tests/dhall_confinement.rs`.
 |A test with a costly Dhall input ends with a typed refusal inside the stated limits.
 |W1.
 

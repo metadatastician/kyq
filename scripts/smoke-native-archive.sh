@@ -45,7 +45,7 @@ executable="$scratch/$name/$binary"
     { echo "installed executable reports wrong version: $actual" >&2; exit 1; }
 
   "$executable" --capabilities > "$scratch/capabilities.json"
-  jq -e '.schema_version == "0.2.0" and .contract_status == "preview" and (.formats.toml.operations == ["validate"]) and .safety.atomic_fix_implemented == true and .safety.fix_follows_symlinks == false' \
+  jq -e '.schema_version == "0.3.0" and .contract_status == "preview" and (.formats.toml.operations == ["validate"]) and .safety.atomic_fix_implemented == true and .safety.fix_follows_symlinks == false and .safety.dhall_confinement == "worker-process" and .resource_limits.dhall_process_time_limit_ms == 2000' \
     "$scratch/capabilities.json" >/dev/null ||
     { echo "installed capabilities do not match the implemented contract" >&2; exit 1; }
 
@@ -56,6 +56,11 @@ executable="$scratch/$name/$binary"
   printf '{"a":1,"b":2}' > "$scratch/canon.expected"
   cmp "$scratch/canon.expected" "$scratch/canon.out" ||
     { echo "canonical bytes differ" >&2; exit 1; }
+
+  # Dhall runs in a re-executed worker; it must start from the extracted archive.
+  printf '{ b = 2, a = 1 }' | "$executable" canon --from dhall - > "$scratch/dhall.out"
+  cmp "$scratch/canon.expected" "$scratch/dhall.out" ||
+    { echo "confined Dhall canonical bytes differ" >&2; exit 1; }
 
   # fix rewrites a file in place, keeping its leading SPDX header block.
   printf '# SPDX-License-Identifier: MPL-2.0\n{b: 2,   a: [1,2]}\n' > "$scratch/fix.yaml"

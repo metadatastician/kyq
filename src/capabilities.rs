@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
 //! Truthful, versioned *preview* of executable capabilities, not release claims.
-use kyq::{MAX_DEPTH, MAX_EXPANDED_BYTES, MAX_INPUT_BYTES, NODE_BUDGET};
+use kyq::{
+    DHALL_MEMORY_LIMIT_BYTES, DHALL_OUTPUT_MAX_BYTES, DHALL_STACK_BYTES, DHALL_TIME_LIMIT_MS,
+    MAX_DEPTH, MAX_EXPANDED_BYTES, MAX_INPUT_BYTES, NODE_BUDGET,
+};
 use serde_json::{json, to_vec};
 
 pub(crate) fn bytes() -> Result<Vec<u8>, serde_json::Error> {
     // Keep this table aligned with main.rs dispatch. Unsupported operations
     // must never be advertised as implemented merely because a parser exists.
     let document = json!({
-        "schema_version": "0.2.0",
+        "schema_version": "0.3.0",
         "contract_status": "preview",
         "implementation": { "name": "kyq", "version": env!("CARGO_PKG_VERSION") },
         "formats": {
@@ -48,11 +51,14 @@ pub(crate) fn bytes() -> Result<Vec<u8>, serde_json::Error> {
             "kyaml_nodes_max": NODE_BUDGET,
             "kyaml_expanded_storage_max_bytes": MAX_EXPANDED_BYTES,
             "kyaml_container_depth_max": MAX_DEPTH,
-            "dhall_process_time_limit_ms": null,
-            "dhall_process_memory_limit_bytes": null
+            "dhall_process_time_limit_ms": DHALL_TIME_LIMIT_MS,
+            "dhall_process_memory_limit_bytes": DHALL_MEMORY_LIMIT_BYTES,
+            "dhall_worker_stack_bytes": DHALL_STACK_BYTES,
+            "dhall_result_max_bytes": DHALL_OUTPUT_MAX_BYTES
         },
         "safety": {
             "dhall_imports_enabled": false,
+            "dhall_confinement": "worker-process",
             "toml_projects_types_into_json": false,
             "fmt_preserves_comments": false,
             "atomic_fix_implemented": true,
