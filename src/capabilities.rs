@@ -8,21 +8,21 @@ pub(crate) fn bytes() -> Result<Vec<u8>, serde_json::Error> {
     // Keep this table aligned with main.rs dispatch. Unsupported operations
     // must never be advertised as implemented merely because a parser exists.
     let document = json!({
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "contract_status": "preview",
         "implementation": { "name": "kyq", "version": env!("CARGO_PKG_VERSION") },
         "formats": {
             "kyaml": {
                 "profile": "kyaml-restricted-legacy-block-v0",
-                "operations": ["validate", "canon", "to-json", "fmt", "get", "check"]
+                "operations": ["validate", "canon", "to-json", "fmt", "get", "check", "fix"]
             },
             "json": {
                 "profile": "estate-strict-ijson-r3",
-                "operations": ["validate", "canon", "to-json", "fmt", "get", "check"]
+                "operations": ["validate", "canon", "to-json", "fmt", "get", "check", "fix"]
             },
             "jcs": {
                 "profile": "rfc8785-explicit-binary64",
-                "operations": ["validate", "canon", "to-json", "fmt", "get", "check"]
+                "operations": ["validate", "canon", "to-json", "fmt", "get", "check", "fix"]
             },
             "dhall": {
                 "profile": "import-free-typed-dhall",
@@ -38,8 +38,10 @@ pub(crate) fn bytes() -> Result<Vec<u8>, serde_json::Error> {
             "to-json": "RFC8785-JCS-bytes-one-final-newline",
             "fmt": "kyaml-restricted-legacy-block-v0",
             "get": "RFC8785-JCS-one-newline-per-document",
-            "check": "file-byte-comparison",
-            "writes_input_files": false
+            "check": "canonical-file-byte-comparison",
+            "fix": "canonical-file-atomic-replace",
+            "writes_input_files": true,
+            "writing_operations": ["fix"]
         },
         "resource_limits": {
             "raw_input_max_bytes": MAX_INPUT_BYTES,
@@ -53,7 +55,10 @@ pub(crate) fn bytes() -> Result<Vec<u8>, serde_json::Error> {
             "dhall_imports_enabled": false,
             "toml_projects_types_into_json": false,
             "fmt_preserves_comments": false,
-            "atomic_fix_implemented": false
+            "atomic_fix_implemented": true,
+            "fix_keeps_header_comment_block": true,
+            "fix_refuses_lost_comments": true,
+            "fix_follows_symlinks": false
         },
         "diagnostics": {
             "success_exit": 0,

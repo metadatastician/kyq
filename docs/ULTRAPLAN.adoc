@@ -717,6 +717,8 @@ D5 — Handover integration :: **40-step Phases 1–6** (2026-10-23 handover) ar
 D6 — KYAML strictness :: Unsupported constructs rejected explicitly (step 15), not silently normalised — enforced via CST
 D7 — Missing-tool policy :: Conformance gates fail closed (step 23); no silent downgrade
 D8 — MetaManifold adapter centralisation :: First-party boundaries behind explicit adapters (step 24); no scattered `JSON.parse`
+D21 — Command surface :: **(a) gate commands only**: `check`, `fix`, `canon`, `validate`, `fmt`, `to-json`, `get` (owner ruling by selector, 2026-11-26). `from-json`, `set`, `del`, lint and Kubernetes schema stay proposals (G3).
+A-06 — Native fix :: **Fail closed, keep SPDX**: refuse a file whose comments cannot be kept, keep the leading header block byte for byte, replace each file atomically, never touch an invalid file (owner ruling by selector, 2026-11-26). Implemented in W5; see `docs/CAPABILITIES.adoc`.
 
 No mathematical proof is claimed in this plan; every guarantee above is stated
 as a testable property with a named theorem that will be discharged in Phase 3
@@ -1084,7 +1086,7 @@ or cordoned before feature work.
 * [ ] Resolve resource-budget/profile parity with hostile execution.
 * [ ] Implement and verify TOML validity.
 * [ ] Bound import-free Dhall evaluation.
-* [ ] Native safe fix and SPDX/trivia preservation.
+* [x] Native safe fix and SPDX header preservation (W5, 2026-11-26; D21 (a), A-06). Interior trivia is refused, not preserved.
 * [ ] Freeze executable/CLI capabilities and consumer contract.
 * [ ] Establish strict DEED and dual K9 enforcement with actual validators.
 * [ ] Publish and smoke-test a standalone multi-platform distribution.

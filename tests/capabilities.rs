@@ -27,7 +27,7 @@ fn report() -> serde_json::Value {
 #[test]
 fn advertised_version_profiles_and_boundaries_are_truthful() {
     let report = report();
-    assert_eq!(report["schema_version"], "0.1.0");
+    assert_eq!(report["schema_version"], "0.2.0");
     assert_eq!(report["contract_status"], "preview");
     assert_eq!(report["implementation"]["name"], "kyq");
     assert_eq!(
@@ -53,10 +53,17 @@ fn advertised_version_profiles_and_boundaries_are_truthful() {
     assert!(report["resource_limits"]["dhall_process_time_limit_ms"].is_null());
     assert!(report["resource_limits"]["dhall_process_memory_limit_bytes"].is_null());
     assert_eq!(report["safety"]["dhall_imports_enabled"], false);
-    assert_eq!(report["safety"]["atomic_fix_implemented"], false);
+    assert_eq!(report["safety"]["atomic_fix_implemented"], true);
+    assert_eq!(report["safety"]["fix_keeps_header_comment_block"], true);
+    assert_eq!(report["safety"]["fix_refuses_lost_comments"], true);
+    assert_eq!(report["safety"]["fix_follows_symlinks"], false);
     assert_eq!(report["safety"]["toml_projects_types_into_json"], false);
     assert_eq!(report["safety"]["fmt_preserves_comments"], false);
-    assert_eq!(report["output_contract"]["writes_input_files"], false);
+    assert_eq!(report["output_contract"]["writes_input_files"], true);
+    assert_eq!(
+        report["output_contract"]["writing_operations"],
+        serde_json::json!(["fix"])
+    );
     assert_eq!(report["diagnostics"]["machine_readable"], false);
 }
 
@@ -65,7 +72,7 @@ fn advertised_operations_match_the_installed_binary() {
     let report = report();
     let formats = report["formats"].as_object().unwrap();
     assert_eq!(formats.len(), 5);
-    let known = ["validate", "canon", "to-json", "fmt", "get", "check"];
+    let known = ["validate", "canon", "to-json", "fmt", "get", "check", "fix"];
     let cases = [
         ("kyaml", b"x: 1\n".as_slice()),
         ("json", b"{\"x\":1}".as_slice()),
@@ -78,7 +85,18 @@ fn advertised_operations_match_the_installed_binary() {
         let advertised = formats[format]["operations"].as_array().unwrap();
         assert!(!advertised.is_empty(), "{format}");
         for operation in known {
-            let output = invoke(&[operation, "--from", format], fixture);
+            // fix never reads stdin: give it a scratch file holding the fixture.
+            let scratch = std::env::temp_dir()
+                .join(format!("kyq-capabilities-{}-{format}", std::process::id()));
+            let output = if operation == "fix" {
+                std::fs::write(&scratch, fixture).unwrap();
+                let path = scratch.to_str().unwrap();
+                let output = invoke(&[operation, "--from", format, path], b"");
+                std::fs::remove_file(&scratch).unwrap();
+                output
+            } else {
+                invoke(&[operation, "--from", format], fixture)
+            };
             let is_advertised = advertised.iter().any(|x| x.as_str() == Some(operation));
             if is_advertised {
                 assert!(

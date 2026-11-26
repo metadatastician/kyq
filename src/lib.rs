@@ -246,3 +246,98 @@ pub fn query<'a>(docs: &'a [Value], pointer: &str) -> Result<Vec<&'a Value>, Err
         })
         .collect()
 }
+
+/// The leading header comment block of a KYAML stream (KYAML_SPEC §7.3):
+/// every comment and blank line before the first content line, verbatim, and
+/// the number of lines it spans. A prefix with no comment is not a header.
+/// A leading BOM is not part of the header.
+fn header_block(text: &str) -> (&str, usize) {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let (mut end, mut lines, mut saw_comment) = (0usize, 0usize, false);
+    while end < text.len() {
+        let rest = &text[end..];
+        let line_len = rest.find('\n').map_or(rest.len(), |n| n + 1);
+        let line = rest[..line_len].trim_end_matches(['\n', '\r']);
+        let body = line.trim_start_matches([' ', '\t']);
+        let comment = body.starts_with('#');
+        if !comment && !body.is_empty() {
+            break;
+        }
+        saw_comment |= comment;
+        end += line_len;
+        lines += 1;
+    }
+    if saw_comment {
+        (&text[..end], lines)
+    } else {
+        ("", 0)
+    }
+}
+
+/// The canonical file text of a KYAML input: the header comment block
+/// verbatim (with a final LF if it has none), then the formatted body.
+/// `check` accepts exactly these bytes and `fix` writes them, so
+/// `check(fix(x))` succeeds by construction.
+fn kyaml_file_text(input: &[u8], refuse_lost_comments: bool) -> Result<Vec<u8>, Error> {
+    let docs = parse(input, Format::Kyaml)?;
+    for doc in &docs {
+        ijson_jcs::validate_canonicalizable(doc)
+            .map_err(|e| Error::new("INVALID_IJSON", e.to_string()))?;
+    }
+    // parse() accepted the input, so it is UTF-8.
+    let text = std::str::from_utf8(input).map_err(|e| Error::new("INVALID_UTF8", e.to_string()))?;
+    let (header, header_lines) = header_block(text);
+    if refuse_lost_comments
+        && let Some((line, column)) = kyaml::first_lost_comment(text, header_lines)
+    {
+        return Err(Error::new(
+            "COMMENTS_WOULD_BE_LOST",
+            "formatting would drop this comment (only the leading header comment block is kept); move it into the header or remove it",
+        )
+        .at(line, column, ""));
+    }
+    let mut output = header.as_bytes().to_vec();
+    if !output.is_empty() && !output.ends_with(b"\n") {
+        output.push(b'\n');
+    }
+    output.extend(format_documents(&docs)?);
+    Ok(output)
+}
+
+/// The exact bytes a canonical file holds for `format`: the KYAML header
+/// block plus formatted body, or JCS plus one LF for JSON and JCS.
+/// Dhall has no canonical file form here.
+pub fn canonical_file(input: &[u8], format: Format) -> Result<Vec<u8>, Error> {
+    match format {
+        Format::Kyaml => kyaml_file_text(input, false),
+        Format::Json | Format::Jcs => {
+            let mut bytes = canonicalize(input, format)?;
+            bytes.push(b'\n');
+            Ok(bytes)
+        }
+        Format::Dhall => Err(Error::new(
+            "UNSUPPORTED_OPERATION",
+            "Dhall has no canonical file form; use validate",
+        )),
+    }
+}
+
+/// The bytes `fix` writes for `input`, or a typed refusal.
+///
+/// Like [`canonical_file`], but a KYAML comment outside the leading header
+/// block is refused with `COMMENTS_WOULD_BE_LOST` instead of being dropped,
+/// and a result over [`MAX_INPUT_BYTES`] is refused, so `fix` never writes a
+/// file the gate would then reject.
+pub fn fix_bytes(input: &[u8], format: Format) -> Result<Vec<u8>, Error> {
+    let output = match format {
+        Format::Kyaml => kyaml_file_text(input, true)?,
+        _ => canonical_file(input, format)?,
+    };
+    if output.len() > MAX_INPUT_BYTES {
+        return Err(Error::new(
+            "INPUT_LIMIT",
+            "the fixed file would exceed 8 MiB",
+        ));
+    }
+    Ok(output)
+}
