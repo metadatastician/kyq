@@ -2,12 +2,17 @@
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
 #![forbid(unsafe_code)]
 mod capabilities;
+mod dhall_worker;
 mod fix;
 use kyq::{Format, MAX_INPUT_BYTES};
 use std::{
     io::{self, Read, Write},
     path::Path,
 };
+
+/// Counting allocator. Unlimited, except in the Dhall worker (W7).
+#[global_allocator]
+static ALLOCATOR: cap::Cap<std::alloc::System> = cap::Cap::new(std::alloc::System, usize::MAX);
 
 fn run() -> Result<i32, Box<dyn std::error::Error>> {
     let mut args = std::env::args_os()
@@ -16,6 +21,15 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         .collect::<Result<Vec<_>, _>>()?
         .into_iter();
     let command = args.next().unwrap_or_else(|| "--help".into());
+    if command == dhall_worker::WORKER_ARG {
+        if args.next().is_some() {
+            return Err("internal worker mode takes no arguments".into());
+        }
+        if ALLOCATOR.set_limit(kyq::DHALL_MEMORY_LIMIT_BYTES).is_err() {
+            return Err("cannot set the Dhall worker memory limit".into());
+        }
+        return Ok(dhall_worker::worker());
+    }
     if command == "--version" {
         println!("kyq {}", env!("CARGO_PKG_VERSION"));
         return Ok(0);
@@ -30,7 +44,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     }
     if command == "--help" || command == "help" {
         println!(
-            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\nkyq fix [--from kyaml|json|jcs] FILE\nkyq --capabilities  (machine-readable preview of supported operations)\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares the file with its canonical form without modifying it.\nfix rewrites FILE in canonical form by atomic replacement. It keeps the leading\nheader comment block (the SPDX lines) byte for byte, refuses a file with any\nother comment (COMMENTS_WOULD_BE_LOST), and never touches an invalid file."
+            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\nkyq fix [--from kyaml|json|jcs] FILE\nkyq --capabilities  (machine-readable preview of supported operations)\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled; Dhall runs in a worker limited to 2 s and 256 MiB. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares the file with its canonical form without modifying it.\nfix rewrites FILE in canonical form by atomic replacement. It keeps the leading\nheader comment block (the SPDX lines) byte for byte, refuses a file with any\nother comment (COMMENTS_WOULD_BE_LOST), and never touches an invalid file."
         );
         return Ok(0);
     }
@@ -116,7 +130,11 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         kyq::validate_toml(&input)?;
         return Ok(0);
     }
-    let docs = kyq::parse(&input, format)?;
+    let docs = if format == Format::Dhall {
+        dhall_worker::evaluate(&input)?
+    } else {
+        kyq::parse(&input, format)?
+    };
     let output = match command.as_str() {
         "validate" => Vec::new(),
         "canon" => kyq::canonicalize_documents(&docs)?,

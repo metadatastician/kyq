@@ -16,6 +16,12 @@ pub const NODE_BUDGET: usize = 100_000;
 pub const MAX_EXPANDED_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum nested containers.
 pub const MAX_DEPTH: usize = 64;
+/// Wall-clock limit for one confined Dhall evaluation by the CLI.
+pub const DHALL_TIME_LIMIT_MS: u64 = 2_000;
+/// Heap limit for the CLI's confined Dhall worker process.
+pub const DHALL_MEMORY_LIMIT_BYTES: usize = 256 * 1024 * 1024;
+/// Largest evaluated Dhall result the CLI accepts back from its worker.
+pub const DHALL_OUTPUT_MAX_BYTES: usize = MAX_EXPANDED_BYTES;
 
 /// Explicit input format; extensions alone never establish content validity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,8 +149,10 @@ pub fn validate_toml(input: &[u8]) -> Result<(), Error> {
 /// Parse a bounded UTF-8 input. JSON/Dhall produce exactly one document.
 ///
 /// Dhall imports (local, environment and remote) are disabled. Evaluation is
-/// performed by serde_dhall; a caller processing untrusted Dhall should also
-/// impose an OS process time/memory limit.
+/// performed in-process by serde_dhall, which has no time or memory bound.
+/// The `kyq` CLI confines it in a worker process (`DHALL_TIME_LIMIT_MS`,
+/// `DHALL_MEMORY_LIMIT_BYTES`); a library caller processing untrusted Dhall
+/// must impose its own process time/memory limit.
 pub fn parse(input: &[u8], format: Format) -> Result<Vec<Value>, Error> {
     if input.len() > MAX_INPUT_BYTES {
         return Err(Error::new("INPUT_LIMIT", "input exceeds 8 MiB"));

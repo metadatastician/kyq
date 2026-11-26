@@ -27,7 +27,7 @@ fn report() -> serde_json::Value {
 #[test]
 fn advertised_version_profiles_and_boundaries_are_truthful() {
     let report = report();
-    assert_eq!(report["schema_version"], "0.2.0");
+    assert_eq!(report["schema_version"], "0.3.0");
     assert_eq!(report["contract_status"], "preview");
     assert_eq!(report["implementation"]["name"], "kyq");
     assert_eq!(
@@ -50,8 +50,19 @@ fn advertised_version_profiles_and_boundaries_are_truthful() {
         report["resource_limits"]["kyaml_container_depth_max"],
         kyq::MAX_DEPTH
     );
-    assert!(report["resource_limits"]["dhall_process_time_limit_ms"].is_null());
-    assert!(report["resource_limits"]["dhall_process_memory_limit_bytes"].is_null());
+    assert_eq!(
+        report["resource_limits"]["dhall_process_time_limit_ms"],
+        kyq::DHALL_TIME_LIMIT_MS
+    );
+    assert_eq!(
+        report["resource_limits"]["dhall_process_memory_limit_bytes"],
+        kyq::DHALL_MEMORY_LIMIT_BYTES
+    );
+    assert_eq!(
+        report["resource_limits"]["dhall_result_max_bytes"],
+        kyq::DHALL_OUTPUT_MAX_BYTES
+    );
+    assert_eq!(report["safety"]["dhall_confinement"], "worker-process");
     assert_eq!(report["safety"]["dhall_imports_enabled"], false);
     assert_eq!(report["safety"]["atomic_fix_implemented"], true);
     assert_eq!(report["safety"]["fix_keeps_header_comment_block"], true);

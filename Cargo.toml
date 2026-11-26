@@ -18,6 +18,9 @@ serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 serde_dhall = { version = "0.13", default-features = false }
 yaml-rust2 = "0.11"
 regex = "1"
+# Counting global allocator: caps the Dhall worker's heap with no unsafe code
+# in kyq (W7). serde_dhall has no memory bound of its own.
+cap = "=0.1.2"
 # TOML 1.0 validity-only parser; keep the typed document and its trivia intact.
 toml_edit = { version = "=0.22.27", default-features = false, features = ["parse"] }
 

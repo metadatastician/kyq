@@ -23,8 +23,10 @@ cargo doc --locked --no-deps
 Native tests cover the 118 bridge vectors and 49 fixture diagnostic contracts,
 malformed input, duplicate keys,
 safe integer boundaries, alias expansion, cross-document aliases, disabled
-Dhall imports, JSON/JCS agreement, formatter repeatability and numeric type
-preservation. The benchmark consumes a real Kubernetes fixture and reports
+Dhall imports, confined Dhall evaluation (a costly input ends with
+`DHALL_TIME_LIMIT`, `DHALL_MEMORY_LIMIT` or `DHALL_STACK_LIMIT` inside the
+limits in link:CAPABILITIES.adoc[CAPABILITIES]), JSON/JCS agreement, formatter
+repeatability and numeric type preservation. The benchmark consumes a real Kubernetes fixture and reports
 iterations, input bytes and elapsed time; debug timings are not release targets.
 
 == Recorded executions
@@ -41,7 +43,6 @@ This does not discharge the parser-level obligations in the proof-scope ledger.
 * Sustained fuzzing, mutation campaigns and complete current taxonomy evidence.
 * Live Windows, Linux and macOS CI receipts at the proposed commit.
 * Published-commit CI proof receipts and the open production-refinement obligations.
-* External Dhall evaluator time/memory confinement.
 * Offline Guix build with all git dependencies and the required Rust compiler.
 * Wolfi/Podman execution, SBOM, signed Stapeln bundle and strict admission evidence.
 * Representative estate consumer acceptance and reviewed pin updates.
