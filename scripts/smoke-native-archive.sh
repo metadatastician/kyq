@@ -45,7 +45,7 @@ executable="$scratch/$name/$binary"
     { echo "installed executable reports wrong version: $actual" >&2; exit 1; }
 
   "$executable" --capabilities > "$scratch/capabilities.json"
-  jq -e '.schema_version == "0.1.0" and .contract_status == "preview" and (.formats.toml.operations == ["validate"]) and .safety.atomic_fix_implemented == false' \
+  jq -e '.schema_version == "0.2.0" and .contract_status == "preview" and (.formats.toml.operations == ["validate"]) and .safety.atomic_fix_implemented == true and .safety.fix_follows_symlinks == false' \
     "$scratch/capabilities.json" >/dev/null ||
     { echo "installed capabilities do not match the implemented contract" >&2; exit 1; }
 
@@ -56,6 +56,15 @@ executable="$scratch/$name/$binary"
   printf '{"a":1,"b":2}' > "$scratch/canon.expected"
   cmp "$scratch/canon.expected" "$scratch/canon.out" ||
     { echo "canonical bytes differ" >&2; exit 1; }
+
+  # fix rewrites a file in place, keeping its leading SPDX header block.
+  printf '# SPDX-License-Identifier: MPL-2.0\n{b: 2,   a: [1,2]}\n' > "$scratch/fix.yaml"
+  "$executable" fix --from kyaml "$scratch/fix.yaml" > "$scratch/fix.out"
+  grep -q '^FIXED ' "$scratch/fix.out" || { echo "fix did not report FIXED" >&2; exit 1; }
+  head -n 1 "$scratch/fix.yaml" | grep -qx '# SPDX-License-Identifier: MPL-2.0' ||
+    { echo "fix dropped the SPDX header" >&2; exit 1; }
+  "$executable" check --from kyaml "$scratch/fix.yaml" ||
+    { echo "fixed file is not canonical" >&2; exit 1; }
 
   status=0
   printf 'a: [\n' |

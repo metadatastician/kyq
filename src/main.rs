@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
 #![forbid(unsafe_code)]
 mod capabilities;
+mod fix;
 use kyq::{Format, MAX_INPUT_BYTES};
 use std::{
     io::{self, Read, Write},
@@ -29,11 +30,11 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     }
     if command == "--help" || command == "help" {
         println!(
-            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\nkyq --capabilities  (machine-readable preview of supported operations)\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares formatted bytes without modifying files."
+            "kyq <validate|canon|to-json|fmt|get|check> [--from kyaml|json|jcs|dhall|toml] [--pointer /path] [FILE|-]\nkyq fix [--from kyaml|json|jcs] FILE\nkyq --capabilities  (machine-readable preview of supported operations)\n\nDefaults: KYAML, stdin. canon emits JCS without LF; to-json emits JCS plus LF.\nfmt emits deterministic block-style KYAML and discards comments.\njson rejects unsafe integer tokens; jcs explicitly rounds numbers to binary64.\nDhall imports are disabled. TOML 1.0 supports validate only; its source is never rewritten.\ncheck compares the file with its canonical form without modifying it.\nfix rewrites FILE in canonical form by atomic replacement. It keeps the leading\nheader comment block (the SPDX lines) byte for byte, refuses a file with any\nother comment (COMMENTS_WOULD_BE_LOST), and never touches an invalid file."
         );
         return Ok(0);
     }
-    if !["validate", "canon", "to-json", "fmt", "get", "check"].contains(&command.as_str()) {
+    if !["validate", "canon", "to-json", "fmt", "get", "check", "fix"].contains(&command.as_str()) {
         return Err(format!("unknown command: {command}").into());
     }
     let mut format = Format::Kyaml;
@@ -93,6 +94,16 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         )
         .into());
     }
+    if command == "fix" {
+        if format == Format::Dhall {
+            return Err("UNSUPPORTED_OPERATION: fix supports KYAML, JSON and JCS; Dhall has no canonical file form".into());
+        }
+        let path = match file.as_deref() {
+            None | Some("-") => return Err("fix requires a FILE; it never reads stdin".into()),
+            Some(path) => path,
+        };
+        return fix::run(Path::new(path), format);
+    }
     let reader: Box<dyn Read> = match file.as_deref() {
         None | Some("-") => Box::new(io::stdin()),
         Some(path) => Box::new(std::fs::File::open(Path::new(path))?),
@@ -116,18 +127,10 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         }
         "fmt" => kyq::format_documents(&docs)?,
         "check" => {
-            let expected = match format {
-                Format::Kyaml => kyq::format_documents(&docs)?,
-                Format::Json | Format::Jcs => {
-                    let mut bytes = kyq::canonicalize_documents(&docs)?;
-                    bytes.push(b'\n');
-                    bytes
-                }
-                Format::Dhall => {
-                    return Err("check supports KYAML and JSON; use validate for Dhall".into());
-                }
-            };
-            if input != expected {
+            if format == Format::Dhall {
+                return Err("check supports KYAML and JSON; use validate for Dhall".into());
+            }
+            if input != kyq::canonical_file(&input, format)? {
                 eprintln!("kyq: input is valid but not in the selected canonical file format");
                 return Ok(1);
             }
