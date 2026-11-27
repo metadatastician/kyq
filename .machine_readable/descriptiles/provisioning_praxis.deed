@@ -4,7 +4,7 @@
   :canonical-name "kyq-provisioning"
   :name "kyq"
   :repo "metadatastician/kyq"
-  :version "0.2.0"
+  :version "0.3.0"
   :archetype "tool"
   :languages "rust"
   :build "cargo build --locked"
