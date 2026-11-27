@@ -26,7 +26,7 @@
 
 (package
   (name "kyq")
-  (version "0.2.0")
+  (version "0.3.0")
   (source (local-file %source-dir "kyq-checkout"
                       #:recursive? #t
                       #:select? (lambda (file stat)
