@@ -131,6 +131,7 @@ fn known_code(code: &str) -> &'static str {
     match code {
         "INVALID_DHALL" => "INVALID_DHALL",
         "INVALID_IJSON" => "INVALID_IJSON",
+        "NON_FINITE_NUMBER" => "NON_FINITE_NUMBER",
         "INVALID_UTF8" => "INVALID_UTF8",
         "INPUT_LIMIT" => "INPUT_LIMIT",
         _ => "DHALL_WORKER_FAILED",

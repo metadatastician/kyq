@@ -180,14 +180,56 @@ pub fn parse(input: &[u8], format: Format) -> Result<Vec<Value>, Error> {
             Ok(vec![value])
         }
         Format::Dhall => {
-            let value: Value = serde_dhall::from_str(text)
+            let simple: serde_dhall::SimpleValue = serde_dhall::from_str(text)
                 .imports(false)
                 .parse()
+                .map_err(|e| Error::new("INVALID_DHALL", e.to_string()))?;
+            refuse_non_finite(&simple, &mut String::new())?;
+            let value: Value = serde_dhall::from_simple_value(simple)
                 .map_err(|e| Error::new("INVALID_DHALL", e.to_string()))?;
             ijson_jcs::validate_canonicalizable(&value)
                 .map_err(|e| Error::new("INVALID_IJSON", e.to_string()))?;
             Ok(vec![value])
         }
+    }
+}
+
+/// Dhall `NaN`, `Infinity` and `-Infinity` have no JSON form; serde would
+/// write them as `null`. Refuse them as KYAML `.nan` and `.inf` are refused.
+/// The worker passes only the code and message back, so the path is in the
+/// message.
+fn refuse_non_finite(value: &serde_dhall::SimpleValue, path: &mut String) -> Result<(), Error> {
+    use serde_dhall::{NumKind, SimpleValue};
+    let child = |key: &str, value: &SimpleValue, path: &mut String| {
+        let len = path.len();
+        path.push('/');
+        path.push_str(&key.replace('~', "~0").replace('/', "~1"));
+        let result = refuse_non_finite(value, path);
+        path.truncate(len);
+        result
+    };
+    match value {
+        SimpleValue::Num(NumKind::Double(d)) if !f64::from(*d).is_finite() => Err(Error::new(
+            "NON_FINITE_NUMBER",
+            format!(
+                "Dhall {} has no JSON form (at {})",
+                match f64::from(*d) {
+                    f if f.is_nan() => "NaN",
+                    f if f > 0.0 => "Infinity",
+                    _ => "-Infinity",
+                },
+                if path.is_empty() { "/" } else { path }
+            ),
+        )),
+        SimpleValue::Optional(Some(v)) | SimpleValue::Union(_, Some(v)) => {
+            refuse_non_finite(v, path)
+        }
+        SimpleValue::List(items) => items
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, v)| child(&i.to_string(), v, path)),
+        SimpleValue::Record(map) => map.iter().try_for_each(|(k, v)| child(k, v, path)),
+        _ => Ok(()),
     }
 }
 
