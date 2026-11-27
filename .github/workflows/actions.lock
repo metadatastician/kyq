@@ -37,6 +37,10 @@ workflows:
         - 'actions/checkout@v7.0.1'
     '.github/workflows/estate-rules.yml':
         - 'actions/checkout@v7.0.1'
+    '.github/workflows/fuzz.yml':
+        - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+        - 'actions/upload-artifact@v7.0.2'
+        - 'dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8'
     '.github/workflows/governance.yml':
         - 'metadatastician/standards@7641c7fdb01420696b5420ab85d88f599f32f609'
     '.github/workflows/groove-check.yml':

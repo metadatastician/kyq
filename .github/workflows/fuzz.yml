@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: MPL-2.0
+# W8 part 2: sustained fuzzing of the KYAML and JSON/JCS readers.
+# Weekly and on demand; not a pull-request gate. A crash fails the run and
+# uploads the crashing input. Toolchain: the nightly in fuzz/rust-toolchain.toml.
+name: Fuzz
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per target
+        default: "1800"
+permissions:
+  contents: read
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [kyaml_roundtrip, json_jcs_roundtrip]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: nightly-2026-11-01
+      - run: cargo +nightly-2026-11-01 install --locked cargo-fuzz@0.13.1
+      - name: Seed from the estate KYAML corpus
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p "fuzz/corpus/$TARGET"
+          ext=kyaml; [[ $TARGET == json_jcs_roundtrip ]] && ext=json
+          cp tests/corpus/estate-kyaml/cases/*."$ext" "fuzz/corpus/$TARGET/"
+      - name: Fuzz
+        working-directory: fuzz
+        env:
+          TARGET: ${{ matrix.target }}
+          SECONDS_PER_TARGET: ${{ inputs.seconds || '1800' }}
+        run: |
+          cargo fuzz run -O "$TARGET" -- -fork=2 \
+            -max_total_time="$SECONDS_PER_TARGET" -max_len=65536 \
+            -rss_limit_mb=2048 -print_final_stats=1
+      - if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

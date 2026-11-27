@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+# W8 part 2: cargo-fuzz targets. Build with the nightly pinned in
+# fuzz/rust-toolchain.toml (cargo fuzz needs nightly sanitizer flags).
+[package]
+name = "kyq-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+
+[dependencies.kyq]
+path = ".."
+
+# Kept out of the root package's build.
+[workspace]
+members = ["."]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kyq_fuzz_plant)"] }
+
+[[bin]]
+name = "kyaml_roundtrip"
+path = "fuzz_targets/kyaml_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_jcs_roundtrip"
+path = "fuzz_targets/json_jcs_roundtrip.rs"
+test = false
+doc = false
+bench = false
