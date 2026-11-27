@@ -45,8 +45,15 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           SECONDS_PER_TARGET: ${{ inputs.seconds || '1800' }}
+        # Replay the seeds first without fork mode: in fork mode a seed that
+        # crashes can be dropped at the first merge. Fork mode also ignores
+        # timeouts and OOMs by default; turn that off so they fail the job.
         run: |
+          set -euo pipefail
+          cargo fuzz run -O "$TARGET" -- -runs=0 -max_len=65536 \
+            -rss_limit_mb=2048
           cargo fuzz run -O "$TARGET" -- -fork=2 \
+            -ignore_timeouts=0 -ignore_ooms=0 \
             -max_total_time="$SECONDS_PER_TARGET" -max_len=65536 \
             -rss_limit_mb=2048 -print_final_stats=1
       - if: failure()
