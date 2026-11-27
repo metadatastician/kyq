@@ -1,0 +1,1 @@
+[{"name":"Governance","on":{"push":{"branches":["main","master"]},"pull_request":{"branches":["main","master"]},"workflow_dispatch":null},"permissions":{"actions":"read","contents":"read"},"jobs":{"governance":{"uses":"./.github/workflows/governance-reusable.yml","with":{"baseline-strict":true},"secrets":{"HYPATIA_SCAN_PAT":"${{ secrets.HYPATIA_SCAN_PAT }}"}}}}]

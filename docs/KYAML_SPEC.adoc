@@ -149,7 +149,8 @@ nextKey: 1        # the mapping resumes at the same indentation
 * Complex (`? `) keys are rejected, in block and flow mappings:
   `UNSUPPORTED_COMPLEX_KEY`. The YAML merge
   key `<<` is rejected: `UNSUPPORTED_MERGE_KEY` — treating it as an ordinary
-  string key would silently change the document's meaning.
+  string key would silently change the document's meaning. A quoted `"<<"` is
+  rejected too: yq (go-yaml), the estate formatter, merges on it.
 * An implicit key is at most 1024 characters, counted in code points over the
   key itself (a quoted key with its quotes): `KEY_TOO_LONG`, in block and flow
   mappings (YAML 1.2 §7.4.2).

@@ -1,0 +1,517 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+# This workflow is managed by gh actions-lock.
+# Hypatia Neurosymbolic CI/CD Security Scan — Reusable Workflow (DEPRECATED for new repos, comment only: the template runs this scan inline)
+{
+  name: "Hypatia Reusable Scan",
+  on: {
+    workflow_call: {
+      inputs: {
+        block-on-high: {
+          description: "Refuse current high or critical findings after validated baseline filtering; no baseline is required",
+          type: "boolean",
+          required: false,
+          default: false,
+        },
+        block-on-critical: {
+          description: "Refuse current critical findings only: Hypatia's, after the same baseline and scope filtering as block-on-high, and panic-attack's, where a scan that did not run cannot pass. For callers that block on critical today and are not yet ready to block on high. block-on-high takes precedence for Hypatia when both are set.",
+          type: "boolean",
+          required: false,
+          default: false,
+        },
+        scope-excludes: {
+          description: "Comma-separated path prefixes that are reported but NEVER graded, and whose SARIF is not uploaded: frozen history that cannot be edited without falsifying the record. Default 9-archive/ -- matching the CodeQL config, which already ignores the same tree. Set to an empty string to grade everything.",
+          type: "string",
+          required: false,
+          default: "9-archive/",
+        },
+        inherited-language-paths: {
+          description: "For a real fork only. Path, in the caller's repository, of a list of exact file paths received from the fork's upstream (one per line, `#` comments allowed). The `cicd_rules/banned_language_file` finding on each listed path is reported but NEVER graded or gated, and its SARIF is not uploaded. Every other rule on those files is unchanged. Only TypeScript, JavaScript and ReScript paths are accepted; an unusable list fails the job. Empty (the default) excuses nothing.",
+          type: "string",
+          required: false,
+          default: "",
+        },
+        sarif-upload-on-pull-request: {
+          description: "Upload the SARIF to code scanning on pull_request events. Default true. Set false where this lane is advisory on pull requests: an upload there creates a separate \"Code scanning results\" check that can block a merge while this job passes. Push and manual runs still upload. The findings artifact and the verdict grid are unchanged.",
+          type: "boolean",
+          required: false,
+          default: true,
+        },
+        report-backs-artifact: {
+          description: "Name of an artifact, uploaded earlier in the same run, holding the gitbot-fleet report-back envelopes (one <member>.json each; produced by hyperpolymath/gitbot-fleet fleet-report-back-reusable.yml). It is downloaded into a fresh directory under the runner's temp directory, outside the checkout, before the verdict grid renders, so each enrolled member's row carries its evidence instead of \"enrolled, but no report-back was received\". A missing artifact is tolerated and leaves those rows orange. Set to an empty string to skip the download; the renderer then reads an empty directory, never the checkout.",
+          type: "string",
+          required: false,
+          default: "fleet-report-backs",
+        },
+        previous-grid-artifact: {
+          description: "Optional trusted prior PR grid artifact, produced by a read-scoped caller job earlier in this same workflow run. No PR read permission is requested by this reusable; existing callers remain compatible.",
+          type: "string",
+          required: false,
+          default: "",
+        },
+        hypatia-ref: {
+          description: "Hypatia commit to build the scanner from. Defaults to a vetted SHA so a bad hypatia main cannot turn every caller red at once (09-12..14 and 09-26..30 outages). Canary callers pass \"HEAD\" to trial the tip before the default is moved here.",
+          type: "string",
+          required: false,
+          default: "adb2f41db34156cf81b2508f6596a10c7f076098",
+        },
+        panic-ref: {
+          description: "panic-attack commit (40-hex SHA or HEAD for an explicit canary).",
+          type: "string",
+          required: false,
+          default: "cbf2b935ef4260cc3ae66010f4ffc91385ff8f8c",
+        },
+        pons-ref: {
+          description: "pons asinorum commit (40-hex SHA or HEAD for an explicit canary).",
+          type: "string",
+          required: false,
+          default: "bca1ea289a4f8a86bac6212731e6f8ec15c67ad4",
+        },
+        hypatia-advisory: {
+          description: "Include below-threshold advisory findings (`advisory: true` at low or info: WF026, WF027, latent RE011) in the findings JSON, so the verdict grid lists them under \"JSON-only below-threshold advisories\". JSON only: the SARIF projection and both gates read medium and above and are unchanged. Default true (owner decision 2026-11-17), because a flag-only finding that no grid shows is not flagged. Set false to keep them out of the JSON.",
+          type: "boolean",
+          required: false,
+          default: true,
+        },
+      },
+      secrets: {
+        HYPATIA_SCAN_PAT: {
+          description: "Fine-grained read-only PAT used to read Dependabot, code-scanning and secret-scanning alerts; the scan falls back to the built-in GITHUB_TOKEN when it is not supplied. Declared explicitly so callers pass ONLY this secret instead of `secrets: inherit`, which forwarded every caller secret (standards#1108 §6b).",
+          required: false,
+        },
+      },
+      outputs: {
+        verdict: {
+          description: "Overall state of the lane's verdict grid, computed over GATING rows only (docs/VERDICT-GRID-SPEC.adoc): purple, red, orange, yellow, blue, green or grey. Advisory rows are reported in the grid and in `advisory`, and never set this.",
+          value: "${{ jobs.scan.outputs.verdict }}",
+        },
+        advisory: {
+          description: "Advisory rows in the report, as `<state>:<critical>:<high>`, or `none` when the lane has no advisory reporter. Empty when the grid did not render. Callers show this beside the verdict so that an advisory critical is visible WITHOUT being able to grade the change.",
+          value: "${{ jobs.scan.outputs.advisory }}",
+        },
+      },
+    },
+  },
+  permissions: {
+    actions: "read",
+    contents: "read",
+    security-events: "write",
+  },
+  jobs: {
+    scan: {
+      name: "Hypatia Neurosymbolic Analysis",
+      runs-on: "ubuntu-latest",
+      # 30 + 10 + 5: the panic-attack build is capped at 10 minutes and its scan
+      # at 5, so a slow build or a hung scan records "not_run" or "error" instead
+      # of timing out, and so failing, the whole job.
+      timeout-minutes: 45,
+      outputs: {
+        verdict: "${{ steps.grid.outputs.state }}",
+        advisory: "${{ steps.grid.outputs.advisory }}",
+      },
+      steps: [
+        {
+          name: "Checkout repository",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            fetch-depth: 0,
+            persist-credentials: false,
+          },
+        },
+        {
+          name: "Setup Elixir for Hypatia scanner",
+          # OTP 28.x (28.1 to 28.5.0.8) segfaults the Hypatia scanner and oracle
+          # in sweep_off_heap on some trees; OTP 27.3.4.19 is clean on all of them
+          # (rsr-template-repo#333 and #339; hyperpolymath/hypatia#1061).
+          uses: "erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124", # v1.24.1
+          with: {
+            elixir-version: "1.19.4",
+            otp-version: "27.3.4.19",
+          },
+        },
+        {
+          name: "Resolve Hypatia scanner commit",
+          id: "hypatia-rev",
+          env: {
+            HYPATIA_REF: "${{ inputs.hypatia-ref }}",
+          },
+          run: "# The scanner is PINNED (input hypatia-ref, default a vetted SHA). Only\n# an explicit \"HEAD\" floats, for canary callers. Resolved before the\n# cache step because the cache key must hash the commit.\nif [ \"$HYPATIA_REF\" = \"HEAD\" ]; then\n  sha=$(git ls-remote https://github.com/hyperpolymath/hypatia.git HEAD | cut -f1)\nelse\n  sha=\"$HYPATIA_REF\"\nfi\nif [[ ! \"$sha\" =~ ^[0-9a-f]{40}$ ]]; then\n  echo \"ERROR: hypatia-ref must be a 40-hex commit SHA or HEAD (got: $HYPATIA_REF)\" >&2\n  exit 1\nfi\necho \"sha=$sha\" >> \"$GITHUB_OUTPUT\"\necho \"Resolved Hypatia commit: $sha\"\n",
+        },
+        {
+          name: "Resolve advisory scanner commits",
+          env: {
+            PANIC_REF: "${{ inputs.panic-ref }}",
+            PONS_REF: "${{ inputs.pons-ref }}",
+          },
+          run: "set -euo pipefail\nresolve() {\n  local label=\"$1\" ref=\"$2\" url=\"$3\" sha\n  if [ \"$ref\" = HEAD ]; then\n    sha=$(git ls-remote \"$url\" HEAD | cut -f1)\n  else\n    sha=\"$ref\"\n  fi\n  if [[ ! \"$sha\" =~ ^[0-9a-f]{40}$ ]]; then\n    echo \"::error::$label must be a 40-hex commit SHA or HEAD\" >&2\n    exit 1\n  fi\n  printf '%s' \"$sha\"\n}\npanic=$(resolve panic-ref \"$PANIC_REF\" https://github.com/hyperpolymath/panic-attack.git)\npons=$(resolve pons-ref \"$PONS_REF\" https://github.com/hyperpolymath/pons-asinorum.git)\n# The resolved commits, not HEAD or unvalidated input, key caches,\n# cargo installs, status envelopes, and the grid's profile.\nprintf 'PANIC_ATTACK_SHA=%s\\nPONS_SHA=%s\\n' \"$panic\" \"$pons\" >> \"$GITHUB_ENV\"\necho \"Resolved panic-attack: $panic; pons: $pons\"\n",
+        },
+        {
+          name: "Cache Hex/Mix and Scanner Build",
+          uses: "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", # v6.1.0
+          with: {
+            path: "~/.mix\n~/.hex\n~/hypatia\n",
+            # Source-pinned key: when Hypatia main advances, the SHA changes, the
+            # cache misses, and the clone + escript build below re-run instead of
+            # restoring a stale binary. The old keyless `...-build` key meant the
+            # first scanner ever cached was reused forever, so scanner fixes (e.g.
+            # SD022, hypatia#545) never reached CI. No restore-keys on purpose —
+            # a partial restore would repopulate ~/hypatia and the guards below
+            # would then skip the rebuild, reintroducing the staleness.
+            key: "hypatia-scanner-v4-${{ runner.os }}-otp27.3.4.19-${{ steps.hypatia-rev.outputs.sha }}",
+          },
+        },
+        {
+          name: "Check out resolved Hypatia commit",
+          env: {
+            HYPATIA_SHA: "${{ steps.hypatia-rev.outputs.sha }}",
+          },
+          run: "set -euo pipefail\nif [ ! -d \"$HOME/hypatia\" ]; then\n  git init \"$HOME/hypatia\"\n  git -C \"$HOME/hypatia\" remote add origin https://github.com/hyperpolymath/hypatia.git\n  git -C \"$HOME/hypatia\" fetch --depth 1 origin \"$HYPATIA_SHA\"\n  git -C \"$HOME/hypatia\" checkout --detach FETCH_HEAD\nfi\n# A cache is usable only when its source matches the key, including\n# on cache hits. v4 invalidates caches populated by the moving clone.\nACTUAL_SHA=$(git -C \"$HOME/hypatia\" rev-parse HEAD)\nif [ \"$ACTUAL_SHA\" != \"$HYPATIA_SHA\" ]; then\n  echo \"::error::Hypatia cached source does not match the resolved commit\"\n  exit 1\nfi\n",
+        },
+        {
+          name: "Build Hypatia scanner",
+          run: "set -euo pipefail\ncd \"$HOME/hypatia\"\n# JSON comes from the escript, but the single-scan SARIF projection\n# also needs the compiled upstream module. A partial cache with only\n# an executable cannot safely skip the Mix build.\nsarif_beam=\"_build/${MIX_ENV:-dev}/lib/hypatia/ebin/Elixir.Hypatia.SARIF.beam\"\nif [ ! -x hypatia ] || [ ! -f \"$sarif_beam\" ]; then\n  if ! (mix deps.get && mix escript.build); then\n    echo \"::error::Hypatia scanner build failed at commit $(git rev-parse HEAD) — see upstream hyperpolymath/hypatia\"\n    exit 1\n  fi\nfi\nif [ ! -x hypatia ] || [ ! -f \"$sarif_beam\" ]; then\n  echo \"::error::Hypatia scanner binary or compiled SARIF renderer is missing after build\"\n  exit 1\nfi\n",
+        },
+        {
+          name: "Run Hypatia scan",
+          env: {
+            # The scanner reads a single env var, GITHUB_TOKEN, to pull Dependabot,
+            # code-scanning and secret-scanning alerts (lib/rules/{dependabot,
+            # code_scanning,secret_scanning}_alerts.ex). Without it those three
+            # checks are skipped with "GITHUB_TOKEN not set" warnings.
+            #
+            # Prefer a fine-grained, read-only PAT (HYPATIA_SCAN_PAT, passed by
+            # the caller as this reusable's one declared secret): the built-in
+            # Actions token CANNOT read Dependabot alerts (no `dependabot`
+            # permission exists for it). Fall back to the built-in token so
+            # code-scanning still works in repos where the PAT isn't present yet.
+            GITHUB_TOKEN: "${{ secrets.HYPATIA_SCAN_PAT || secrets.GITHUB_TOKEN }}",
+            HYPATIA_ADVISORY: "${{ inputs.hypatia-advisory }}",
+          },
+          run: "set -euo pipefail\necho \"Scanning repository: ${GITHUB_REPOSITORY:-}\"\n# Collect once, including opt-in advisory JSON below the fixed medium\n# threshold. The alert APIs may change between scans; projecting one\n# captured list is the only way JSON and SARIF describe the same run.\nHYPATIA_FORMAT=json HYPATIA_SEVERITY=medium \\\n  \"$HOME/hypatia/hypatia-cli.sh\" scan . --exit-zero > hypatia-findings.json\nif ! jq -se 'length == 1 and (.[0] | type == \"array\" and\n    all(.[]; type == \"object\" and (.severity as $s |\n      [\"critical\", \"high\", \"medium\", \"warn\", \"low\", \"info\", \"informational\"] | index($s) != null)))' \\\n    hypatia-findings.json >/dev/null; then\n  echo \"::error::Hypatia did not produce one valid findings array\"\n  exit 2\nfi\n\n# Use the scanner's OWN SARIF renderer (including its self-echo filter,\n# fingerprints and URI semantics), not a second implementation. JSON\n# advisory extras below medium are excluded from this projection, so\n# opt-in cannot alter uploads or either baseline gate. Attach original\n# severity/line/class as SARIF properties for truthful grid grading;\n# this does not change result level, fingerprint or gate semantics.\nexport SCAN_ROOT=\"$PWD\" FINDINGS_PATH=\"$PWD/hypatia-findings.json\"\n(\n  cd \"$HOME/hypatia\"\n  mix run --no-start --no-compile -e '\n    root = System.fetch_env!(\"SCAN_ROOT\")\n    findings = System.fetch_env!(\"FINDINGS_PATH\") |> File.read!() |> Jason.decode!()\n    gated = Enum.filter(findings, &(&1[\"severity\"] in [\"critical\", \"high\", \"medium\", \"warn\"]))\n    document = Hypatia.SARIF.from_findings(gated, root)\n    run = hd(document[\"runs\"])\n    # Ask the authoritative renderer which inputs it suppresses as\n    # meta-findings. Verify correspondence before annotating; future\n    # changes must fail, never zip unrelated findings together.\n    pairs = Enum.flat_map(gated, fn finding ->\n      case Hypatia.SARIF.from_findings([finding], root)[\"runs\"] |> hd() |> Map.fetch!(\"results\") do\n        [] -> []\n        [result] -> [{result, finding}]\n        _ -> raise \"unexpected SARIF projection\"\n      end\n    end)\n    unless Enum.map(pairs, &elem(&1, 0)) == run[\"results\"], do: raise \"SARIF projection mismatch\"\n    results = Enum.map(pairs, fn {result, finding} ->\n      # The pinned code_safety normalizer puts its CWE in a fixed\n      # generated reason suffix rather than a structured field.\n      # Only recognise that exact format; arbitrary prose is not\n      # sufficient identity for cross-reporter corroboration.\n      cwe_from_safety = if finding[\"rule_module\"] == \"code_safety\" and is_binary(finding[\"reason\"]) do\n        case Regex.run(~r/\\([0-9]+ occurrences, (CWE-[0-9]+), line [0-9, ]*\\)$/, finding[\"reason\"]) do\n          [_, cwe] -> cwe\n          _ -> nil\n        end\n      end\n      properties = Map.merge(result[\"properties\"] || %{}, %{\n        \"hypatia.severity\" => finding[\"severity\"],\n        \"hypatia.originalLine\" => finding[\"line\"],\n        \"hypatia.originalFile\" => finding[\"file\"],\n        \"hypatia.class\" => case finding[\"cwe\"] || finding[\"cwe_id\"] do\n          n when is_integer(n) -> \"CWE-#{n}\"\n          nil -> finding[\"class\"] || cwe_from_safety || finding[\"type\"]\n          cwe -> cwe\n        end\n      })\n      Map.put(result, \"properties\", properties)\n    end)\n    IO.puts(Jason.encode!(Map.put(document, \"runs\", [Map.put(run, \"results\", results)]), pretty: true))\n  '\n) > hypatia.sarif\nif [ ! -s hypatia.sarif ]; then\n  echo \"::error::Hypatia did not produce hypatia.sarif\"\n  exit 2\nfi\n",
+        },
+        {
+          name: "Validate findings and count severities",
+          id: "scan",
+          run: "set -euo pipefail\n# Exactly one JSON array of findings, each with a recognised severity.\n# Missing/truncated/multi-document output is a scanner error and fails\n# closed; a single well-formed `[]` is a valid clean scan when the\n# scanner step succeeded (standards#1054).\nif [ ! -s hypatia-findings.json ] || ! jq -e -s '\n  length == 1 and (.[0] | type == \"array\" and all(.[];\n    type == \"object\" and (.severity as $s |\n      [\"critical\", \"high\", \"medium\", \"warn\", \"low\", \"info\", \"informational\"] | index($s) != null)))\n' hypatia-findings.json >/dev/null; then\n  echo \"::error::Hypatia did not produce one valid findings array\"\n  exit 2\nfi\n\nFINDING_COUNT=$(jq '. | length' hypatia-findings.json)\nCRITICAL=$(jq '[.[] | select(.severity == \"critical\")] | length' hypatia-findings.json)\nHIGH=$(jq '[.[] | select(.severity == \"high\")] | length' hypatia-findings.json)\n# Hypatia's research rules use \"warn\" at the same rank as \"medium\".\nMEDIUM=$(jq '[.[] | select(.severity == \"medium\" or .severity == \"warn\")] | length' hypatia-findings.json)\n\n{\n  echo \"findings_count=$FINDING_COUNT\"\n  echo \"critical=$CRITICAL\"\n  echo \"high=$HIGH\"\n  echo \"medium=$MEDIUM\"\n} >> \"$GITHUB_OUTPUT\"\n\n{\n  echo \"## Hypatia Scan Results\"\n  echo \"\"\n  echo \"| Severity | Count |\"\n  echo \"|----------|-------|\"\n  echo \"| Critical | $CRITICAL |\"\n  echo \"| High     | $HIGH |\"\n  echo \"| Medium   | $MEDIUM |\"\n  echo \"| **Total**| $FINDING_COUNT |\"\n} >> \"$GITHUB_STEP_SUMMARY\"\n",
+        },
+        {
+          name: "Relativize finding paths",
+          run: "# Hoisted out of the gate step so the SARIF filter and the gate share\n# ONE definition of a finding's path. code_safety / honest_completion\n# emit ABSOLUTE host paths in .file (Path.expand(repo)) while the\n# baseline uses repo-relative paths; without this they never match\n# (hypatia#566 stopgap).\nif [ -f hypatia-findings.json ]; then\n  jq --arg root \"$PWD\" '\n    map(if (.file? // \"\") == $root then .file = \".\"\n        elif (.file? // \"\") | startswith($root + \"/\")\n        then .file = (.file | ltrimstr($root + \"/\"))\n        else . end)\n  ' hypatia-findings.json > hypatia-findings.relativized.json\n  jq 'map(select(.severity == \"critical\" or .severity == \"high\" or\n                 .severity == \"medium\" or .severity == \"warn\"))' \\\n    hypatia-findings.relativized.json > hypatia-findings.gating.json\nfi\n",
+        },
+        # panic-attack is ADVISORY: it never fails this job, because this
+        # reusable is called estate-wide and the owner has not made it a gate.
+        # It is never silent either. Until 2026-10 nothing installed it, so the
+        # old step wrote a bare `[]` that read exactly like a clean scan (the CRG
+        # "panic-attack assail passes" evidence). It runs before the standards
+        # checkout below so that it scans the caller's tree, not
+        # .standards-checkout/scripts.
+        {
+          name: "Restore panic-attack build cache",
+          uses: "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", # v6.1.0
+          with: {
+            path: "~/.panic-attack",
+            key: "panic-attack-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PANIC_ATTACK_SHA }}",
+          },
+        },
+        {
+          name: "Install panic-attack (pinned source build)",
+          id: "panic-attack-install",
+          run: "set -euo pipefail\n# Every failure path sets `reason` and exits 0; the next step turns\n# that into status \"not_run\" in panic-attack-findings.json.\nroot=\"$HOME/.panic-attack\"\nbin=\"$root/bin/panic-attack\"\nreason=\"\"\n# cargo records the installed source in .crates.toml as\n# \"...?rev=<sha>#<sha>\". Use a restored binary only when it names the\n# pinned commit; otherwise rebuild.\nif [ -x \"$bin\" ] && grep -qF \"#$PANIC_ATTACK_SHA\" \"$root/.crates.toml\" 2>/dev/null; then\n  echo \"panic-attack restored from cache at $PANIC_ATTACK_SHA\"\nelif ! command -v cargo >/dev/null 2>&1; then\n  reason=\"cargo is not available on this runner\"\nelif ! timeout 600 cargo install --git https://github.com/hyperpolymath/panic-attack \\\n    --rev \"$PANIC_ATTACK_SHA\" --locked --force --root \"$root\" panic-attack; then\n  reason=\"source build at $PANIC_ATTACK_SHA failed or exceeded 10 minutes\"\nelif [ ! -x \"$bin\" ]; then\n  reason=\"no binary after the source build at $PANIC_ATTACK_SHA\"\nfi\nif [ -n \"$reason\" ]; then\n  # Leave nothing for the cache to save from a failed build.\n  rm -rf \"$root\"\n  echo \"::warning title=panic-attack not installed::$reason\"\n  echo \"reason=$reason\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"bin=$bin\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+        },
+        {
+          name: "Run panic-attack assail",
+          id: "panic-attack",
+          env: {
+            PA_BIN: "${{ steps.panic-attack-install.outputs.bin }}",
+            PA_INSTALL_REASON: "${{ steps.panic-attack-install.outputs.reason }}",
+            SCOPE_EXCLUDES: "${{ inputs.scope-excludes }}",
+            # Only the summary wording depends on this; the gate is its own step.
+            PA_GATES: "${{ inputs.block-on-critical }}",
+          },
+          run: "set -euo pipefail\n# panic-attack-findings.json is a status ENVELOPE, never a bare array:\n#   status     \"ran\" | \"not_run\" | \"error\"\n#   tool, ref  \"panic-attack\" and the pinned commit\n#   reason     why it did not run or failed; null when it ran\n#   exit_code  the assail exit code; null when it never started\n#   counts     unsuppressed {critical, high, medium, low} outside the\n#              scope-excludes prefixes; null unless ran\n#   counts_excluded  the same, for findings under those prefixes\n#              (frozen history: reported, never counted; standards#1306)\n#   report     panic-attack's own AssailReport; null unless ran\n# Only status \"ran\" carries a result. Anything else is not a pass.\nout=panic-attack-findings.json\nmarker() {\n  jq -n --arg status \"$1\" --arg reason \"$2\" --argjson exit_code \"$3\" \\\n    --arg ref \"$PANIC_ATTACK_SHA\" '{status: $status, tool: \"panic-attack\",\n      ref: $ref, reason: $reason, exit_code: $exit_code, counts: null,\n      counts_excluded: null, report: null}' > \"$out\"\n}\nstatus=ran\nreason=\"\"\nif [ -z \"${PA_BIN:-}\" ] || [ ! -x \"$PA_BIN\" ]; then\n  status=not_run\n  reason=\"${PA_INSTALL_REASON:-panic-attack is not installed}\"\n  marker not_run \"$reason\" null\nelse\n  report=$(mktemp)\n  log=$(mktemp)\n  rc=0\n  # The report goes to --output; stdout carries only a banner.\n  timeout 300 \"$PA_BIN\" assail . --output \"$report\" > \"$log\" 2>&1 || rc=$?\n  if [ \"$rc\" -eq 124 ]; then\n    status=error\n    reason=\"panic-attack assail did not finish within 5 minutes\"\n    marker error \"$reason\" \"$rc\"\n  elif [ \"$rc\" -ne 0 ]; then\n    status=error\n    reason=\"panic-attack assail exited $rc\"\n    marker error \"$reason\" \"$rc\"\n  elif ! jq -e -s 'length == 1 and (.[0] | type == \"object\" and\n      (.weak_points | type == \"array\") and all(.weak_points[]; type == \"object\" and\n        (.severity as $s | [\"Low\", \"Medium\", \"High\", \"Critical\"] | index($s) != null)))' \\\n      \"$report\" > /dev/null 2>&1; then\n    status=error\n    reason=\"panic-attack assail exited 0 without a valid report\"\n    marker error \"$reason\" 0\n  else\n    # A finding under a scope-excludes prefix is reported, never\n    # counted, as the verdict grid already treats it. Paths arrive\n    # repository-relative; a leading ./ is ignored.\n    jq --arg ref \"$PANIC_ATTACK_SHA\" --arg ex \"${SCOPE_EXCLUDES:-}\" '\n      def tally($s): {critical: ($s | map(select(. == \"Critical\")) | length),\n                      high: ($s | map(select(. == \"High\")) | length),\n                      medium: ($s | map(select(. == \"Medium\")) | length),\n                      low: ($s | map(select(. == \"Low\")) | length)};\n      ($ex | split(\",\") | map(select(length > 0))) as $prefixes\n      | def excluded: ((.file // .location // \"\") | ltrimstr(\"./\")) as $p\n          | $p != \"\" and any($prefixes[]; . as $x | $p | startswith($x));\n      [.weak_points[] | select(.suppressed != true)] as $live\n      | {status: \"ran\", tool: \"panic-attack\", ref: $ref, reason: null,\n         exit_code: 0,\n         counts: tally([$live[] | select(excluded | not) | .severity]),\n         counts_excluded: tally([$live[] | select(excluded) | .severity]),\n         report: .}' \"$report\" > \"$out\"\n  fi\n  if [ \"$status\" = error ]; then\n    echo \"::group::panic-attack output\"\n    cat \"$log\"\n    echo \"::endgroup::\"\n  fi\nfi\n\necho \"status=$status\" >> \"$GITHUB_OUTPUT\"\nif [ \"$status\" = ran ]; then\n  critical=$(jq '.counts.critical' \"$out\")\n  high=$(jq '.counts.high' \"$out\")\n  medium=$(jq '.counts.medium' \"$out\")\n  low=$(jq '.counts.low' \"$out\")\n  excluded=$(jq '.counts_excluded | add' \"$out\")\n  {\n    echo \"critical=$critical\"\n    echo \"high=$high\"\n  } >> \"$GITHUB_OUTPUT\"\n  # Advisory wording is unchanged for existing callers; with\n  # block-on-critical the critical count gates in its own step.\n  if [ \"${PA_GATES:-false}\" = true ]; then\n    title=\"panic-attack findings (critical blocks)\"\n    note=\"Critical findings block (block-on-critical); high and below are advisory\"\n    heading=\"critical findings block\"\n  else\n    title=\"panic-attack findings (advisory)\"\n    note=\"This scan does not gate\"\n    heading=\"advisory, does not gate\"\n  fi\n  if [ $((critical + high)) -gt 0 ]; then\n    echo \"::warning title=$title::$critical critical and $high high finding(s). $note; see panic-attack-findings.json in the hypatia-scan-findings artifact.\"\n  fi\n  {\n    echo \"## panic-attack assail ($heading)\"\n    echo \"\"\n    echo \"| Severity | Count |\"\n    echo \"|----------|-------|\"\n    echo \"| Critical | $critical |\"\n    echo \"| High     | $high |\"\n    echo \"| Medium   | $medium |\"\n    echo \"| Low      | $low |\"\n    echo \"\"\n    echo \"Built from hyperpolymath/panic-attack@$PANIC_ATTACK_SHA. Findings panic-attack suppresses as likely false positives are not counted.\"\n    if [ \"$excluded\" -gt 0 ]; then\n      echo \"\"\n      echo \"$excluded more finding(s) sit under \\`${SCOPE_EXCLUDES:-}\\` (frozen history). They are in \\`counts_excluded\\` and not counted above.\"\n    fi\n  } >> \"$GITHUB_STEP_SUMMARY\"\nelse\n  if [ \"$status\" = error ]; then label=ERROR; else label=\"NOT RUN\"; fi\n  echo \"::warning title=panic-attack $label::$reason. panic-attack-findings.json records status $status, which is not a pass.\"\n  {\n    echo \"## panic-attack assail: $label\"\n    echo \"\"\n    echo \"**Status \\`$status\\`:** $reason.\"\n    echo \"\"\n    echo \"No scan result was produced, so this is **not** a pass.\"\n    echo \"\\`panic-attack-findings.json\\` records \\`\\\"status\\\": \\\"$status\\\"\\`.\"\n  } >> \"$GITHUB_STEP_SUMMARY\"\nfi\n",
+        },
+        # pons asinorum is ADVISORY on the same terms as panic-attack: a status
+        # envelope (ran | not_run | error) that is never a bare pass, built from
+        # source at PONS_SHA and cached by that commit.
+        {
+          name: "Restore pons build cache",
+          uses: "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", # v6.1.0
+          with: {
+            path: "~/.pons",
+            key: "pons-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PONS_SHA }}",
+          },
+        },
+        {
+          name: "Install pons asinorum (pinned source build)",
+          id: "pons-install",
+          run: "set -euo pipefail\nroot=\"$HOME/.pons\"\nbin=\"$root/bin/pons\"\nreason=\"\"\nif [ -x \"$bin\" ] && grep -qF \"#$PONS_SHA\" \"$root/.crates.toml\" 2>/dev/null; then\n  echo \"pons restored from cache at $PONS_SHA\"\nelif ! command -v cargo >/dev/null 2>&1; then\n  reason=\"cargo is not available on this runner\"\nelif ! timeout 600 cargo install --git https://github.com/hyperpolymath/pons-asinorum \\\n    --rev \"$PONS_SHA\" --locked --force --root \"$root\" pons-cli; then\n  reason=\"source build at $PONS_SHA failed or exceeded 10 minutes\"\nelif [ ! -x \"$bin\" ]; then\n  reason=\"no binary after the source build at $PONS_SHA\"\nfi\nif [ -n \"$reason\" ]; then\n  rm -rf \"$root\"\n  echo \"::warning title=pons not installed::$reason\"\n  echo \"reason=$reason\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"bin=$bin\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+        },
+        {
+          name: "Run pons asinorum scan",
+          id: "pons",
+          env: {
+            PONS_BIN: "${{ steps.pons-install.outputs.bin }}",
+            PONS_INSTALL_REASON: "${{ steps.pons-install.outputs.reason }}",
+          },
+          run: "set -euo pipefail\n# pons-findings.json is the same status envelope as panic-attack's;\n# `report` is pons's own JSON envelope when status is \"ran\".\nout=pons-findings.json\nmarker() {\n  jq -n --arg status \"$1\" --arg reason \"$2\" --argjson exit_code \"$3\" \\\n    --arg ref \"$PONS_SHA\" '{status: $status, tool: \"pons-asinorum\",\n      ref: $ref, reason: $reason, exit_code: $exit_code, counts: null,\n      report: null}' > \"$out\"\n}\nif [ -z \"${PONS_BIN:-}\" ] || [ ! -x \"$PONS_BIN\" ]; then\n  marker not_run \"${PONS_INSTALL_REASON:-pons is not installed}\" null\nelse\n  report=$(mktemp)\n  log=$(mktemp)\n  rc=0\n  timeout 300 \"$PONS_BIN\" scan --format json . > \"$report\" 2> \"$log\" || rc=$?\n  if [ \"$rc\" -eq 124 ]; then\n    marker error \"pons scan did not finish within 5 minutes\" \"$rc\"\n  elif [ \"$rc\" -ne 0 ]; then\n    marker error \"pons scan exited $rc\" \"$rc\"\n  elif ! jq -e -s 'length == 1 and (.[0] | type == \"object\" and\n      (.findings | type) == \"array\" and all(.findings[]; type == \"object\" and\n        ((.severity | ascii_upcase) as $s | [\"INFO\", \"WARN\", \"ERROR\"] | index($s) != null)))' \\\n      \"$report\" > /dev/null 2>&1; then\n    marker error \"pons scan exited 0 without a valid report\" 0\n  else\n    jq --arg ref \"$PONS_SHA\" '\n      [.findings[].severity | ascii_upcase] as $s\n      | {status: \"ran\", tool: \"pons-asinorum\", ref: $ref, reason: null, exit_code: 0,\n         counts: {error: ($s | map(select(. == \"ERROR\")) | length),\n                  warn: ($s | map(select(. == \"WARN\")) | length),\n                  info: ($s | map(select(. == \"INFO\")) | length)},\n         report: .}' \"$report\" > \"$out\"\n  fi\n  if [ \"$(jq -r .status \"$out\")\" = error ]; then\n    echo \"::group::pons output\"\n    cat \"$log\"\n    echo \"::endgroup::\"\n  fi\nfi\nstatus=$(jq -r .status \"$out\")\necho \"status=$status\" >> \"$GITHUB_OUTPUT\"\nif [ \"$status\" = ran ]; then\n  {\n    echo \"## pons asinorum scan (advisory, does not gate)\"\n    echo \"\"\n    echo \"| Severity | Count |\"\n    echo \"|----------|-------|\"\n    jq -r '\"| ERROR | \\(.counts.error) |\", \"| WARN | \\(.counts.warn) |\", \"| INFO | \\(.counts.info) |\"' \"$out\"\n    echo \"\"\n    echo \"Built from hyperpolymath/pons-asinorum@$PONS_SHA. Each finding carries its tier and evidence class; a heuristic is labelled as one.\"\n  } >> \"$GITHUB_STEP_SUMMARY\"\nelse\n  echo \"::warning title=pons $status::$(jq -r .reason \"$out\"). pons-findings.json records status $status, which is not a pass.\"\nfi\n",
+        },
+        {
+          name: "Check out standards for the SARIF baseline filter",
+          id: "fetch_filter",
+          # ⚠ continue-on-error is on the CHECKOUT, never on the check. If the
+          # fetch fails the next step still runs and says so; putting the flag on
+          # the filter itself would produce exactly the fake gate this estate
+          # keeps finding. job.workflow_sha is this reusable's own immutable
+          # revision; github.workflow_sha would resolve to the caller's SHA.
+          # advisory-by-design, not fail-closed: this checkout fails OPEN.
+          # "Filter SARIF through the baseline before upload" below falls back
+          # to uploading the SARIF UNFILTERED when the fetched filter script is
+          # unavailable — an unfiltered upload can only show more alerts, never
+          # hide real ones.
+          # hypatia: allow research_extensions/RE005 -- advisory-by-design, fails OPEN; see comment above.
+          continue-on-error: true,
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            repository: "metadatastician/standards",
+            persist-credentials: false,
+            # Baseline filtering and grid grading must use helpers from the
+            # same immutable revision as this workflow, never a stale helper.
+            ref: "${{ job.workflow_sha }}",
+            path: ".standards-checkout",
+            sparse-checkout: "scripts\n",
+            sparse-checkout-cone-mode: false,
+          },
+        },
+        {
+          name: "Filter SARIF through the baseline before upload",
+          id: "filter_baseline",
+          run: "# ⚠ WITHOUT THIS, ACKNOWLEDGING A FINDING DOES NOT UNBLOCK ANYTHING.\n# A finding travelled two paths that never met: the gate filtered\n# findings.json through the baseline, while the SARIF went to code\n# scanning UNFILTERED. The `code_scanning` ruleset rule blocks on\n# those alerts and has no knowledge of the baseline, so a pull\n# request stayed BLOCKED with every required check green and nothing\n# to point at.\n#\n# Measured 2026-08-07: 147 open pull requests across 91 repositories\n# were held this way by 1,777 alerts, ZERO of which were introduced\n# by the pull request they blocked.\n#\n# The filter FAILS OPEN in every error path — an unfiltered upload is\n# a safe failure, a silently over-filtered one hides real alerts.\nif [ -f .standards-checkout/scripts/filter-sarif-by-baseline.sh ]; then\n  FILTER=.standards-checkout/scripts/filter-sarif-by-baseline.sh\nelse\n  # A caller-local copy could be older and over-suppress colliding\n  # findings. Unfiltered is safe; the strict gate will fail closed\n  # if a committed baseline lacks a verified filtering result.\n  echo \"::warning::revision-matched filter unavailable — SARIF uploaded unfiltered\"; exit 0\nfi\n# Use the CALLER's apply-baseline.sh — the same copy the gate runs,\n# so the SARIF and the gate cannot disagree about what is acknowledged.\nAPPLY_BASELINE=scripts/apply-baseline.sh \\\n  bash \"$FILTER\" hypatia.sarif hypatia-findings.gating.json .hypatia-baseline.json\n",
+        },
+        # ── Scope: keep frozen history out of code scanning ───────────────────
+        # Runs AFTER the baseline filter, so the two cannot disagree about which
+        # results survive: the baseline removes acknowledged results, this removes
+        # a declared out-of-scope prefix. A finding that is both is removed once
+        # and by the second pass, which is idempotent.
+        #
+        # Fails OPEN: an unfiltered upload shows more alerts, never fewer.
+        {
+          name: "Filter SARIF by declared scope",
+          id: "filter_scope",
+          env: {
+            SCOPE_EXCLUDES: "${{ inputs.scope-excludes }}",
+          },
+          run: "set -uo pipefail\n# Preserve the baseline-filtered projection for reporting excluded\n# findings. The gate/upload continue to use only hypatia.sarif.\nif [ -s hypatia.sarif ] && ! cp hypatia.sarif hypatia.pre-scope.sarif; then\n  rm -f hypatia.pre-scope.sarif\n  echo \"::warning::could not preserve pre-scope SARIF for excluded-finding inventory\"\nfi\n[ -z \"$SCOPE_EXCLUDES\" ] && { echo \"  no scope exclusions declared\"; exit 0; }\nif [ -f .standards-checkout/scripts/filter-sarif-by-scope.sh ]; then\n  FILTER=.standards-checkout/scripts/filter-sarif-by-scope.sh\nelse\n  # Never run a caller-local or older filter against the blocking\n  # SARIF. More visible findings are safer than silent suppression.\n  echo \"  ::warning::revision-matched scope filter unavailable — SARIF uploaded unfiltered\"\n  exit 0\nfi\nIFS=',' read -r -a _prefixes <<< \"$SCOPE_EXCLUDES\"\nbash \"$FILTER\" hypatia.sarif hypatia.sarif \"${_prefixes[@]}\"\n",
+        },
+        # ── Inherited-language paths of a real fork ────────────────────────────
+        # Runs AFTER the scope filter, so hypatia.pre-scope.sarif still holds the
+        # findings and the grid can report them as excluded. Takes ONE rule off
+        # the EXACT paths the caller declares, in both gating projections, so
+        # the SARIF gate and the baseline gate cannot disagree.
+        #
+        # The LIST fails closed: a list that was asked for and is unusable is a
+        # configuration error. The FILTERS fail open, like the two above.
+        {
+          name: "Apply the inherited-language paths",
+          id: "inherited_language",
+          if: "${{ inputs.inherited-language-paths != '' }}",
+          env: {
+            INHERITED_LANGUAGE_PATHS: "${{ inputs.inherited-language-paths }}",
+          },
+          run: "set -uo pipefail\nhelper=.standards-checkout/scripts/inherited-language.sh\nif [ ! -f \"$helper\" ]; then\n  # Never run a caller-local or older helper against the gating\n  # projections. More visible findings are safer than suppression.\n  echo \"::warning::revision-matched inherited-language helper unavailable; nothing is excused\"\n  exit 0\nfi\nlist=\"$RUNNER_TEMP/inherited-language-paths.txt\"\nif ! bash \"$helper\" paths \"$INHERITED_LANGUAGE_PATHS\" > \"$list\"; then\n  echo \"::error::the inherited-language path list '$INHERITED_LANGUAGE_PATHS' is unusable; see the message above\"\n  exit 2\nfi\necho \"  $(wc -l < \"$list\") inherited-language path(s) declared in $INHERITED_LANGUAGE_PATHS\"\nbash \"$helper\" sarif hypatia.sarif hypatia.sarif \"$list\"\nbash \"$helper\" findings hypatia-findings.gating.json hypatia-findings.gating.json \"$list\"\necho \"list=$list\" >> \"$GITHUB_OUTPUT\"\n",
+        },
+        {
+          name: "Upload SARIF to code scanning",
+          # NOTE: this does NOT make under-permissioned callers "skip gracefully".
+          # This workflow declares `security-events: write` at the top, so a
+          # caller granting only `read` is rejected at startup and NO step of
+          # this job ever executes — `continue-on-error` cannot rescue a job
+          # that was never created. Callers MUST grant `security-events: write`.
+          # This flag only tolerates a genuine upload failure (e.g. Advanced
+          # Security disabled on a private repo) once the job is actually running.
+          #
+          # A caller whose lane is advisory on pull requests sets
+          # sarif-upload-on-pull-request to false; push and manual runs upload.
+          if: "${{ inputs.sarif-upload-on-pull-request || github.event_name != 'pull_request' }}",
+          continue-on-error: true,
+          uses: "github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63", # v4.38.0 (4.38.1 blocked estate-wide; nexia-list#100)
+          with: {
+            sarif_file: "hypatia.sarif",
+            category: "hypatia",
+          },
+        },
+        {
+          name: "Upload findings artifacts",
+          uses: "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", # v7.0.2
+          with: {
+            name: "hypatia-scan-findings",
+            path: "hypatia-findings.json\nhypatia.sarif\nhypatia.pre-scope.sarif\npanic-attack-findings.json\npons-findings.json\n",
+            retention-days: 90,
+          },
+        },
+        # ── VERDICT GRID (docs/VERDICT-GRID-SPEC.adoc) ──────────────────────
+        # One table for the lane: Hypatia, panic-attack, pons and every
+        # gitbot-fleet report-back under .gitbot-fleet/, graded by the worst
+        # finding present, with missing or unreadable evidence orange and
+        # explicit exclusions grey. It lands in the job summary, in the
+        # verdict-grid artifact (report.json, report.md, badge.json) and in the
+        # `verdict` output. The PR comment is the CALLER's job: this reusable
+        # declares only the permissions every existing caller already grants,
+        # and a called workflow may not ask for more than its caller.
+        {
+          name: "Check out the verdict grid renderer at this workflow's commit",
+          if: "${{ always() }}",
+          # continue-on-error on the CHECKOUT only: the render step below
+          # reports a missing renderer as orange, never as a pass.
+          continue-on-error: true,
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            repository: "metadatastician/standards",
+            # `job.workflow_sha`: the commit of THIS reusable file, i.e. what the
+            # caller pinned. See ci-pipeline.yml for why neither
+            # github.workflow_sha nor github.job_workflow_sha is that.
+            ref: "${{ job.workflow_sha }}",
+            path: ".standards-grid",
+            persist-credentials: false,
+            sparse-checkout: "scripts/verdict-grid.sh\nscripts/lib/verdict-grid.jq\n",
+            sparse-checkout-cone-mode: false,
+          },
+        },
+        # ── Scope: what the grid is allowed to GRADE ──────────────────────────
+        # Without this the grid grades the whole repository, so its verdict is a
+        # property of the REPOSITORY and not of the pull request: every revision
+        # scores the same, and a comment that never changes is not read. Delta
+        # mode grades only findings in files the change touches; everything else
+        # is still counted and named in the comment, never hidden.
+        #
+        # Falls back to whole-repository scope when the base commit cannot be
+        # resolved (a push, a force-push, a shallow clone). A fallback that
+        # silently NARROWED the scope would be the dangerous direction; this one
+        # only ever widens it.
+        {
+          name: "Compute the change scope",
+          id: "scope",
+          env: {
+            BASE_SHA: "${{ github.event.pull_request.base.sha || '' }}",
+            HEAD_SHA: "${{ github.event.pull_request.head.sha || github.sha }}",
+            SCOPE_EXCLUDES: "${{ inputs.scope-excludes }}",
+          },
+          run: "set -uo pipefail\n: > \"$RUNNER_TEMP/changed.txt\"\nmode=whole-repo\ncase \"$BASE_SHA\" in\n'') : ;;\n*)\n  if git cat-file -e \"$BASE_SHA^{commit}\" 2>/dev/null || git fetch --quiet origin \"$BASE_SHA\" 2>/dev/null; then\n    base=$(git merge-base \"$BASE_SHA\" \"$HEAD_SHA\" 2>/dev/null) || base=\"$BASE_SHA\"\n    if git diff --name-only \"$base\" \"$HEAD_SHA\" > \"$RUNNER_TEMP/changed.txt\" 2>/dev/null; then\n      mode=delta\n    fi\n  fi\n  ;;\nesac\nn=$(grep -c . \"$RUNNER_TEMP/changed.txt\" 2>/dev/null || true)\necho \"mode=$mode\" >> \"$GITHUB_OUTPUT\"\necho \"scope: $mode (${n:-0} changed file(s), excluded: ${SCOPE_EXCLUDES:-none})\"\n",
+        },
+        # Reading previous PR comments happens in an optional caller job with
+        # pull-requests: read. This reusable never escalates permission demands
+        # on existing cross-repository callers.
+        {
+          name: "Download the previous PR grid (if provided)",
+          if: "${{ always() && github.event_name == 'pull_request' && inputs.previous-grid-artifact != '' }}",
+          continue-on-error: true,
+          uses: "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", # v8.0.2
+          with: {
+            name: "${{ inputs.previous-grid-artifact }}",
+            path: "${{ runner.temp }}/hypatia-pr-history",
+          },
+        },
+        {
+          name: "Prepare the prior PR baseline",
+          if: "${{ always() && github.event_name == 'pull_request' }}",
+          env: {
+            PREVIOUS_GRID_ARTIFACT: "${{ inputs.previous-grid-artifact }}",
+          },
+          run: "set -euo pipefail\n: > \"$RUNNER_TEMP/grid-previous.md\"\ncandidate=\"$RUNNER_TEMP/hypatia-pr-history/grid-previous.md\"\nif [ -s \"$candidate\" ]; then\n  # The caller must have selected only its trusted bot's comment.\n  if grep -Fq '<!-- verdict-grid:hypatia ' \"$candidate\"; then\n    cp \"$candidate\" \"$RUNNER_TEMP/grid-previous.md\"\n    echo \"Previous Hypatia grid supplied by the caller for this PR.\"\n  else\n    echo \"::warning::Previous-grid artifact did not contain a Hypatia marker; ignoring it.\"\n  fi\nelif [ -n \"$PREVIOUS_GRID_ARTIFACT\" ]; then\n  echo \"::warning::Expected previous-grid artifact is missing or empty; revision comparison unavailable.\"\nelse\n  echo \"::notice::No previous-grid artifact configured; PR revision comparison is unavailable.\"\nfi\n",
+        },
+        # ── Fleet report-backs ─────────────────────────────────────────────────
+        # The envelopes are produced per run by the caller's fleet job (gitbot-fleet
+        # fleet-report-back-reusable.yml, or the same driver inline) and reach this
+        # job only as an artifact: they are evidence about THIS commit and are never
+        # committed. `continue-on-error`: a caller with no fleet job, or a fleet job
+        # that died, leaves every enrolled row orange, which is the truth.
+        #
+        # Nothing committed may pose as evidence. Two layers hold that:
+        # 1. The renderer reads $RUNNER_TEMP/fleet-report-backs, a directory this
+        #    job creates empty and only the artifact download writes to. No path
+        #    in the checkout is read, whatever it is (file, directory or symlink),
+        #    and an opted-out caller (empty input) renders from the empty directory.
+        # 2. The checkout's .gitbot-fleet/report-backs is still cleared, so a
+        #    later step or a future change that reads it finds no envelope. A
+        #    committed symlink there is removed as a link and never followed:
+        #    `find` does not descend into a symlinked starting point, so a symlink
+        #    to a directory of forged envelopes would survive a plain sweep.
+        #    A directory that resolves outside the checkout is left untouched.
+        # scripts/tests/report-backs-isolation-test.sh runs both steps.
+        {
+          name: "Isolate the fleet report-backs from the checkout",
+          id: "report-backs",
+          if: "${{ always() }}",
+          run: "set -euo pipefail\nbacks=\"$RUNNER_TEMP/fleet-report-backs\"\nrm -rf -- \"$backs\"\nmkdir -p -- \"$backs\"\necho \"dir=$backs\" >> \"$GITHUB_OUTPUT\"\ncommitted=.gitbot-fleet/report-backs\nif [ -L \"$committed\" ]; then\n  echo \"::warning::$committed is a committed symlink; removed as a link, its target untouched.\"\n  rm -f -- \"$committed\"\nelif [ -d \"$committed\" ]; then\n  workspace=$(realpath -- \"${GITHUB_WORKSPACE:-$PWD}\")\n  resolved=$(realpath -- \"$committed\")\n  case \"$resolved/\" in\n    \"$workspace\"/*)\n      # Every entry named *.json goes, symlinks and directories included.\n      find \"$committed\" -mindepth 1 -maxdepth 1 -name '*.json' -print -exec rm -rf -- {} + ;;\n    *)\n      echo \"::warning::$committed resolves outside the checkout ($resolved); left untouched and never read.\" ;;\n  esac\nfi\n",
+        },
+        {
+          name: "Download the fleet report-backs",
+          if: "${{ always() && inputs.report-backs-artifact != '' && steps.report-backs.outputs.dir != '' }}",
+          continue-on-error: true,
+          uses: "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", # v8.0.2
+          with: {
+            name: "${{ inputs.report-backs-artifact }}",
+            path: "${{ steps.report-backs.outputs.dir }}",
+          },
+        },
+        {
+          name: "Render the verdict grid",
+          id: "grid",
+          if: "${{ always() }}",
+          env: {
+            HYPATIA_REF: "${{ steps.hypatia-rev.outputs.sha }}",
+            # Never a checkout path: empty when isolation failed, so rows go orange.
+            REPORT_BACKS_DIR: "${{ steps.report-backs.outputs.dir }}",
+            PR_NUMBER: "${{ github.event.pull_request.number || 'local' }}",
+            HEAD_SHA: "${{ github.event.pull_request.head.sha || github.sha }}",
+            SCOPE_MODE: "${{ steps.scope.outputs.mode }}",
+            SCOPE_EXCLUDES: "${{ inputs.scope-excludes }}",
+            BASELINE_FILTERED: "${{ steps.filter_baseline.outputs.filtered }}",
+            INHERITED_LANGUAGE_LIST: "${{ steps.inherited_language.outputs.list }}",
+          },
+          run: "set -uo pipefail\nrenderer=.standards-grid/scripts/verdict-grid.sh\nmkdir -p verdict-grid\nindeterminate() {\n  # A missing or failing renderer is missing evidence, never a pass.\n  rm -f verdict-grid/report.json\n  jq -n '{schemaVersion: 1, label: \"Hypatia grid\", message: \"indeterminate\", color: \"orange\"}' > verdict-grid/badge.json\n  printf '%s\\n%s\\n' '<!-- verdict-grid:hypatia regenerated on every run -->' \\\n    \"🟠 indeterminate · $1; see the job log.\" > verdict-grid/report.md\n  cat verdict-grid/report.md >> \"$GITHUB_STEP_SUMMARY\"\n  echo \"state=orange\" >> \"$GITHUB_OUTPUT\"\n}\nif [ ! -f \"$renderer\" ]; then\n  indeterminate 'the verdict grid renderer could not be checked out from metadatastician/standards'\n  exit 0\nfi\nfindings=hypatia-findings.json\n[ -f hypatia-findings.relativized.json ] && findings=hypatia-findings.relativized.json\nenrolment=\"\"\n[ -f .gitbot-fleet/enrolment.json ] && enrolment=.gitbot-fleet/enrolment.json\n# The renderer appends the grid to the step summary and writes\n# state= to GITHUB_OUTPUT itself; its exit code is 0 for any\n# rendered verdict and 2 only for a usage error.\n# Scope: delta when the change scope step resolved a base commit,\n# whole-repository otherwise. A missing changed.txt with mode=delta\n# is a usage error inside the renderer, not a silent fallback.\nscope_args=()\n[ \"${SCOPE_MODE:-}\" = \"delta\" ] && scope_args+=(--changed \"$RUNNER_TEMP/changed.txt\")\nif [ -f .hypatia-baseline.json ] && [ \"${BASELINE_FILTERED:-}\" != true ]; then\n  scope_args+=(--hypatia-baseline-unverified)\nfi\n# Prefixes from the caller; empty means grade everything. When scope\n# excludes are used, report from the pre-scope projection as well;\n# it contributes excluded counts only, never gate/grade findings.\nif [ -n \"${SCOPE_EXCLUDES:-}\" ] || [ -n \"${INHERITED_LANGUAGE_LIST:-}\" ]; then\n  scope_args+=(--hypatia-sarif-unscoped hypatia.pre-scope.sarif)\nfi\n# The same normalised list the gating filters used.\nif [ -n \"${INHERITED_LANGUAGE_LIST:-}\" ]; then\n  scope_args+=(--inherited-language-paths \"$INHERITED_LANGUAGE_LIST\")\nfi\nIFS=',' read -r -a _ex <<< \"${SCOPE_EXCLUDES:-}\"\nfor _p in \"${_ex[@]}\"; do\n  [ -n \"$_p\" ] && scope_args+=(--exclude-prefix \"$_p\")\ndone\nif ! bash \"$renderer\" render --out verdict-grid \\\n  --hypatia \"$findings\" --hypatia-sarif hypatia.sarif --panic panic-attack-findings.json --pons pons-findings.json \\\n  --report-backs \"${REPORT_BACKS_DIR:-}\" --enrolment \"$enrolment\" \\\n  --previous \"$RUNNER_TEMP/grid-previous.md\" \\\n  --sha \"$HEAD_SHA\" --run \"$GITHUB_RUN_ID\" \\\n  --url \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\" \\\n  --pr \"$PR_NUMBER\" --repo \"$GITHUB_REPOSITORY\" \\\n  --hypatia-ref \"$HYPATIA_REF\" --panic-ref \"${PANIC_ATTACK_SHA:-}\" --pons-ref \"${PONS_SHA:-}\" \\\n  \"${scope_args[@]}\" > /dev/null; then\n  indeterminate 'the verdict grid renderer failed'\n  exit 0\nfi\n# Advisory summary, for callers that show it beside the verdict. The\n# verdict output is written by the renderer and covers GATING rows\n# only; without this a caller would state \"green\" and omit the four\n# advisory criticals sitting directly beneath it.\nif [ ! -s verdict-grid/report.json ] || ! adv=$(jq -er '\n    if (.advisory | type) != \"object\" or (.advisory.rows | type) != \"number\" then error(\"missing advisory summary\")\n    elif .advisory.rows == 0 then \"none\"\n    else \"\\(.advisory.state):\\(.advisory.critical):\\(.advisory.high)\" end' verdict-grid/report.json); then\n  indeterminate 'the verdict grid renderer produced no readable report'\n  exit 0\nfi\necho \"advisory=$adv\" >> \"$GITHUB_OUTPUT\"\n",
+        },
+        {
+          name: "Upload the verdict grid",
+          if: "${{ always() }}",
+          uses: "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", # v7.0.2
+          with: {
+            name: "verdict-grid",
+            path: "verdict-grid",
+            if-no-files-found: "error",
+            retention-days: 90,
+          },
+        },
+        {
+          name: "Gate on baseline (blocking when a baseline is committed)",
+          if: "!inputs.block-on-high && steps.scan.outputs.findings_count > 0",
+          run: "# Wave-8 gate promotion: when the calling repo commits a\n# .hypatia-baseline.json (schema: .machine_readable/hypatia-baseline.\n# schema.json) AND ships scripts/apply-baseline.sh, findings are\n# filtered against the baseline and any UNBASELINED finding at or\n# above the blocking threshold FAILS this job. Repos without a\n# baseline keep the honest ADVISORY behaviour below — the gate arms\n# itself the moment a baseline lands (standards#399/#437/#446).\nif [ -f scripts/apply-baseline.sh ] && [ -f .hypatia-baseline.json ]; then\n  echo \"Baseline present — running BLOCKING gate (threshold: high).\"\n  # Paths were relativized in an earlier step so the SARIF filter and\n  # this gate agree on what a finding's path is. Two definitions of\n  # \"the same finding\" is how the baseline came to mean one thing to\n  # the gate and nothing to the security tab.\n  bash scripts/apply-baseline.sh hypatia-findings.gating.json .hypatia-baseline.json blocking\nelse\n  echo \"No committed baseline — gate stays advisory (see next step).\"\nfi\n",
+        },
+        {
+          name: "Block findings at the requested threshold",
+          id: "blocking-findings",
+          if: "inputs.block-on-high || inputs.block-on-critical",
+          env: {
+            HYPATIA_BASELINE_FILTERED: "${{ steps.filter_baseline.outputs.filtered }}",
+            BLOCK_THRESHOLD: "${{ inputs.block-on-high && 'high' || 'critical' }}",
+          },
+          run: "set -euo pipefail\n# high: every error-level result (SARIF folds high and critical into\n# \"error\"). critical: error-level results whose projected\n# hypatia.severity is critical, or is missing, since an unknown\n# severity must not slip under a critical-only gate.\ncase \"${BLOCK_THRESHOLD:-high}\" in\n  high)\n    selector='.level == \"error\"'\n    what=\"high or critical\" ;;\n  critical)\n    selector='.level == \"error\" and ((.properties // {})[\"hypatia.severity\"] // \"\") != \"high\"'\n    what=\"critical\" ;;\n  *)\n    echo \"::error::Unknown blocking threshold '${BLOCK_THRESHOLD}'\"\n    exit 2 ;;\nesac\n# Use the scanner's authoritative SARIF projection, after the same\n# baseline filter used for the Security tab. Raw JSON also contains\n# code_scanning_alerts: historical GitHub alert summaries, including\n# alerts fixed by this PR that cannot close until it reaches main.\n# Hypatia already excludes those meta-rules in its SARIF renderer.\n# Counting them here creates a circular merge dependency. Raw JSON\n# remains in the artifact for the fleet's historical-debt review.\n# Validate a present baseline even when there are no current errors.\n# Advisory mode validates without gating historical meta-findings;\n# the final filtered SARIF below supplies the blocking decision.\nif [ -f .hypatia-baseline.json ]; then\n  if [ ! -f scripts/apply-baseline.sh ]; then\n    echo \"::error::A committed baseline requires scripts/apply-baseline.sh\"\n    exit 2\n  fi\n  bash scripts/apply-baseline.sh hypatia-findings.gating.json .hypatia-baseline.json advisory >/dev/null\n  if [ \"${HYPATIA_BASELINE_FILTERED:-}\" != \"true\" ]; then\n    echo \"::error::Baseline validation passed but SARIF filtering did not complete\"\n    exit 2\n  fi\nfi\n# Missing/truncated output must never become a clean security gate.\nif ! jq -se '\n  length == 1 and (.[0] |\n    .version == \"2.1.0\" and (.runs | type == \"array\" and length > 0) and\n    all(.runs[];\n      .tool.driver.name == \"Hypatia\" and\n      (.results | type == \"array\") and\n      all(.results[];\n        type == \"object\" and (.ruleId | type == \"string\" and length > 0) and\n        ((.properties | type) == \"object\" or .properties == null) and\n        ((.locations | type) == \"array\" or .locations == null) and\n        ((.message | type) == \"object\" or .message == null) and\n        (try ((.locations[0].physicalLocation.artifactLocation.uri // \"\") | type == \"string\") catch false) and\n        (try ((.message.text // \"\") | type == \"string\") catch false) and\n        (.level as $level | [\"error\", \"warning\", \"note\", \"none\"] | index($level) != null))))\n' hypatia.sarif >/dev/null; then\n  echo \"::error::Hypatia did not produce one valid SARIF findings document\"\n  exit 2\nfi\ncount=$(jq \"[.runs[].results[] | select($selector)] | length\" hypatia.sarif)\nif [ \"$count\" -gt 0 ]; then\n  echo \"::error::Hypatia found $count current $what finding(s); see the SARIF artifact\"\n  exit 1\nfi\necho \"Hypatia blocking gate: no current $what findings after baseline filtering\"\n",
+        },
+        {
+          name: "Block panic-attack critical findings when requested",
+          id: "blocking-panic",
+          if: "inputs.block-on-critical",
+          env: {
+            PA_STATUS: "${{ steps.panic-attack.outputs.status }}",
+            PA_CRITICAL: "${{ steps.panic-attack.outputs.critical }}",
+          },
+          run: "set -euo pipefail\n# A blocking gate cannot pass on a scan that did not run: not_run and\n# error fail here, where the advisory mode only reports them.\nif [ \"${PA_STATUS:-}\" != ran ]; then\n  echo \"::error::panic-attack did not run (status ${PA_STATUS:-missing}); the critical gate cannot pass without its scan\"\n  exit 2\nfi\nif ! [[ \"${PA_CRITICAL:-}\" =~ ^[0-9]+$ ]]; then\n  echo \"::error::panic-attack ran but reported no critical count\"\n  exit 2\nfi\nif [ \"$PA_CRITICAL\" -gt 0 ]; then\n  echo \"::error::panic-attack found $PA_CRITICAL critical finding(s); see panic-attack-findings.json\"\n  exit 1\nfi\necho \"panic-attack blocking gate: no critical findings\"\n",
+        },
+        {
+          name: "Check for critical issues (ADVISORY — does not gate)",
+          if: "!inputs.block-on-high && !inputs.block-on-critical && steps.scan.outputs.critical > 0",
+          run: "# This scan is ADVISORY / fix-forward WHEN NO BASELINE IS COMMITTED\n# (the step above becomes the blocking gate once .hypatia-baseline.json\n# lands). The label and summary state that explicitly so a green check\n# carrying critical findings is not mistaken for \"no critical findings\".\necho \"::warning title=Hypatia (ADVISORY, non-blocking)::${{ steps.scan.outputs.critical }} critical finding(s). This scan does not gate — review hypatia-findings.json and fix forward.\"\n{\n  echo \"### Hypatia scan — ADVISORY (does not gate)\"\n  echo \"\"\n  echo \"**${{ steps.scan.outputs.critical }} critical finding(s)** reported.\"\n  echo \"This scan is fix-forward and **never fails the build**; a green\"\n  echo \"check here does not mean zero critical findings. See the\"\n  echo \"\\`hypatia-scan-findings\\` artifact. Blocking promotion: standards#399/#437.\"\n} >> \"$GITHUB_STEP_SUMMARY\"\n",
+        },
+      ],
+    },
+  },
+}

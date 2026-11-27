@@ -37,6 +37,17 @@ proof and complementary Verus arithmetic model both passed with positive and
 negative controls; see link:../verification/REPLAY-2026-11-16.adoc[the proof record].
 This does not discharge the parser-level obligations in the proof-scope ledger.
 
+W8 part 1, TESTED at base `758825a` with rustc 1.99.1 and yq v4.53.3:
+
+* Estate corpus (`tests/estate_kyaml_corpus.rs`): 260 real YAML files of
+  metadatastician/standards at `745fc74`, rendered as KYAML by the pinned yq.
+  kyq reads 259 to yq's value; 1 is a listed refusal (`DUPLICATE_KEY`, which yq
+  drops silently). Two planted parser faults are found.
+* KEP-5295 generator (`tests/kep5295_generator.rs`): 2,000,000 generated
+  documents (depth 5, 64 nodes), read back to the value written, or refused with
+  a listed code, in 133 s. A planted string-trimming fault is found. CI runs
+  1024 cases; set `KYQ_KEP5295_CASES` for a longer run.
+
 == Required before broad promotion
 
 * Broader independent YAML corpus testing beyond the committed contract corpus.

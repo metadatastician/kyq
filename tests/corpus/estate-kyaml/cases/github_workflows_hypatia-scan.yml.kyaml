@@ -1,0 +1,48 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+# This workflow is managed by gh actions-lock.
+{
+  name: "Hypatia Security Scan",
+  on: {
+    push: {
+      branches: [
+        "main",
+        "master",
+        "develop",
+      ],
+    },
+    # No `pull_request` trigger: the PR-time scan runs inside fork-governance.yml
+    # through hypatia-scan-reusable.yml. Keeping both would upload the same
+    # findings to code scanning twice per PR.
+    schedule: [
+      {
+        cron: "0 0 * * 0",
+      },
+    ],
+    workflow_dispatch: null,
+  },
+  permissions: {
+    actions: "read",
+    contents: "read",
+    # MUST be `write`, not `read`. hypatia-scan-reusable.yml declares
+    # `security-events: write` so it can upload SARIF. A called workflow may
+    # never request more than its caller grants: if it does, GitHub rejects the
+    # run at *startup*, before any job is created — `startup_failure`, zero jobs,
+    # and `gh run view --log-failed` returns "log not found". Granting `read`
+    # here did not degrade the scan, it silently prevented it from ever running.
+    # See standards#451.
+    security-events: "write",
+  },
+  jobs: {
+    scan: {
+      uses: "./.github/workflows/hypatia-scan-reusable.yml",
+      # Only the callee's one declared secret. Was `secrets: inherit`,
+      # which forwarded every repo/org secret (standards#1108 §6b); the
+      # reusable now declares HYPATIA_SCAN_PAT explicitly so it can be
+      # passed narrowly.
+      secrets: {
+        HYPATIA_SCAN_PAT: "${{ secrets.HYPATIA_SCAN_PAT }}",
+      },
+    },
+  },
+}

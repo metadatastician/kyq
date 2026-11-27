@@ -1,0 +1,1 @@
+[{"name":"Governance","on":{"push":{"branches":["main","master"]},"pull_request":null,"workflow_dispatch":null},"permissions":{"actions":"read","contents":"read"},"jobs":{"governance":{"permissions":{"actions":"read","contents":"read"},"uses":"metadatastician/standards/.github/workflows/governance-reusable.yml@210f14e753c80064ec1bcae72f1d654dd9b0e687"}}}]
