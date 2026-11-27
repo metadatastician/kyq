@@ -64,6 +64,25 @@ and libfuzzer-sys 0.4.10, 2 workers per target, inputs up to 64 KiB:
 * `.github/workflows/fuzz.yml` repeats this weekly and on demand (30 minutes
   per target by default). It is not a pull-request gate.
 
+W8 part 3, TESTED on base `8f48972` with rustc 1.99.1 and cargo-mutants
+25.3.1, `cargo mutants -f src/kyaml.rs -f src/emit.rs -j 2`:
+
+* First run: 490 mutants in 31 min 29 s; 418 caught, 57 missed, 3 timeouts,
+  12 unviable.
+* `tests/mutation_gaps.rs` adds 9 tests for the misses: the expansion budget
+  (61 copies of a 1 MiB anchor read, 62 are refused), hex and octal ints,
+  JCS number text and dash quoting in the formatter, `fix` comment detection,
+  quoted escapes, and diagnostic columns after a byte-order mark.
+* Second run: 490 mutants in 34 min 14 s; 430 caught, 45 missed, 3 timeouts,
+  12 unviable. Every `src/emit.rs` mutant is now caught.
+* The 45 left are in diagnostic positions (`syntax_error`, `Positions::index`,
+  `path_before`), the comment-loss scanner (`indicator_line_start`,
+  `content_indent`, `block_content_line`, `first_lost_comment`) and a few
+  guards in `node`, `scalar`, `check_tag`, `lexical_checks`, `quoted_length`
+  and `storage_cost`. Some are equivalent: the `first_lost_comment` guard at
+  line 1155 only skips repeat work. The rest are open: they change an error's
+  line or column, or how far `fix` scans, but no test pins it yet.
+
 == Required before broad promotion
 
 * Broader independent YAML corpus testing beyond the committed contract corpus.
