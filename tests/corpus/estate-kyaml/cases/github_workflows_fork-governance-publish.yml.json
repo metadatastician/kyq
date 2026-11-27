@@ -1,0 +1,1 @@
+[{"name":"Fork governance publish","on":{"workflow_run":{"workflows":["Fork governance"],"types":["completed"]}},"permissions":{"contents":"read"},"jobs":{"publish":{"uses":"./.github/workflows/fork-governance-publish-reusable.yml","permissions":{"actions":"read","pull-requests":"write"}}}}]

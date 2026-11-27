@@ -1,0 +1,422 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2025 The Rhodium Standard Contributors
+#
+# GitLab CI/CD Pipeline for Rhodium Standard Repositories
+
+# Use Nix-based Docker image for reproducible builds
+{
+  image: "nixos/nix:latest",
+  # Pipeline stages
+  stages: [
+    "validate",
+    "build",
+    "test",
+    "security",
+    "deploy",
+  ],
+  # Cache Nix store between jobs
+  variables: {
+    NIX_CONFIG: "experimental-features = nix-command flakes",
+  },
+  # Before script for all jobs
+  before_script: [
+    "nix --version",
+    "nix flake show --legacy || true",
+  ],
+  # =============================================================================
+  # Validation Stage
+  # =============================================================================
+  # RSR Compliance Audit
+  rsr-compliance: {
+    stage: "validate",
+    script: [
+      "echo \"🔍 Running RSR compliance audit...\"",
+      "chmod +x rsr-audit.sh",
+      "./rsr-audit.sh . json > audit-report.json",
+      "cat audit-report.json",
+      "./rsr-audit.sh .",
+    ],
+    artifacts: {
+      reports: {
+        codequality: "audit-report.json",
+      },
+      paths: [
+        "audit-report.json",
+      ],
+      expire_in: "30 days",
+    },
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # SPDX License Header Validation
+  spdx-validation: {
+    stage: "validate",
+    script: [
+      "echo \"📋 Validating SPDX headers...\"",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Link Validation
+  link-validation: {
+    stage: "validate",
+    script: [
+      "echo \"🔗 Validating documentation links...\"",
+    ],
+    allow_failure: true,
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Shell Script Linting
+  shellcheck: {
+    stage: "validate",
+    script: [
+      "echo \"🐚 Linting shell scripts...\"",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Nix Flake Check
+  nix-flake-check: {
+    stage: "validate",
+    script: [
+      "echo \"❄️  Checking Nix flake...\"",
+      "nix flake check --show-trace",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # =============================================================================
+  # Build Stage
+  # =============================================================================
+  # Build all examples
+  build-examples: {
+    stage: "build",
+    script: [
+      "echo \"🔨 Building all examples...\"",
+    ],
+    artifacts: {
+      paths: [
+        "examples/*/target/debug/",
+      ],
+      expire_in: "1 day",
+    },
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Build rhodium-minimal specifically
+  build-rhodium-minimal: {
+    stage: "build",
+    script: [
+      "echo \"🔨 Building rhodium-minimal...\"",
+      "cd examples/rhodium-minimal",
+    ],
+    artifacts: {
+      paths: [
+        "examples/rhodium-minimal/target/release/rhodium-minimal",
+      ],
+      expire_in: "7 days",
+    },
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # =============================================================================
+  # Test Stage
+  # =============================================================================
+  # Run all tests
+  test-all: {
+    stage: "test",
+    script: [
+      "echo \"🧪 Running all tests...\"",
+    ],
+    dependencies: [
+      "build-examples",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Run audit script tests
+  test-audit-script: {
+    stage: "test",
+    script: [
+      "echo \"🧪 Testing audit script on examples...\"",
+      "./rsr-audit.sh examples/rhodium-minimal",
+      "./rsr-audit.sh examples/rhodium-minimal json | jq '.score'",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Rust linting (clippy)
+  lint-rust: {
+    stage: "test",
+    script: [
+      "echo \"🦀 Linting Rust code...\"",
+    ],
+    dependencies: [
+      "build-examples",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # =============================================================================
+  # Security Stage
+  # =============================================================================
+  # Security audit for Rust dependencies
+  security-audit-rust: {
+    stage: "security",
+    script: [
+      "echo \"🔒 Running security audit...\"",
+    ],
+    allow_failure: true,
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+    ],
+  },
+  # Generate SBOM
+  generate-sbom: {
+    stage: "security",
+    script: [
+      "echo \"📦 Generating SBOM...\"",
+    ],
+    artifacts: {
+      paths: [
+        "examples/*/SBOM.txt",
+      ],
+      expire_in: "30 days",
+    },
+    rules: [
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+      {
+        if: "$CI_COMMIT_TAG",
+      },
+    ],
+  },
+  # Check for secrets in repository
+  secrets-scan: {
+    stage: "security",
+    script: [
+      "echo \"🔍 Scanning for secrets...\"",
+      "# Simple pattern matching for common secrets\n! git grep -E \"(password|secret|api_key|private_key|token)\\\\s*=\\\\s*['\\\"][^'\\\"]+['\\\"]\" -- ':!*.md' ':!3-practice/SECURITY.md' || \\\n  (echo \"⚠️  Possible secrets found!\" && exit 1)\n",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+    ],
+  },
+  # =============================================================================
+  # Deploy Stage (for releases)
+  # =============================================================================
+  # Create release artifacts
+  create-release: {
+    stage: "deploy",
+    script: [
+      "echo \"📦 Creating release artifacts...\"",
+      "tar -czf rhodium-standard-$CI_COMMIT_TAG.tar.gz \\ rsr-audit.sh \\ README.adoc \\ LICENSE.txt \\ 3-practice/SECURITY.md \\ 3-practice/CODE_OF_CONDUCT.adoc \\ 3-practice/CONTRIBUTING.adoc \\ 0-canon/GOVERNANCE.adoc \\ MAINTAINERS.md \\ CHANGELOG.md \\ FUNDING.yml \\ justfile \\ flake.nix \\ flake.lock \\ .well-known/ \\ docs/ \\ examples/ \\ templates/",
+    ],
+    artifacts: {
+      paths: [
+        "rhodium-standard-$CI_COMMIT_TAG.tar.gz",
+        "rsr-audit-report.html",
+      ],
+      expire_in: "never",
+    },
+    rules: [
+      {
+        if: "$CI_COMMIT_TAG",
+      },
+    ],
+  },
+  # Publish release to GitLab
+  gitlab-release: {
+    stage: "deploy",
+    image: "registry.gitlab.com/gitlab-org/release-cli:latest",
+    script: [
+      "echo \"🚀 Publishing GitLab release...\"",
+    ],
+    release: {
+      tag_name: "$CI_COMMIT_TAG",
+      name: "Rhodium Standard $CI_COMMIT_TAG",
+      description: "See CHANGELOG.md for release notes",
+      assets: {
+        links: [
+          {
+            name: "Release Archive",
+            url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/download?job=create-release",
+          },
+          {
+            name: "RSR Compliance Report",
+            url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/rsr-audit-report.html?job=create-release",
+          },
+        ],
+      },
+    },
+    rules: [
+      {
+        if: "$CI_COMMIT_TAG",
+      },
+    ],
+    dependencies: [
+      "create-release",
+    ],
+  },
+  # =============================================================================
+  # Manual Jobs
+  # =============================================================================
+  # Manual: Full validation run
+  full-validation: {
+    stage: "validate",
+    script: [
+      "echo \"🎖️  Running full RSR validation...\"",
+    ],
+    when: "manual",
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+    ],
+  },
+  # Manual: Generate and upload comprehensive compliance report
+  compliance-report: {
+    stage: "deploy",
+    script: [
+      "echo \"📊 Generating comprehensive compliance report...\"",
+      "./rsr-audit.sh . html > compliance-report-$CI_COMMIT_SHORT_SHA.html",
+      "./rsr-audit.sh . json > compliance-report-$CI_COMMIT_SHORT_SHA.json",
+    ],
+    artifacts: {
+      paths: [
+        "compliance-report-$CI_COMMIT_SHORT_SHA.html",
+        "compliance-report-$CI_COMMIT_SHORT_SHA.json",
+      ],
+      expire_in: "90 days",
+    },
+    when: "manual",
+  },
+  # =============================================================================
+  # Scheduled Jobs (nightly builds, etc.)
+  # =============================================================================
+  # Nightly: Full suite with security audits
+  nightly-full-suite: {
+    stage: "validate",
+    script: [
+      "echo \"🌙 Running nightly full test suite...\"",
+    ],
+    rules: [
+      {
+        if: "$CI_PIPELINE_SOURCE == \"schedule\"",
+      },
+    ],
+    artifacts: {
+      paths: [
+        "audit-report.json",
+        "examples/*/SBOM.txt",
+      ],
+      expire_in: "7 days",
+    },
+  },
+  # =============================================================================
+  # Pipeline Configuration
+  # =============================================================================
+  # Default settings
+  default: {
+    # Retry failed jobs once
+    retry: {
+      max: 1,
+      when: [
+        "runner_system_failure",
+        "stuck_or_timeout_failure",
+      ],
+    },
+    # Interruptible by new pipelines
+    interruptible: true,
+  },
+  # Workflow rules
+  workflow: {
+    rules: [
+      # Run for merge requests
+      {
+        if: "$CI_PIPELINE_SOURCE == \"merge_request_event\"",
+      },
+      # Run for main branch
+      {
+        if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH",
+      },
+      # Run for tags
+      {
+        if: "$CI_COMMIT_TAG",
+      },
+      # Run for schedules (nightly builds)
+      {
+        if: "$CI_PIPELINE_SOURCE == \"schedule\"",
+      },
+    ],
+  },
+}

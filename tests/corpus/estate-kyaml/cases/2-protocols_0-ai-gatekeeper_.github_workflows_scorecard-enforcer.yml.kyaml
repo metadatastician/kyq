@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MPL-2.0
+# Prevention workflow - runs OpenSSF Scorecard and fails on low scores
+{
+  name: "OpenSSF Scorecard Enforcer",
+  on: {
+    push: {
+      branches: [
+        "main",
+      ],
+    },
+    schedule: [
+      {
+        cron: "0 6 * * 1",
+      },
+    ],
+    workflow_dispatch: null,
+  },
+  permissions: {
+    contents: "read",
+  },
+  jobs: {
+    scorecard: {
+      permissions: {
+        contents: "read",
+        security-events: "write",
+      },
+      uses: "metadatastician/standards/.github/workflows/scorecard-reusable.yml@210f14e753c80064ec1bcae72f1d654dd9b0e687",
+    },
+  },
+}

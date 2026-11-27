@@ -1,0 +1,1 @@
+[{"name":"calibration","on":{"push":{"branches":["main"]}},"permissions":"read-all","jobs":{"build":{"runs-on":"ubuntu-latest","steps":[{"uses":"actions/checkout@0123456789abcdef0123456789abcdef01234567"},{"name":"test","run":"echo ok"}]}}}]

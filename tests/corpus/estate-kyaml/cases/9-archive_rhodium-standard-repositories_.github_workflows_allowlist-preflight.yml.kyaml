@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: MPL-2.0
+# Allowlist Preflight — thin, reproducible caller of the canonical focused
+# Standards implementation. It surfaces an Actions-allowlist gap as an
+# ordinary red check instead of an opaque `startup_failure` blackout.
+#
+# Under `allowed_actions: selected`, a workflow that `uses:` an un-allowlisted
+# action/reusable dies at STARTUP with no job and no log. This job uses ONLY
+# actions/checkout (github-owned, always permitted), so it can NEVER itself
+# startup-fail — it is the canary that stays runnable and reports which OTHER
+# workflows would die, and why. Ship it in every RSR repo (seeded from this
+# template) so a future org migration shows a legible red check, not a blackout.
+
+{
+  name: "Allowlist Preflight",
+  on: {
+    pull_request: null,
+    push: {
+      branches: [
+        "main",
+        "master",
+      ],
+    },
+    workflow_dispatch: null,
+  },
+  permissions: {
+    contents: "read",
+  },
+  concurrency: {
+    group: "allowlist-preflight-${{ github.ref }}",
+    cancel-in-progress: true,
+  },
+  jobs: {
+    allowlist: {
+      name: "Actions allowlist coverage",
+      uses: "hyperpolymath/standards/.github/workflows/allowlist-preflight-reusable.yml@f8cc276bb0add12debc9eddce79e2a842bac5d3e",
+    },
+  },
+}

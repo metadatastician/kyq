@@ -1,0 +1,1 @@
+[{"name":"Self-CI","on":{"push":{"branches":["main"]},"pull_request":{"branches":["main"]},"schedule":[{"cron":"0 0 * * 0"}]},"permissions":{"contents":"read"},"jobs":{"call-ci-pipeline":{"name":"Call CI Pipeline","uses":"./.github/workflows/ci-pipeline.yml"}}}]

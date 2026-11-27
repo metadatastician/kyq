@@ -1,0 +1,131 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+# This workflow is managed by gh actions-lock.
+# codeql-reusable.yml — Reusable CodeQL security-analysis workflow.
+#
+# Consolidates the per-repo `codeql.yml` workflow (estate-wide: 263
+# deployments, 69 unique blob SHAs, 26% structural drift). Language
+# matrix distribution across the estate:
+#
+#   javascript-typescript        223 (84.8%)
+#   actions                       22  (8.4%)
+#   NONE (no matrix declared)      6  (2.3%)
+#   rust                           3  (1.1%)
+#   javascript-typescript,rust     3  (1.1%)
+#   actions,javascript-typescript  3  (1.1%)
+#   actions,javascript-typescript,rust 2 (0.8%)
+#   actions,rust                   1  (0.4%)
+#
+# 100% of estate variants currently use `build-mode: none`.
+#
+# Design: single-language single-job reusable. Multi-language wrappers
+# invoke the reusable once per language (parallel-by-construction).
+# This avoids the matrix-as-input awkwardness while preserving per-
+# language SARIF separation via the `category` step.
+#
+# Caller examples:
+#
+#   # Single-language (~85% of estate):
+#   jobs:
+#     codeql:
+#       uses: metadatastician/standards/.github/workflows/codeql-reusable.yml@<sha>
+#       # defaults to language=javascript-typescript, build-mode=none
+#
+#   # Rust-only:
+#   jobs:
+#     codeql:
+#       uses: metadatastician/standards/.github/workflows/codeql-reusable.yml@<sha>
+#       with:
+#         language: rust
+#
+#   # Multi-language (JS/TS + actions + Rust):
+#   jobs:
+#     codeql-js:
+#       uses: metadatastician/standards/.github/workflows/codeql-reusable.yml@<sha>
+#     codeql-actions:
+#       uses: metadatastician/standards/.github/workflows/codeql-reusable.yml@<sha>
+#       with:
+#         language: actions
+#     codeql-rust:
+#       uses: metadatastician/standards/.github/workflows/codeql-reusable.yml@<sha>
+#       with:
+#         language: rust
+
+{
+  name: "CodeQL Security Analysis (reusable)",
+  on: {
+    workflow_call: {
+      inputs: {
+        language: {
+          description: "CodeQL language identifier (e.g. javascript-typescript, rust, actions). Single language per call; multi-language wrappers invoke the reusable once per language.",
+          type: "string",
+          required: false,
+          default: "javascript-typescript",
+        },
+        build-mode: {
+          description: "CodeQL build mode (none|autobuild|manual). 100% of estate currently uses \"none\"; override only for compiled languages that require explicit build.",
+          type: "string",
+          required: false,
+          default: "none",
+        },
+        runs-on: {
+          description: "Runner label for the analyze job",
+          type: "string",
+          required: false,
+          default: "ubuntu-latest",
+        },
+        config-file: {
+          description: "Optional path to a CodeQL configuration file, relative to the checked-out repository (e.g. ./.github/codeql/codeql-config.yml). Empty by default, which is the CodeQL Action's own default and means NO configuration file: the Action does NOT auto-discover `.github/codeql/codeql-config.yml` (verified against codeql-action v4.38.0 — `getConfigFileInput()` returns undefined unless this input, a repository property, or default setup supplies a path), so a caller that wants one must name it here. An empty value is passed through as undefined by the Action, so existing callers are unaffected.",
+          type: "string",
+          required: false,
+          default: "",
+        },
+      },
+    },
+  },
+  permissions: {
+    actions: "read",
+    contents: "read",
+  },
+  jobs: {
+    analyze: {
+      timeout-minutes: 20,
+      runs-on: "${{ inputs.runs-on }}",
+      # Job-level permissions inherit from workflow-level and ADD security-events: write.
+      # Do NOT narrow here or CodeQL action loses `actions: read` which it needs.
+      permissions: {
+        actions: "read",
+        contents: "read",
+        security-events: "write",
+      },
+      steps: [
+        {
+          name: "Checkout",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            persist-credentials: false,
+          },
+        },
+        {
+          name: "Initialize CodeQL",
+          uses: "github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63", # v4.38.0 (4.38.1 blocked estate-wide; nexia-list#100)
+          with: {
+            languages: "${{ inputs.language }}",
+            build-mode: "${{ inputs.build-mode }}",
+            # Empty renders as '', which the Action's getOptionalInput() converts
+            # back to undefined — i.e. exactly today's behaviour for every caller
+            # that does not set the input.
+            config-file: "${{ inputs.config-file }}",
+          },
+        },
+        {
+          name: "Perform CodeQL Analysis",
+          uses: "github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63", # v4.38.0 (4.38.1 blocked estate-wide; nexia-list#100)
+          with: {
+            category: "/language:${{ inputs.language }}",
+          },
+        },
+      ],
+    },
+  },
+}

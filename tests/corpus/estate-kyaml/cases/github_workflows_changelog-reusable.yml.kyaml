@@ -1,0 +1,210 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+# This workflow is managed by gh actions-lock.
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# changelog-reusable.yml — Generate CHANGELOG.md from conventional commits.
+#
+# Closes Item 3 of the 2026-05-26 estate tech-debt audit follow-up: 65% of
+# estate repos (180/279) had no CHANGELOG.md. This reusable wires up git-cliff
+# with the canonical config at `metadatastician/standards/templates/cliff.toml`.
+#
+# Caller example (auto-update CHANGELOG.md on every push to main):
+#   jobs:
+#     changelog:
+#       uses: metadatastician/standards/.github/workflows/changelog-reusable.yml@571cc734cd69fb846032ec77a662aa8ee4fc32cd
+#       permissions:
+#         contents: write
+#         pull-requests: write
+#
+# Modes (controlled by the `mode` input):
+#   `commit-back`   - default. On push to main, regenerate CHANGELOG.md and
+#                     commit it back to the same branch (uses
+#                     `GITHUB_TOKEN`). Skip if no change.
+#   `pr-back`       - On push to main, open a PR with the regenerated
+#                     CHANGELOG.md (good for repos with branch protection
+#                     that disallows direct pushes to main).
+#   `release-only`  - Only generate on a `release` event; attach as an artifact
+#                     to the release. Does not modify the repo state.
+#   `check-only`    - Render the changelog but do NOT commit. Fail the job if
+#                     the on-disk CHANGELOG.md disagrees with the regenerated
+#                     output. Use as a `pull_request` gate.
+#
+# Loop-prevention (surfaced by maa-framework PR #219): two complementary guards
+# prevent the workflow from reacting to its own output and opening an infinite
+# chain of changelog PRs:
+#   1. The canonical cliff.toml has a `skip = true` parser for the bot's own
+#      "chore(changelog): regenerate from conventional commits" subjects. This
+#      is the primary fix because it survives GitHub squash-merge (which uses
+#      the PR title as the new subject).
+#   2. Every commit/PR this workflow produces carries a [skip changelog]
+#      marker in its body, and the `guard` job below bails out entirely when
+#      the triggering HEAD commit already has that marker. This protects
+#      `commit-back` mode callers (where the auto commit lands directly on
+#      main without a squash step) and provides defense-in-depth for pr-back.
+
+{
+  on: {
+    workflow_call: {
+      inputs: {
+        mode: {
+          description: "commit-back | pr-back | release-only | check-only",
+          required: false,
+          type: "string",
+          default: "commit-back",
+        },
+        runs-on: {
+          description: "Runner label",
+          required: false,
+          type: "string",
+          default: "ubuntu-latest",
+        },
+        git-cliff-version: {
+          description: "Version of git-cliff to install (semver, no leading v)",
+          required: false,
+          type: "string",
+          default: "2.6.1",
+        },
+      },
+    },
+  },
+  permissions: {
+    actions: "read",
+    contents: "read",
+  },
+  jobs: {
+    guard: {
+      timeout-minutes: 10,
+      name: "Check for self-trigger loop",
+      runs-on: "${{ inputs.runs-on }}",
+      outputs: {
+        skip: "${{ steps.loopguard.outputs.skip }}",
+      },
+      steps: [
+        {
+          name: "Checkout caller (HEAD only is enough for the guard)",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            repository: "${{ github.repository }}",
+            ref: "${{ github.sha }}", # not github.ref: refs/pull/<n>/merge is gone once the PR closes
+            fetch-depth: 1,
+            path: "caller",
+          },
+        },
+        {
+          name: "Loop guard",
+          id: "loopguard",
+          working-directory: "caller",
+          run: "set -euo pipefail\n# If the push that triggered us is itself a changelog regeneration\n# (commit-back's direct commit, or a squash-merged pr-back PR whose\n# body still contains the [skip changelog] marker placed below),\n# skip the whole generate job. cliff.toml's subject-matcher is the\n# primary fix; this guard handles cases where the marker is on the\n# body (e.g. commit-back mode, rebase-merges, mergers who preserve\n# the PR body).\nif git log -1 --pretty=%B | grep -q '\\[skip changelog\\]'; then\n  echo \"HEAD commit carries [skip changelog]; skipping generate job to break the regenerate loop.\"\n  echo \"skip=true\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"skip=false\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+        },
+      ],
+    },
+    generate: {
+      needs: "guard",
+      if: "${{ needs.guard.outputs.skip != 'true' }}",
+      timeout-minutes: 10,
+      name: "Generate CHANGELOG.md",
+      runs-on: "${{ inputs.runs-on }}",
+      permissions: {
+        contents: "write",
+        pull-requests: "write",
+      },
+      steps: [
+        {
+          name: "Checkout caller repository (full history)",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            repository: "${{ github.repository }}",
+            ref: "${{ github.sha }}", # not github.ref: refs/pull/<n>/merge is gone once the PR closes
+            fetch-depth: 0,
+            path: "caller",
+          },
+        },
+        # job.workflow_sha is unavailable on GitHub Enterprise Server, where it
+        # resolves to an EMPTY string and actions/checkout then follows the
+        # default branch — a float wearing a pin's clothes. Assert the value is a
+        # commit before the checkout it protects (the shape every helper-staging
+        # job in governance-reusable.yml uses).
+        {
+          name: "Assert this reusable's own commit resolved",
+          env: {
+            SELF_WORKFLOW_SHA: "${{ job.workflow_sha }}",
+          },
+          run: "if ! printf '%s' \"$SELF_WORKFLOW_SHA\" | grep -Eq '^[0-9a-f]{40}$'; then\n  echo \"::error::job.workflow_sha resolved to '${SELF_WORKFLOW_SHA:-<empty>}', not a 40-hex commit, so the standards checkout below would follow the default branch and this caller would get the CHANGELOG policy of whatever main happened to be.\"\n  exit 1\nfi\necho \"Standards policy source: $SELF_WORKFLOW_SHA\"\n",
+        },
+        {
+          name: "Checkout standards (for canonical cliff.toml)",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            repository: "metadatastician/standards",
+            # This reusable's own commit, not `main`. A caller pinned here must
+            # get the CHANGELOG policy of the standards commit it pinned: the
+            # canonical cliff.toml decides what reaches a release note, and a
+            # float means one push to standards can rewrite the changelog of
+            # every already-pinned caller with no review in their repository.
+            # scripts/check-standards-helper-pins.sh holds this shape.
+            ref: "${{ job.workflow_sha }}",
+            path: "standards",
+          },
+        },
+        {
+          name: "Install git-cliff",
+          run: "set -euo pipefail\nversion=\"${{ inputs.git-cliff-version }}\"\nasset=\"git-cliff-${version}-x86_64-unknown-linux-gnu.tar.gz\"\nurl=\"https://github.com/orhun/git-cliff/releases/download/v${version}/${asset}\"\ntmp=\"$(mktemp -d)\"\ncurl -fsSL \"$url\" -o \"$tmp/${asset}\"\ntar -C \"$tmp\" -xzf \"$tmp/${asset}\"\n# Move binary onto PATH (the tarball extracts to a versioned dir).\ninstall -m 0755 \"$tmp\"/git-cliff-*/git-cliff /usr/local/bin/git-cliff\ngit-cliff --version\n",
+        },
+        {
+          name: "Pick the cliff.toml to use",
+          id: "cfg",
+          run: "set -euo pipefail\nif [ -f caller/cliff.toml ]; then\n  echo \"Using caller's own cliff.toml\"\n  echo \"path=caller/cliff.toml\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"Using canonical cliff.toml from standards\"\n  echo \"path=standards/templates/cliff.toml\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+        },
+        {
+          name: "Generate CHANGELOG.md",
+          working-directory: "caller",
+          run: "set -euo pipefail\ngit-cliff \\\n  --config \"../${{ steps.cfg.outputs.path }}\" \\\n  --output CHANGELOG.md.new\nwc -l CHANGELOG.md.new\necho \"::group::CHANGELOG preview (first 40 lines)\"\nhead -40 CHANGELOG.md.new\necho \"::endgroup::\"\n",
+        },
+        {
+          name: "Mode = check-only — verify no drift",
+          if: "${{ inputs.mode == 'check-only' }}",
+          working-directory: "caller",
+          run: "set -euo pipefail\nif [ ! -f CHANGELOG.md ]; then\n  echo \"ERROR: caller has no CHANGELOG.md; check-only mode requires one to exist.\"\n  echo \"Adopt mode=commit-back to seed it, then switch to check-only.\"\n  exit 1\nfi\nif ! diff -q CHANGELOG.md CHANGELOG.md.new >/dev/null; then\n  echo \"ERROR: CHANGELOG.md is out of date relative to commit history.\"\n  echo \"Run git-cliff locally or switch to mode=commit-back.\"\n  diff -u CHANGELOG.md CHANGELOG.md.new | head -60\n  exit 1\nfi\necho \"CHANGELOG.md is up to date.\"\n",
+        },
+        {
+          name: "Mode = commit-back — commit regenerated CHANGELOG.md",
+          if: "${{ inputs.mode == 'commit-back' && github.event_name == 'push' }}",
+          working-directory: "caller",
+          env: {
+            # Never interpolate `${{ github.ref_name }}` into the shell body
+            # (CodeQL actions/command-injection): a git ref may legally contain
+            # `$`, `(`, `)`, `;`, `|` and `&`, so a branch named `$(cmd)` is
+            # executed by the runner. Passing it through `env:` makes it data.
+            BRANCH: "${{ github.ref_name }}",
+          },
+          run: "set -euo pipefail\nif [ -f CHANGELOG.md ] && diff -q CHANGELOG.md CHANGELOG.md.new >/dev/null; then\n  echo \"No CHANGELOG changes; skipping commit.\"\n  exit 0\nfi\nmv CHANGELOG.md.new CHANGELOG.md\ngit config user.email \"github-actions[bot]@users.noreply.github.com\"\ngit config user.name \"github-actions[bot]\"\ngit add CHANGELOG.md\nif git diff --cached --quiet; then\n  echo \"Nothing to commit after move (race condition).\"\n  exit 0\nfi\ngit commit -m \"chore(changelog): regenerate from conventional commits\n\n[skip changelog]\n\nAuto-generated by metadatastician/standards changelog-reusable.yml.\nSee standards/templates/cliff.toml for the canonical config.\n\nCloses part of the 2026-05-26 CHANGELOG gap (standards#197 audit).\"\ngit push origin \"HEAD:$BRANCH\"\n",
+        },
+        {
+          name: "Mode = pr-back — open PR with regenerated CHANGELOG.md",
+          if: "${{ inputs.mode == 'pr-back' && github.event_name == 'push' }}",
+          working-directory: "caller",
+          env: {
+            GH_TOKEN: "${{ github.token }}",
+            # Same reason as the commit-back step: ref names reach the shell as
+            # data, never as template expansion (actions/command-injection).
+            BASE_BRANCH: "${{ github.ref_name }}",
+          },
+          run: "set -euo pipefail\nif [ -f CHANGELOG.md ] && diff -q CHANGELOG.md CHANGELOG.md.new >/dev/null; then\n  echo \"No CHANGELOG changes; skipping PR.\"\n  exit 0\nfi\nmv CHANGELOG.md.new CHANGELOG.md\nbranch=\"bot/changelog-$(date +%Y%m%d-%H%M%S)\"\ngit config user.email \"github-actions[bot]@users.noreply.github.com\"\ngit config user.name \"github-actions[bot]\"\ngit checkout -b \"$branch\"\ngit add CHANGELOG.md\ngit commit -m \"chore(changelog): regenerate from conventional commits\n\n[skip changelog]\"\ngit push -u origin \"$branch\"\n# Before opening a new PR, close any older open bot/changelog-* PRs\n# against the same base so we don't accumulate duplicate PRs if a\n# maintainer hasn't merged the previous one before another push lands.\nfor pr in $(gh pr list --repo \"${{ github.repository }}\" \\\n                       --base \"$BASE_BRANCH\" \\\n                       --head 'bot/changelog-' \\\n                       --state open \\\n                       --json number,headRefName \\\n                       --jq '.[] | select(.headRefName != \"'\"$branch\"'\") | .number'); do\n  echo \"Closing superseded changelog PR #$pr\"\n  gh pr close \"$pr\" --repo \"${{ github.repository }}\" \\\n    --comment \"Superseded by a newer changelog regeneration PR.\"\ndone\ngh pr create \\\n  --repo \"${{ github.repository }}\" \\\n  --title \"chore(changelog): regenerate from conventional commits\" \\\n  --body \"Auto-generated by metadatastician/standards changelog-reusable.yml.\n\n  [skip changelog]\n\n  This PR body carries the [skip changelog] marker so that a\n  squash-merge of this PR will not re-trigger the changelog\n  workflow (loop-prevention added in response to maa-framework#219).\n  Please do not remove that marker when editing the description.\n\n  Closes part of the 2026-05-26 CHANGELOG gap (standards#197 audit).\" \\\n  --base \"$BASE_BRANCH\" \\\n  --head \"$branch\"\n",
+        },
+        {
+          name: "Mode = release-only — attach to release",
+          if: "${{ inputs.mode == 'release-only' && github.event_name == 'release' }}",
+          env: {
+            GH_TOKEN: "${{ github.token }}",
+            # Release tag names are event data and may contain shell
+            # metacharacters; pass through env, never inline
+            # (actions/command-injection).
+            TAG: "${{ github.event.release.tag_name }}",
+          },
+          run: "set -euo pipefail\ntag=\"$TAG\"\ngh release upload \"$tag\" caller/CHANGELOG.md.new \\\n  --clobber \\\n  --repo \"${{ github.repository }}\"\necho \"Attached CHANGELOG.md to release $tag\"\n",
+        },
+      ],
+    },
+  },
+}
