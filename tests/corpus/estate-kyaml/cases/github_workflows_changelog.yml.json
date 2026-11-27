@@ -1,0 +1,1 @@
+[{"name":"Changelog","on":{"push":{"branches":["main","master"],"paths":["CHANGELOG.md"]}},"permissions":{"actions":"read","contents":"read","pull-requests":"write"},"jobs":{"generate":{"uses":"./.github/workflows/changelog-reusable.yml"}}}]

@@ -1,0 +1,283 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+# This workflow is managed by gh actions-lock.
+# ECHIDNA proof verification — formal verification of Agda and Idris2 proofs.
+#
+# Scope:
+#   - lol/proofs/theories/**/*.agda
+#   - 2-protocols/avow/avow-lib/src/abi/*.idr
+#   - 1-formats/k9/spec/proofs/HuntGate.idr (this repo's own; idris2-standards)
+#   - 2-protocols/k9-coordination/tools/validate/proofs/*.idr (this repo's own; idris2-standards)
+#
+# Proof-corpus status (issue #748, updated 2026-09-17): the lol and AVOW
+# corpora are EVICTED from this repo — and their jobs keep the presence
+# Guard from #828 (honest green, no toolchain spend; they verify again
+# unchanged if a corpus ever returns). The A2ML corpus will NEVER return:
+# the a2ml project is OFFICIALLY RETIRED (owner ruling, 2026-09-17), so
+# the idris2-a2ml job is EVICTED, not merely guarded. Verified before
+# evicting: no live ruleset pins its check context (org ruleset
+# Optimus-Branch #23359343 requires only CodeQL, CodeRabbit, SonarCloud,
+# governance/Code-quality+docs, .github/dependabot.yml, uses⊆actions.lock;
+# config/rulesets/*.json pin no proof contexts), so removing it cannot
+# deadlock a PR.
+#
+# Dogfooding: standards repo defines ECHIDNA trust pipeline; this workflow
+# applies that pipeline to the repo's own proofs.
+
+{
+  name: "ECHIDNA Proof Verification",
+  on: {
+    push: {
+      branches: [
+        "main",
+      ],
+      paths: [
+        "lol/proofs/**",
+        "2-protocols/avow/avow-lib/src/abi/*.idr",
+        "1-formats/k9/spec/proofs/**",
+        "2-protocols/k9-coordination/tools/validate/proofs/**",
+        "3-practice/fork-governance/proofs/**",
+        ".github/workflows/echidna-verify.yml",
+      ],
+    },
+    # NO path filter on pull_request, deliberately. It once existed because
+    # `Idris2 - a2ml proofs` was recorded as a REQUIRED context; that is STALE —
+    # verified 2026-09-17 against the live org ruleset: no ruleset pins any
+    # proof context, and the a2ml job itself is now evicted (retired project).
+    # The always-on shape is kept even so: the surviving jobs are second-level
+    # presence Guards, and this workflow doubles as the repo's proof-hygiene
+    # canary — letting proof-irrelevant PRs skip it would silently un-exercise
+    # the Guards.
+    pull_request: null,
+    schedule: [
+      # Weekly re-verification to catch stale-proof drift
+      {
+        cron: "0 6 * * 1",
+      },
+    ],
+    workflow_dispatch: null,
+  },
+  # Estate guardrail: cancel superseded runs so re-pushes / rebased PR
+  # updates do not pile up queued runs against the shared account-wide
+  # Actions concurrency pool. Applied only to read-only check workflows
+  # (no publish/mutation), so cancelling a superseded run is always safe.
+  concurrency: {
+    group: "${{ github.workflow }}-${{ github.ref }}",
+    cancel-in-progress: true,
+  },
+  permissions: {
+    actions: "read",
+    contents: "read",
+  },
+  jobs: {
+    detect-proof-changes: {
+      timeout-minutes: 5,
+      name: "Detect proof changes",
+      runs-on: "ubuntu-latest",
+      outputs: {
+        proofs: "${{ steps.check.outputs.proofs }}",
+      },
+      steps: [
+        {
+          name: "Checkout",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            fetch-depth: 0,
+          },
+        },
+        {
+          name: "Did this change touch any proof source?",
+          id: "check",
+          shell: "bash",
+          run: "# Non-PR events (push, schedule, dispatch) always verify.\nif [ \"${{ github.event_name }}\" != \"pull_request\" ]; then\n  echo \"proofs=true\" >> \"$GITHUB_OUTPUT\"; exit 0\nfi\nbase=\"${{ github.event.pull_request.base.sha }}\"\nhead=\"${{ github.event.pull_request.head.sha }}\"\nchanged=$(git diff --name-only \"$base\" \"$head\" 2>/dev/null || true)\nif printf '%s\\n' \"$changed\" | grep -qE '^(lol/proofs/|2-protocols/avow/avow-lib/src/abi/.*\\.idr$|1-formats/k9/spec/proofs/|2-protocols/k9-coordination/tools/validate/proofs/|3-practice/fork-governance/proofs/|\\.github/workflows/echidna-verify\\.yml$)'; then\n  echo \"proofs=true\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"proofs=false\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+        },
+      ],
+    },
+    agda-lol: {
+      name: "Agda — lol/proofs",
+      needs: "detect-proof-changes",
+      if: "needs.detect-proof-changes.outputs.proofs == 'true'",
+      runs-on: "ubuntu-latest",
+      timeout-minutes: 20,
+      steps: [
+        {
+          name: "Checkout",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            submodules: "recursive",
+          },
+        },
+        {
+          name: "Guard — proofs are evicted from this repo",
+          id: "guard",
+          run: "# Same honesty guard idris2-avow got (see its Type-check step),\n# placed BEFORE the toolchain install so the weekly cron stops\n# spending minutes bootstrapping for a directory that does not\n# exist. lol/proofs moved to the lol repository; if the corpus ever\n# returns here, this job verifies again, unchanged (issue #748).\nif [ ! -d lol/proofs ]; then\n  echo \"::notice title=Agda proofs::lol/proofs is absent here — proofs were evicted to the lol repository. Nothing to type-check; remaining steps skipped.\"\n  echo \"present=false\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"present=true\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+        },
+        {
+          name: "Install Agda",
+          if: "steps.guard.outputs.present == 'true'",
+          run: "sudo apt-get update\nsudo apt-get install -y agda agda-stdlib\nagda --version\n",
+        },
+        {
+          name: "Type-check proofs",
+          id: "typecheck",
+          if: "steps.guard.outputs.present == 'true'",
+          run: "set -eo pipefail\necho \"=== Agda proofs under lol/proofs ===\"\nfind lol/proofs/theories -name '*.agda' -print\ncd lol/proofs\nfailed=\"\"\nfor f in $(find theories -name '*.agda'); do\n  echo \"--- checking $f ---\"\n  if ! agda --safe \"$f\" 2>&1 | tee -a ../../agda-verify.log; then\n    failed=\"$failed$f\"$'\\n'\n  fi\ndone\nif [ -n \"$failed\" ]; then\n  echo \"::warning::agda --safe FAILED to type-check the following proof(s) (advisory until the evicted lol/proofs corpus's re-entry criteria are set; see issue #748):\"\n  printf '%s' \"$failed\" | sed 's/^/  - /'\nelse\n  echo \"All Agda proofs type-checked cleanly.\"\nfi\n",
+        },
+        {
+          name: "Postulate audit",
+          if: "steps.guard.outputs.present == 'true'",
+          run: "echo \"=== Postulate usage in lol/proofs ===\"\ngrep -rn \"postulate\" lol/proofs/theories/ || echo \"No postulates found\"\n",
+        },
+        {
+          name: "Upload log",
+          if: "always()",
+          uses: "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", # v7.0.2
+          with: {
+            name: "agda-verify-log",
+            path: "agda-verify.log",
+            if-no-files-found: "ignore",
+          },
+        },
+      ],
+    },
+    idris2-avow: {
+      name: "Idris2 — AVOW consent proofs",
+      needs: "detect-proof-changes",
+      if: "needs.detect-proof-changes.outputs.proofs == 'true'",
+      runs-on: "ubuntu-latest",
+      timeout-minutes: 20,
+      steps: [
+        {
+          name: "Checkout",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            submodules: "recursive",
+          },
+        },
+        {
+          name: "Cache pack",
+          uses: "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", # v6.1.0
+          with: {
+            path: "~/.pack\n~/.idris2\n",
+            key: "${{ runner.os }}-idris2-pack-${{ hashFiles('**/pack.toml', '**/*.ipkg') }}",
+            restore-keys: "${{ runner.os }}-idris2-pack-\n",
+          },
+        },
+        {
+          name: "Install Idris2 via pack",
+          # PROOF-POLICY §6 deviation, recorded in 3-practice/PROOF-NEEDS.adoc
+          # (toolchain-deviations): installed outside Guix and the container, with
+          # no pinned version or digest yet. State: open.
+          run: "set -e\nif command -v idris2 >/dev/null 2>&1; then\n  echo \"idris2 already present: $(idris2 --version)\"\n  exit 0\nfi\nsudo apt-get update\nsudo apt-get install -y build-essential libgmp-dev chezscheme\ngit clone --depth 1 https://github.com/stefan-hoeck/idris2-pack.git \"$HOME/idris2-pack\"\ncd \"$HOME/idris2-pack\"\n# pack's install.bash prompts for the scheme binary; feeding newlines\n# makes the prompt take its detected default (chezscheme) instead of\n# hitting EOF (which aborts the bootstrap and leaves pack uninstalled).\nyes '' | bash install.bash || echo \"::warning::pack install had warnings\"\n# pack installs its launcher into ~/.local/bin (newer layout) and/or\n# ~/.pack/bin (older); add both so `pack` resolves on PATH.\necho \"$HOME/.local/bin\" >> \"$GITHUB_PATH\"\necho \"$HOME/.pack/bin\" >> \"$GITHUB_PATH\"\nexport PATH=\"$HOME/.local/bin:$HOME/.pack/bin:$PATH\"\n# `install-api` is not a pack subcommand; `install-app idris2`\n# installs the idris2 executable into the pack bin dir so the\n# subsequent `idris2 --check` resolves. The base library (Prelude,\n# base, contrib) ships with idris2, so no .ipkg is needed for a\n# standalone --check.\npack install-app idris2\nidris2 --version\n",
+        },
+        {
+          name: "Type-check AVOW proofs",
+          run: "export PATH=\"$HOME/.pack/bin:$PATH\"\n# The per-file `if [ -f ]` guard below was written to tolerate absent\n# proofs, but the `cd` ahead of it was NOT guarded, so a missing\n# directory killed the step before the guard could ever run. In this\n# repo 2-protocols/avow/ holds only BINDING.adoc - the proofs live in the\n# avow-protocol repository - so the cd always failed and this job was\n# permanently red. It only became visible once the workflow began\n# running on pull requests.\nif [ ! -d 2-protocols/avow/avow-lib ]; then\n  echo \"::notice title=AVOW proofs::2-protocols/avow/avow-lib is not present here (this repo carries only the BINDING). Nothing to type-check.\"\n  exit 0\nfi\ncd 2-protocols/avow/avow-lib\nfor f in src/abi/Consent.idr src/abi/Unsubscribe.idr src/abi/Types.idr; do\n  if [ -f \"$f\" ]; then\n    echo \"--- checking $f ---\"\n    idris2 --check \"$f\" 2>&1 | tee -a ../../idris2-avow.log\n  fi\ndone\n",
+        },
+        {
+          name: "Upload log",
+          if: "always()",
+          uses: "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", # v7.0.2
+          with: {
+            name: "idris2-avow-log",
+            path: "idris2-avow.log\n",
+            if-no-files-found: "ignore",
+          },
+        },
+      ],
+    },
+    idris2-standards: {
+      # This repository's own Idris2 proofs (3-practice/PROOF-NEEDS.adoc, the proof-status file).
+      # Unlike the evicted corpora above there is no presence guard: the files
+      # live here, so a missing file is a failure, not a notice.
+      # 2-protocols/overlay/src/abi/OverlayProtocol.idr is deliberately absent:
+      # under the overlay's KEEP-SPEC-DEFER-IMPL decision it stays unchecked in
+      # CI until a consumer appears (3-practice/PROOF-NEEDS.adoc, standards#1436).
+      # Toolchain deviation (PROOF-POLICY section 6), state open: Idris2 comes from
+      # idris2-pack, not guix.scm (which provides none) or a container. The
+      # type-check step logs the version and the SHA-256 of the executable it
+      # ran; 3-practice/PROOF-NEEDS.adoc carries the full record.
+      name: "Idris2 — this repository's proofs",
+      needs: "detect-proof-changes",
+      if: "needs.detect-proof-changes.outputs.proofs == 'true'",
+      runs-on: "ubuntu-latest",
+      timeout-minutes: 40,
+      env: {
+        # The K9 Hunt gate (K9-CONTRACT-SPEC §9.2) is an interface property
+        # (PROOF-POLICY §1). Its bridge to the two Nickel copies is the
+        # exhaustive check `k9-validate.sh --self-test` runs in k9-conformance.yml.
+        PROOFS: "1-formats/k9/spec/proofs:HuntGate.idr 2-protocols/k9-coordination/tools/validate/proofs:GrammarExtension.idr 3-practice/fork-governance/proofs:ReportBack.idr",
+      },
+      steps: [
+        {
+          name: "Checkout",
+          uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", # v7.0.1
+          with: {
+            persist-credentials: false,
+          },
+        },
+        {
+          name: "Escape-hatch audit (idris2 --check accepts holes, so they are refused here)",
+          shell: "bash",
+          run: "set -euo pipefail\nbad=0\nfor entry in $PROOFS; do\n  f=\"${entry%%:*}/${entry#*:}\"\n  [ -f \"$f\" ] || { echo \"::error file=$f::proof file is missing\"; bad=1; continue; }\n  grep -q '^%default total' \"$f\" || { echo \"::error file=$f::no %default total\"; bad=1; }\n  # Comments removed first: the doc comments name what is refused.\n  if sed -E 's/--.*$//; s/\\|\\|\\|.*$//' \"$f\" \\\n     | grep -nE '\\b(believe_me|assert_total|assert_smaller|idris_crash|postulate|partial|covering)\\b|\\?[A-Za-z_]'; then\n    echo \"::error file=$f::hole, postulate, believe_me, assert_* or a non-total annotation (lines above)\"\n    bad=1\n  fi\ndone\nexit \"$bad\"\n",
+        },
+        {
+          name: "Cache pack",
+          uses: "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", # v6.1.0
+          with: {
+            path: "~/.pack\n~/.idris2\n",
+            key: "${{ runner.os }}-idris2-pack-${{ hashFiles('**/pack.toml', '**/*.ipkg') }}",
+            restore-keys: "${{ runner.os }}-idris2-pack-\n",
+          },
+        },
+        {
+          name: "Install Idris2 via pack",
+          shell: "bash",
+          run: "set -euo pipefail\nexport PATH=\"$HOME/.local/bin:$HOME/.pack/bin:$PATH\"\necho \"$HOME/.local/bin\" >> \"$GITHUB_PATH\"\necho \"$HOME/.pack/bin\" >> \"$GITHUB_PATH\"\nif command -v idris2 >/dev/null 2>&1; then\n  echo \"idris2 already present: $(idris2 --version)\"\n  exit 0\nfi\nsudo apt-get update\nsudo apt-get install -y build-essential libgmp-dev chezscheme\ngit clone --depth 1 https://github.com/stefan-hoeck/idris2-pack.git \"$HOME/idris2-pack\"\ncd \"$HOME/idris2-pack\"\n# See idris2-avow: the newlines take install.bash's detected scheme.\n# yes dies of SIGPIPE once install.bash stops reading; under pipefail\n# that alone would fail the step, so only install.bash's status counts.\n{ yes '' || true; } | bash install.bash\npack install-app idris2\nidris2 --version\n",
+        },
+        {
+          name: "Type-check (fail-closed)",
+          shell: "bash",
+          run: "set -euo pipefail\nidris2 --version | tee idris2-standards.log\nsha256sum \"$(readlink -f \"$(command -v idris2)\")\" | tee -a idris2-standards.log\nfor entry in $PROOFS; do\n  dir=\"${entry%%:*}\" file=\"${entry#*:}\"\n  echo \"--- $dir/$file ---\" | tee -a idris2-standards.log\n  out=$(cd \"$dir\" && idris2 --check --total \"$file\" 2>&1) || { printf '%s\\n' \"$out\" | tee -a idris2-standards.log; exit 1; }\n  printf '%s\\n' \"$out\" | tee -a idris2-standards.log\n  # idris2 exits 0 on some errors: a missing Prelude did, measured\n  # 2026-11-09. Any reported error fails the check.\n  if printf '%s\\n' \"$out\" | grep -q '^Error'; then\n    echo \"::error file=$dir/$file::idris2 reported an error but exited 0\"; exit 1\n  fi\ndone\n",
+        },
+        # The renderer is tied to ReportBack.idr by an exhaustive differential
+        # test (scripts/tests/report-back-model-test.sh) over the committed case
+        # table. That table must be what the proved model prints, so it is
+        # regenerated here from the model and compared byte for byte.
+        {
+          name: "Case table matches the ReportBack model",
+          shell: "bash",
+          run: "set -euo pipefail\ncd 3-practice/fork-governance/proofs\nidris2 ReportBack.idr --exec main > \"$RUNNER_TEMP/report-back-cases.tsv\"\nif ! cmp -s \"$RUNNER_TEMP/report-back-cases.tsv\" report-back-cases.tsv; then\n  echo \"::error file=3-practice/fork-governance/proofs/report-back-cases.tsv::differs from what ReportBack.idr prints; regenerate it with: idris2 ReportBack.idr --exec main > report-back-cases.tsv\"\n  diff \"$RUNNER_TEMP/report-back-cases.tsv\" report-back-cases.tsv | head -20\n  exit 1\nfi\necho \"report-back-cases.tsv: $(wc -l < report-back-cases.tsv) cases, as the model prints them\" | tee -a \"$GITHUB_WORKSPACE/idris2-standards.log\"\n",
+        },
+        {
+          name: "Upload log",
+          if: "always()",
+          uses: "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", # v7.0.2
+          with: {
+            name: "idris2-standards-log",
+            path: "idris2-standards.log",
+            if-no-files-found: "ignore",
+          },
+        },
+      ],
+    },
+    trust-summary: {
+      timeout-minutes: 10,
+      name: "Trust pipeline summary",
+      needs: [
+        "detect-proof-changes",
+        "agda-lol",
+        "idris2-avow",
+        "idris2-standards",
+      ],
+      runs-on: "ubuntu-latest",
+      if: "always()",
+      steps: [
+        {
+          name: "Summarise",
+          run: "echo \"## ECHIDNA Trust Summary\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"| Target | Result |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"|---|---|\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"| Agda lol/proofs | ${{ needs.agda-lol.result }} |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"| Idris2 a2ml | _evicted — a2ml project officially retired 2026-09-17 |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"| Idris2 avow | ${{ needs.idris2-avow.result }} |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"| Idris2 this repository (K9 Hunt gate, coordination.k9 grammar) | ${{ needs.idris2-standards.result }} |\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"\" >> \"$GITHUB_STEP_SUMMARY\"\necho \"See artefacts for verification logs.\" >> \"$GITHUB_STEP_SUMMARY\"\n",
+        },
+      ],
+    },
+  },
+}

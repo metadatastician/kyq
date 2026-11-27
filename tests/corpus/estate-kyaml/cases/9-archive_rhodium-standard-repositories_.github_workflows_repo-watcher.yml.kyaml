@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: MPL-2.0
+{
+  name: "Auto-Configure New Repositories",
+  on: {
+    schedule: [
+      {
+        cron: "0 6 * * *", # Daily at 6 AM UTC
+      },
+    ],
+    workflow_dispatch: null, # Manual trigger
+  },
+  permissions: "read-all",
+  jobs: {
+    configure-new-repos: {
+      runs-on: "ubuntu-latest",
+      timeout-minutes: 20,
+      permissions: {
+        contents: "read",
+      },
+      steps: [
+        {
+          name: "Get all repos",
+          id: "repos",
+          env: {
+            GH_TOKEN: "${{ secrets.REPO_CONFIG_TOKEN }}",
+          },
+          run: "gh api /users/hyperpolymath/repos --paginate -q '.[].name' > all_repos.txt\necho \"Found $(wc -l < all_repos.txt) repos\"\n",
+        },
+        {
+          name: "Check and configure each repo",
+          env: {
+            GH_TOKEN: "${{ secrets.REPO_CONFIG_TOKEN }}",
+            GITLAB_TOKEN: "${{ secrets.GITLAB_TOKEN }}",
+            BITBUCKET_TOKEN: "${{ secrets.BITBUCKET_TOKEN }}",
+          },
+          run: "while read -r repo; do\n  echo \"Checking $repo...\"\n\n  # Skip template repo itself\n  if [ \"$repo\" = \"rsr-template-repo\" ]; then\n    echo \"  Skipping template repo\"\n    continue\n  fi\n\n  DEFAULT_BRANCH=$(gh api \"/repos/hyperpolymath/$repo\" -q '.default_branch' 2>/dev/null || echo \"main\")\n\n  # Check if mirror.yml exists\n  MIRROR_EXISTS=$(gh api \"/repos/hyperpolymath/$repo/conten../../.github/workflows/mirror.yml\" -q '.name' 2>/dev/null || echo \"\")\n\n  if [ -z \"$MIRROR_EXISTS\" ]; then\n    echo \"  Adding mirror.yml...\"\n    cat > /tmp/mirror.yml << 'MIRROREOF'\n# SPDX-License-Identifier: MPL-2.0\nname: Mirror to GitLab and Bitbucket\n\non:\n  push:\n    branches: [main, master]\n    tags:\n      - 'v*'\n  workflow_dispatch:\n\npermissions: read-all\n\njobs:\n  mirror-gitlab:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    if: ${{ vars.GITLAB_MIRROR_ENABLED == 'true' }}\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n        with:\n          fetch-depth: 0\n      - name: Push to GitLab\n        env:\n          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}\n          REPO_NAME: ${{ github.event.repository.name }}\n        run: |\n          git remote add gitlab https://oauth2:${GITLAB_TOKEN}@gitlab.com/hyperpolymath/${REPO_NAME}.git || true\n          git push gitlab HEAD:main --force || git push gitlab HEAD:master --force\n          git push gitlab --tags --force\n\n  mirror-bitbucket:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    if: ${{ vars.BITBUCKET_MIRROR_ENABLED == 'true' }}\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n        with:\n          fetch-depth: 0\n      - name: Push to Bitbucket\n        env:\n          BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}\n          REPO_NAME: ${{ github.event.repository.name }}\n        run: |\n          git remote add bitbucket https://x-token-auth:${BITBUCKET_TOKEN}@bitbucket.org/hyperpolymath/${REPO_NAME}.git || true\n          git push bitbucket HEAD:main --force || git push bitbucket HEAD:master --force\n          git push bitbucket --tags --force\nMIRROREOF\n\n    CONTENT=$(base64 -w 0 /tmp/mirror.yml)\n    gh api --method PUT \"/repos/hyperpolymath/$repo/conten../../.github/workflows/mirror.yml\" \\\n      -f message=\"Add mirror workflow (auto-configured)\" \\\n      -f content=\"$CONTENT\" \\\n      -f branch=\"$DEFAULT_BRANCH\" 2>/dev/null && echo \"  ✓ Mirror added\"\n  fi\n\n  # Check if CodeQL exists\n  CODEQL_EXISTS=$(gh api \"/repos/hyperpolymath/$repo/conten../../.github/workflows/codeql-analysis.yml\" -q '.name' 2>/dev/null || echo \"\")\n\n  if [ -z \"$CODEQL_EXISTS\" ]; then\n    echo \"  Adding CodeQL...\"\n    cat > /tmp/codeql.yml << 'CODEQLEOF'\n# SPDX-License-Identifier: MPL-2.0\nname: \"CodeQL\"\non:\n  push:\n    branches: [ \"main\", \"master\" ]\n  pull_request:\n    branches: [ \"main\", \"master\" ]\n  schedule:\n    - cron: '30 1 * * *'\n\npermissions: read-all\n\njobs:\n  analyze:\n    name: Analyze\n    runs-on: ubuntu-latest\n    timeout-minutes: 360\n    permissions:\n      security-events: write\n      packages: read\n      actions: read\n      contents: read\n    strategy:\n      fail-fast: false\n      matrix:\n        include:\n          - language: javascript-typescript\n            build-mode: none\n          - language: python\n            build-mode: none\n    steps:\n    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n    - uses: github/codeql-action/init@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0\n      with:\n        languages: ${{ matrix.language }}\n        build-mode: ${{ matrix.build-mode }}\n    - uses: github/codeql-action/analyze@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0\n      with:\n        category: \"/language:${{matrix.language}}\"\nCODEQLEOF\n\n    CONTENT=$(base64 -w 0 /tmp/codeql.yml)\n    gh api --method PUT \"/repos/hyperpolymath/$repo/conten../../.github/workflows/codeql-analysis.yml\" \\\n      -f message=\"Add CodeQL workflow (auto-configured)\" \\\n      -f content=\"$CONTENT\" \\\n      -f branch=\"$DEFAULT_BRANCH\" 2>/dev/null && echo \"  ✓ CodeQL added\"\n  fi\n\n  # Enable Dependabot alerts\n  gh api --method PUT \"/repos/hyperpolymath/$repo/vulnerability-alerts\" 2>/dev/null\n  gh api --method PUT \"/repos/hyperpolymath/$repo/automated-security-fixes\" 2>/dev/null\n\n  # Set mirror variables if not set\n  gh api \"/repos/hyperpolymath/$repo/actions/variables/GITLAB_MIRROR_ENABLED\" 2>/dev/null || \\\n    gh api --method POST \"/repos/hyperpolymath/$repo/actions/variables\" \\\n      -f name=\"GITLAB_MIRROR_ENABLED\" -f value=\"true\" 2>/dev/null\n\n  gh api \"/repos/hyperpolymath/$repo/actions/variables/BITBUCKET_MIRROR_ENABLED\" 2>/dev/null || \\\n    gh api --method POST \"/repos/hyperpolymath/$repo/actions/variables\" \\\n      -f name=\"BITBUCKET_MIRROR_ENABLED\" -f value=\"true\" 2>/dev/null\n\ndone < all_repos.txt\n\necho \"Done configuring repos!\"\n",
+        },
+      ],
+    },
+  },
+}

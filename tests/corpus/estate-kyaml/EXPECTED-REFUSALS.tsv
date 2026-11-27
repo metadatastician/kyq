@@ -1,0 +1,2 @@
+# name	code	reason
+9-archive_rhodium-standard-repositories_satellites_palimpsest-license_.rvc_config.yml	DUPLICATE_KEY	The source maps metadata twice; yq keeps the last one silently, and KYAML_SPEC refuses a duplicate key.

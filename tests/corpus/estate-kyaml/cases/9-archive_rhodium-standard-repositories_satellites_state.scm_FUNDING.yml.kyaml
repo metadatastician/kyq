@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MPL-2.0
+# Funding and support information for STATE project
+
+# These are supported funding model platforms
+
+{
+  github: [], # GitHub Sponsors username(s)
+  patreon: null, # Patreon username
+  open_collective: null, # Open Collective username
+  ko_fi: null, # Ko-fi username
+  tidelift: null, # Tidelift package name
+  community_bridge: null, # Community Bridge project name
+  liberapay: null, # Liberapay username
+  issuehunt: null, # IssueHunt username
+  otechie: null, # Otechie username
+  lfx_crowdfunding: null, # LFX Crowdfunding project name
+  # Custom sponsorship URLs
+  custom: null,
+}
+# Cooperative economics statement
+# This project encourages support through:
+# 1. Direct code contributions
+# 2. Documentation improvements
+# 3. Bug reports and testing
+# 4. Financial support to maintainers
+# 5. Support for cooperative/worker-owned tech enterprises# - https://your-sponsorship-link.com
