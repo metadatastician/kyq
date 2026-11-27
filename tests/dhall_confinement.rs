@@ -6,6 +6,7 @@
 use std::{
     io::Write,
     process::{Command, Output, Stdio},
+    sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -23,6 +24,16 @@ fn invoke(args: &[&str], input: &[u8]) -> (Output, Duration) {
     }
     let output = child.wait_with_output().unwrap();
     (output, start.elapsed())
+}
+
+/// The costly tests race each other for CPU and memory. On a small CI
+/// runner the memory and stack tests then hit the wall-clock limit first.
+/// They take this lock so they run one at a time.
+fn costly() -> MutexGuard<'static, ()> {
+    static COSTLY: Mutex<()> = Mutex::new(());
+    COSTLY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Assert a refusal with `code` on stderr, exit 2 and nothing on stdout.
@@ -58,6 +69,7 @@ fn large_source() -> String {
 
 #[test]
 fn costly_time_ends_with_dhall_time_limit() {
+    let _one_at_a_time = costly();
     let elapsed = assert_refused(&slow_source(), "DHALL_TIME_LIMIT");
     let limit = Duration::from_millis(kyq::DHALL_TIME_LIMIT_MS);
     assert!(elapsed >= limit, "refused before the limit: {elapsed:?}");
@@ -67,6 +79,7 @@ fn costly_time_ends_with_dhall_time_limit() {
 
 #[test]
 fn costly_memory_ends_with_dhall_memory_limit() {
+    let _one_at_a_time = costly();
     let elapsed = assert_refused(&large_source(), "DHALL_MEMORY_LIMIT");
     assert!(
         elapsed < Duration::from_millis(kyq::DHALL_TIME_LIMIT_MS),
@@ -76,6 +89,7 @@ fn costly_memory_ends_with_dhall_memory_limit() {
 
 #[test]
 fn deep_evaluation_ends_with_dhall_stack_limit() {
+    let _one_at_a_time = costly();
     // Before W7 this aborted the kyq process itself (SIGABRT, exit 134).
     assert_refused(
         r"Natural/fold 1000000 Natural (\(x: Natural) -> x + 1) 0",
