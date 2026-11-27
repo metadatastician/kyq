@@ -99,6 +99,9 @@ on every OS, so deep evaluation that overflows it is
 depth that depended on the platform's main-thread stack). A result larger
 than +dhall_result_max_bytes+ (64 MiB) is +DHALL_OUTPUT_LIMIT+. Any
 other abnormal worker end is +DHALL_WORKER_FAILED+. All of these exit 2.
+A Dhall +NaN+, +Infinity+ or +-Infinity+ has no JSON form, so it is
++NON_FINITE_NUMBER+ (exit 2), as KYAML +.nan+ and +.inf+ are; before
+2026-11-27 it became +null+.
 The limits bind the +kyq+ CLI only: the +kyq::parse+ library function
 still evaluates in-process, and a library caller must supply its own
 limits. The report also states +fmt_preserves_comments: false+,

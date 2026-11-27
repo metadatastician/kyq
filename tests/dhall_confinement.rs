@@ -121,3 +121,31 @@ fn worker_mode_takes_no_arguments() {
     let (out, _) = invoke(&["--dhall-worker", "extra"], b"1");
     assert_eq!(out.status.code(), Some(2));
 }
+
+/// Owner ruling 2026-11-27: Dhall `NaN` and `±Infinity` are refused, as KYAML
+/// `.nan` and `.inf` are, instead of becoming `null`.
+#[test]
+fn non_finite_doubles_are_refused_not_nulled() {
+    for source in [
+        "{ a = NaN }",
+        "{ b = { c = [ 1.0, -Infinity ] } }",
+        "Some Infinity",
+    ] {
+        assert_refused(source, "NON_FINITE_NUMBER");
+        let error = kyq::parse(source.as_bytes(), kyq::Format::Dhall).unwrap_err();
+        assert_eq!(error.code, "NON_FINITE_NUMBER", "{source}");
+    }
+    let (out, _) = invoke(
+        &["validate", "--from", "dhall", "-"],
+        b"{ b = { c = [ 1.0, -Infinity ] } }",
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr)
+            .contains("Dhall -Infinity has no JSON form (at /b/c/1)")
+    );
+    let (out, _) = invoke(
+        &["to-json", "--from", "dhall", "-"],
+        b"{ d = 1.5, e = Some 2.0 }",
+    );
+    assert_eq!(out.stdout, b"{\"d\":1.5,\"e\":2}\n");
+}
