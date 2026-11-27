@@ -789,7 +789,7 @@ The candidate's own `docs/ASSURANCE.adoc` lists its open acceptance requirements
 |W1.
 
 |W8
-|Robustness evidence: a broader independent YAML corpus, sustained fuzz runs and a mutation campaign (open in `docs/ASSURANCE.adoc`). *Part 1 done 2026-11-26:* the estate KYAML corpus and the KEP-5295 generator (owner ruling by selector: both). Parts 2 and 3: cargo-fuzz on a pinned nightly, cargo-mutants on `src/kyaml.rs` and `src/emit.rs`.
+|Robustness evidence: a broader independent YAML corpus, sustained fuzz runs and a mutation campaign (open in `docs/ASSURANCE.adoc`). *Part 1 done 2026-11-26:* the estate KYAML corpus and the KEP-5295 generator (owner ruling by selector: both). *Part 2 done 2026-11-26:* cargo-fuzz targets for KYAML and JSON/JCS on a pinned nightly, one recorded hour each, and a weekly workflow. Part 3: cargo-mutants on `src/kyaml.rs` and `src/emit.rs`.
 |Recorded runs with their bounds, as `TESTED` rows. A planted parser fault is found.
 |W4.
 

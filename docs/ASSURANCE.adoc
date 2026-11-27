@@ -48,6 +48,22 @@ W8 part 1, TESTED at base `758825a` with rustc 1.99.1 and yq v4.53.3:
   a listed code, in 133 s. A planted string-trimming fault is found. CI runs
   1024 cases; set `KYQ_KEP5295_CASES` for a longer run.
 
+W8 part 2, TESTED on base `3abf616` with nightly-2026-11-01, cargo-fuzz 0.13.1
+and libfuzzer-sys 0.4.10, 2 workers per target, inputs up to 64 KiB:
+
+* `fuzz/fuzz_targets/kyaml_roundtrip.rs`: 4,118,212 inputs in 3,600 s, no
+  crash, timeout or OOM, 7,992 coverage edges. kyq never panics; a stream it
+  reads, formatted or written as `canonical_file`, reads back to the same
+  per-document RFC 8785 text and is a fixed point.
+* `fuzz/fuzz_targets/json_jcs_roundtrip.rs`: 18,093,607 inputs in 3,631 s,
+  no crash, timeout or OOM, 2,292 coverage edges. JSON and JCS output is a
+  fixed point of read and canonicalize.
+* Planted fault: built with `--cfg kyq_fuzz_plant`, the KYAML target drops the
+  last element of each re-read sequence. From an empty corpus it is found in
+  under 3 s.
+* `.github/workflows/fuzz.yml` repeats this weekly and on demand (30 minutes
+  per target by default). It is not a pull-request gate.
+
 == Required before broad promotion
 
 * Broader independent YAML corpus testing beyond the committed contract corpus.

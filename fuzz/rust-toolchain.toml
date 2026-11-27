@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# The fuzz crate alone uses a pinned nightly; the library stays on stable.
+[toolchain]
+channel = "nightly-2026-11-01"
+profile = "minimal"
