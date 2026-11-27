@@ -10,7 +10,8 @@
 //!   clock has passed and reports `DHALL_TIME_LIMIT`.
 //! * Memory: the worker caps its own heap at `DHALL_MEMORY_LIMIT_BYTES`
 //!   through the counting global allocator in `main.rs`. An allocation past
-//!   the cap aborts the worker, and the parent reports `DHALL_MEMORY_LIMIT`.
+//!   the cap aborts the worker. The parent kills it as soon as it says so on
+//!   stderr, without waiting for a crash dump, and reports `DHALL_MEMORY_LIMIT`.
 //! * Output: the parent keeps at most `DHALL_OUTPUT_MAX_BYTES` of the
 //!   worker's result and reports `DHALL_OUTPUT_LIMIT` beyond that.
 //!
@@ -29,6 +30,10 @@ use kyq::{
 use std::{
     io::{self, Read, Write},
     process::{Command, ExitStatus, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -111,8 +116,9 @@ pub fn worker() -> i32 {
 }
 
 /// Read a pipe to its end, keeping at most `max + 1` bytes so that the
-/// writer never blocks and an overflow stays visible.
-fn drain(mut pipe: impl Read, max: usize) -> Vec<u8> {
+/// writer never blocks and an overflow stays visible. If `alarm` is given,
+/// set it as soon as the kept bytes start with the allocation-failure line.
+fn drain(mut pipe: impl Read, max: usize, alarm: Option<&AtomicBool>) -> Vec<u8> {
     let mut kept = Vec::new();
     let mut chunk = [0u8; 64 * 1024];
     loop {
@@ -121,9 +127,21 @@ fn drain(mut pipe: impl Read, max: usize) -> Vec<u8> {
             Ok(n) => {
                 let room = (max + 1).saturating_sub(kept.len());
                 kept.extend_from_slice(&chunk[..n.min(room)]);
+                if let Some(alarm) = alarm
+                    && kept.starts_with(ALLOC_FAILURE.as_bytes())
+                {
+                    alarm.store(true, Ordering::Release);
+                }
             }
         }
     }
+}
+
+fn memory_limit() -> Error {
+    refusal(
+        "DHALL_MEMORY_LIMIT",
+        format!("Dhall evaluation exceeded {DHALL_MEMORY_LIMIT_BYTES} bytes of heap"),
+    )
 }
 
 /// Map a worker's refusal code back to the library's static codes.
@@ -174,12 +192,27 @@ pub fn evaluate(input: &[u8]) -> Result<Vec<Value>, Error> {
     let writer = thread::spawn(move || {
         let _ = stdin.write_all(&source);
     });
-    let out_reader = thread::spawn(move || drain(stdout, DHALL_OUTPUT_MAX_BYTES));
-    let err_reader = thread::spawn(move || drain(stderr, STDERR_MAX_BYTES));
+    let out_reader = thread::spawn(move || drain(stdout, DHALL_OUTPUT_MAX_BYTES, None));
+    // The worker reports a failed allocation on stderr and then aborts. Where
+    // the OS pipes crash dumps to a handler (systemd-coredump on Linux), the
+    // aborting worker can take seconds to end while its heap is written out.
+    // Waiting for that would turn a memory refusal into a time refusal, so
+    // the parent watches stderr and kills the worker once the line appears.
+    let out_of_memory = Arc::new(AtomicBool::new(false));
+    let alarm = Arc::clone(&out_of_memory);
+    let err_reader = thread::spawn(move || drain(stderr, STDERR_MAX_BYTES, Some(alarm.as_ref())));
 
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
+            Ok(None) if out_of_memory.load(Ordering::Acquire) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = writer.join();
+                let _ = out_reader.join();
+                let _ = err_reader.join();
+                return Err(memory_limit());
+            }
             Ok(None) if start.elapsed() >= limit => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -223,10 +256,7 @@ pub fn evaluate(input: &[u8]) -> Result<Vec<Value>, Error> {
         return Err(refusal(known_code(code), message.to_owned()));
     }
     if err.contains(ALLOC_FAILURE) {
-        return Err(refusal(
-            "DHALL_MEMORY_LIMIT",
-            format!("Dhall evaluation exceeded {DHALL_MEMORY_LIMIT_BYTES} bytes of heap"),
-        ));
+        return Err(memory_limit());
     }
     if err.contains(STACK_OVERFLOW) {
         return Err(refusal(
